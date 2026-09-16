@@ -4,6 +4,8 @@ import Login from './Login'
 import Clientes from './Clientes'
 import Equipos from './Equipos'
 import Ordenes from './Ordenes'
+import Inventario from './Inventario'
+import Cotizaciones from './Cotizaciones'
 
 export default function App() {
   const [sesion, setSesion] = useState(null)
@@ -30,10 +32,13 @@ export default function App() {
         <span style={{ marginLeft: 20 }}>{sesion.user.email}</span>
         <button onClick={() => supabase.auth.signOut()} style={{ marginLeft: 12 }}>Salir</button>   
         <button onClick={() => setPantalla('ordenes')} style={{ marginLeft: 8 }}>Órdenes</button>
-      </div>
+        <button onClick={() => setPantalla('inventario')} style={{ marginLeft: 8 }}>Inventario</button>
+        <button onClick={() => setPantalla('cotizaciones')} style={{ marginLeft: 8 }}>Cotizaciones</button></div>
       {pantalla === 'clientes' && <Clientes />}
       {pantalla === 'equipos' && <Equipos />}
       {pantalla === 'ordenes' && <Ordenes />}
+      {pantalla === 'inventario' && <Inventario />}
+      {pantalla === 'cotizaciones' && <Cotizaciones />}
     </div>
   )
 }
