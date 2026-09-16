@@ -271,6 +271,7 @@ export default function Ordenes() {
       fecha: form.fecha,
       tipo_servicio: form.tipo_servicio,
       tecnico: form.tecnico || null,
+      tecnico_id: (await supabase.auth.getUser()).data.user?.id || null,
       horas_equipo: form.horas_equipo === '' ? null : form.horas_equipo,
       trabajos_realizados: form.trabajos_realizados,
       refacciones: refacciones.filter(r => r.descripcion.trim() !== ''),
