@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PowerMx">
+  <!-- Marcador de posición: hexágono azul noche con P ámbar. Sustituir por el
+       logotipo real (POWERMX-sitio/LOGOS) en la pasada de diseño. -->
+  <rect width="512" height="512" fill="#0c1520"/>
+  <polygon points="256,56 428,156 428,356 256,456 84,356 84,156" fill="none" stroke="#f59e0b" stroke-width="22" stroke-linejoin="round"/>
+  <path d="M206 168h94c40 0 66 24 66 62s-26 62-66 62h-46v58h-48zM254 210v40h42c14 0 22-8 22-20s-8-20-22-20z" fill="#f59e0b" fill-rule="evenodd"/>
+</svg>

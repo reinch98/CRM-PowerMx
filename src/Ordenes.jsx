@@ -4,27 +4,11 @@ import { guardarFoto, fotosDeOrden, borrarFotosDeOrden } from './lib/idb'
 import { redimensionar, dataUrlABlob } from './lib/imagen'
 import { hoyLocal } from './lib/fechas'
 import { explicarError } from './lib/errores'
+import { leerLocal, escribirLocal, usuarioLocal } from './lib/local'
 
 const COLA = 'ordenes_pendientes'
 const CACHE_EQUIPOS = 'cache_equipos'
 const BUCKET = 'ordenes'
-
-function leerLocal(clave, porDefecto) {
-  try {
-    const crudo = localStorage.getItem(clave)
-    return crudo ? JSON.parse(crudo) : porDefecto
-  } catch {
-    return porDefecto
-  }
-}
-
-function escribirLocal(clave, valor) {
-  try {
-    localStorage.setItem(clave, JSON.stringify(valor))
-  } catch {
-    // Si el almacenamiento está lleno o bloqueado, no tumbamos la app.
-  }
-}
 
 // Función y no objeto: la fecha se calcula al abrir la orden, no al cargar la
 // app, que en el celular puede quedar abierta de un día para otro.
@@ -321,9 +305,10 @@ export default function Ordenes() {
       fecha: form.fecha,
       tipo_servicio: form.tipo_servicio,
       tecnico: form.tecnico || null,
-      // getSession lee la sesión guardada en el celular. getUser hace una
-      // petición de red y sin señal devolvería null, dejando la orden huérfana.
-      tecnico_id: (await supabase.auth.getSession()).data.session?.user?.id || null,
+      // Lo guardado en el celular va primero: es instantáneo. getUser() pide red
+      // y devolvería null sin señal; getSession() con el token vencido intenta
+      // renovarlo y con señal mala se queda esperando, congelando el botón.
+      tecnico_id: usuarioLocal()?.id || (await supabase.auth.getSession()).data.session?.user?.id || null,
       horas_equipo: form.horas_equipo === '' ? null : form.horas_equipo,
       trabajos_realizados: form.trabajos_realizados,
       refacciones: refacciones.filter(r => r.descripcion.trim() !== ''),

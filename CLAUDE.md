@@ -125,6 +125,30 @@ lo genera el celular y el código `23505` significa "ya existía") · `Clientes`
 `Equipos` · `Inventario` · `Cotizaciones` · `Tecnicos` (pestaña "Usuarios") ·
 `Agente` · `Login`. El portal del cliente es un aviso de "en construcción".
 
+## Sin señal (Órdenes)
+
+- **Service worker** (`sw/plantilla.js` → `dist/sw.js`): guarda la app al instalarse.
+  La página de inicio va primero a la red y a los 4 s cae a la copia; los archivos
+  con hash salen de la copia. **Nunca** toca lo que no sea del propio sitio: Supabase
+  va directo a la red. Solo se registra en producción (`main.jsx`).
+- El plugin de `vite.config.js` mete en la lista los archivos del *bundle* y unos
+  pocos de `public/` **escritos a mano** (manifest, favicon y los íconos). Si algo
+  nuevo de `public/` debe abrir sin señal, agregarlo a `publicos` ahí. Si
+  quedan marcadores `__VERSION__`/`__PRECACHE__` sin reemplazar, la construcción falla
+  a propósito.
+- Los archivos de `public/` no llevan hash: si cambian sin que cambie el código, el
+  celular puede seguir mostrando el viejo hasta la siguiente versión.
+- **Sesión sin señal:** con el token vencido (dura 1 h) y sin red, `getSession()` de
+  Supabase devuelve `null` aunque la sesión siga guardada. `App.jsx` cae a
+  `usuarioLocal()` (lee `sb-*-auth-token`) y guarda el perfil en `cache_perfil` (se
+  borra al salir). Eso solo decide qué botones se ven; el servidor sigue exigiendo un
+  token válido, que Supabase renueva solo al volver la señal.
+- El `tecnico_id` de una orden sale de `usuarioLocal()` primero: `getUser()` pide red
+  y `getSession()` puede quedarse esperando la renovación con señal mala.
+- Probar con la versión **construida** (`npm run build` + `npx vite preview`), en
+  Chrome → DevTools → Application → Service Workers → Offline. El navegador integrado
+  de Claude Code no admite service workers.
+
 ## Forma de trabajar y tropiezos conocidos
 
 - La interfaz, los nombres y los comentarios van en español.
@@ -175,7 +199,15 @@ rol `cliente` y limita historial y pregunta; lint en cero.
      motivos salen de `src/lib/errores.js`; ahí se agregan casos nuevos.
      Falta: probarlo en el celular con un técnico real (sin señal, señal mala, y
      una orden con permiso denegado).
-   - PWA: manifest y service worker, para que Órdenes abra al recargar sin señal.
+   - ~~PWA: que Órdenes abra al recargar sin señal.~~ Hecho en código, **falta probarlo
+     en Chrome y en el celular**: service worker propio (`sw/plantilla.js`, generado a
+     `dist/sw.js` por un plugin en `vite.config.js`), `manifest.webmanifest` y
+     sesión/perfil guardados en el celular (`src/lib/local.js`). Ver "Sin señal".
+     Íconos PNG (192, 512, maskable 512 y `apple-touch-icon` de 180 para iPhone)
+     generados desde `public/icono.svg`, que es un **marcador** (hexágono ámbar con P
+     sobre azul noche): sustituir por el logotipo real de `POWERMX-sitio/LOGOS` en la
+     pasada de diseño, regenerando los cuatro PNG. Las pantallas distintas de Órdenes
+     siguen necesitando red (Agenda, etc.).
    - Cambio de estado de cotización + movimientos de inventario en **una** función
      RPC transaccional, no dos escrituras desde el navegador.
    - Recuperar `supabase/sql/01_...` (esquema base, hoy ausente del repo) para poder

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { leerLocal, escribirLocal, borrarLocal, usuarioLocal } from './lib/local'
 import Login from './Login'
 import Agenda from './Agenda'
 import Clientes from './Clientes'
@@ -23,28 +24,58 @@ const PANTALLAS = {
   agente:       { titulo: 'Agente',       componente: Agente,       roles: ['admin'] },
 }
 
+const CACHE_PERFIL = 'cache_perfil'
+
 export default function App() {
   const [sesion, setSesion] = useState(null)
   const [perfilCargado, setPerfil] = useState(null)
   const [cargando, setCargando] = useState(true)
-  const [pantalla, setPantalla] = useState('agenda')
+  // Sin señal el técnico llega a lo que puede usar: la agenda no funciona
+  // desconectada, las órdenes sí.
+  const [pantalla, setPantalla] = useState(() => (navigator.onLine ? 'agenda' : 'ordenes'))
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      setSesion(data.session)
+      if (data.session) {
+        setSesion(data.session)
+      } else {
+        // Sin señal y con el token vencido, getSession() dice "nadie" aunque la
+        // sesión sigue guardada. Se entra con lo guardado; cuando vuelva la
+        // señal, Supabase renueva el token y esta sesión se reemplaza sola.
+        const usuario = usuarioLocal()
+        setSesion(usuario ? { user: usuario, sinConexion: true } : null)
+      }
       setCargando(false)
     })
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSesion(s))
+    const { data: sub } = supabase.auth.onAuthStateChange((evento, s) => {
+      // Al arrancar sin señal este evento llega con null; getSession() de arriba
+      // ya resolvió qué hacer, y pisarlo mandaría al Login.
+      if (evento === 'INITIAL_SESSION' && !s) return
+      if (evento === 'SIGNED_OUT') borrarLocal(CACHE_PERFIL)
+      setSesion(s)
+    })
     return () => sub.subscription.unsubscribe()
   }, [])
 
   // El perfil trae el rol. Sin perfil no se dibuja menú: más vale no mostrar
-  // nada que mostrar botones que van a tronar contra las políticas.
+  // nada que mostrar botones que van a tronar contra las políticas. Se guarda
+  // una copia para poder abrir la app sin señal; solo decide qué botones se
+  // ven, el servidor sigue aplicando los permisos de verdad.
   useEffect(() => {
     if (!sesion) return
     let vigente = true
     supabase.from('perfiles').select('*').eq('id', sesion.user.id).maybeSingle()
-      .then(({ data }) => { if (vigente) setPerfil(data) })
+      .then(({ data, error }) => {
+        if (!vigente) return
+        if (error) {
+          // No se pudo preguntar (sin señal): se usa la copia, si es de este usuario.
+          const copia = leerLocal(CACHE_PERFIL, null)
+          if (copia?.id === sesion.user.id) setPerfil(copia)
+          return
+        }
+        if (data) escribirLocal(CACHE_PERFIL, data)
+        setPerfil(data)
+      })
     return () => { vigente = false }
   }, [sesion])
 
