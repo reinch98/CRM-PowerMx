@@ -1,0 +1,12 @@
+{
+  // CRM PowerMx en Cloudflare, como sitio estático. No es un Worker de código:
+  // solo le dice a Cloudflare "sirve lo que Vite deja en dist/".
+  "name": "crm-powermx",
+  "compatibility_date": "2026-07-20",
+  "assets": {
+    "directory": "./dist",
+    // Cualquier dirección que no sea un archivo cae en index.html, y React
+    // decide qué pantalla mostrar. Sin esto, recargar la página daría 404.
+    "not_found_handling": "single-page-application"
+  }
+}
