@@ -25,7 +25,7 @@ const PANTALLAS = {
 
 export default function App() {
   const [sesion, setSesion] = useState(null)
-  const [perfil, setPerfil] = useState(null)
+  const [perfilCargado, setPerfil] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [pantalla, setPantalla] = useState('agenda')
 
@@ -41,14 +41,19 @@ export default function App() {
   // El perfil trae el rol. Sin perfil no se dibuja menú: más vale no mostrar
   // nada que mostrar botones que van a tronar contra las políticas.
   useEffect(() => {
-    if (!sesion) { setPerfil(null); return }
+    if (!sesion) return
+    let vigente = true
     supabase.from('perfiles').select('*').eq('id', sesion.user.id).maybeSingle()
-      .then(({ data }) => setPerfil(data))
+      .then(({ data }) => { if (vigente) setPerfil(data) })
+    return () => { vigente = false }
   }, [sesion])
 
   if (cargando) return <p style={{ padding: 20 }}>Cargando…</p>
   if (!sesion) return <Login />
 
+  // Solo vale el perfil de la sesión actual: si alguien sale y entra otra
+  // cuenta, no se dibuja por un instante el menú de la anterior.
+  const perfil = perfilCargado?.id === sesion.user.id ? perfilCargado : null
   const rol = perfil?.rol
   const permitidas = Object.entries(PANTALLAS).filter(([, p]) => p.roles.includes(rol))
 

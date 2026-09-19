@@ -37,8 +37,6 @@ const vacioMovimiento = {
 }
 
 const num = v => (v === '' || v == null ? null : Number(v))
-const pesos = v =>
-  v == null ? '—' : Number(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 })
 
 export default function Inventario() {
   const [vista, setVista] = useState('existencias')

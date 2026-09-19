@@ -1,13 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 
-  async function borrar(id) {
-    if (!confirm('¿Borrar este cliente?')) return
-    const { error } = await supabase.from('clientes').delete().eq('id', id)
-    if (error) setError(error.message)
-    else cargar()
-  }
-
 const vacio = {
   nombre: '', nombre_comercial: '', tipo_cliente: 'residencial',
   rfc: '', telefono: '', telefono_alterno: '', email: '',
@@ -31,6 +24,13 @@ export default function Clientes() {
       .order('created_at', { ascending: false })
     if (error) setError(error.message)
     else setClientes(data)
+  }
+
+  async function borrar(id) {
+    if (!confirm('¿Borrar este cliente?')) return
+    const { error } = await supabase.from('clientes').delete().eq('id', id)
+    if (error) setError(error.message)
+    else cargar()
   }
 
   function cambiar(campo, valor) {

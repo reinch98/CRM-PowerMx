@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { hoyLocal, sumarDias } from './lib/fechas'
 
 const IVA = 0.16
 
@@ -24,22 +25,23 @@ Tiempo de entrega sujeto a existencia al momento de la aprobación.
 Anticipo del 60% para iniciar, saldo contra entrega.
 La instalación incluye 30 m de panel a inversor y 10 m de inversor a la conexión.`
 
-const hoy = () => new Date().toISOString().slice(0, 10)
 const num = v => (v === '' || v == null ? 0 : Number(v))
 const pesos = v =>
   Number(v || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
 
-const vacio = {
+// Función y no objeto: la fecha se calcula al abrir el formulario, no al
+// cargar la app, que puede llevar días abierta.
+const vacio = () => ({
   cliente_id: '',
   equipo_id: '',
-  fecha: hoy(),
+  fecha: hoyLocal(),
   vigencia_dias: 15,
   tipo: 'venta',
   descuento: '',
   requiere_visita: false,
   condiciones: CONDICIONES,
   notas_internas: ''
-}
+})
 
 export default function Cotizaciones() {
   const [vista, setVista] = useState('lista')
@@ -49,7 +51,7 @@ export default function Cotizaciones() {
   const [productos, setProductos] = useState([])
   const [disponibles, setDisponibles] = useState([])
 
-  const [form, setForm] = useState(vacio)
+  const [form, setForm] = useState(vacio)  // useState llama a la función una vez
   const [partidas, setPartidas] = useState([])
   const [buscar, setBuscar] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -165,7 +167,7 @@ export default function Cotizaciones() {
     setGuardando(false)
     if (error) return setError(error.message)
 
-    setForm(vacio); setPartidas([]); setVista('lista')
+    setForm(vacio()); setPartidas([]); setVista('lista')
     setMensaje('Cotización guardada como borrador.')
     cargar()
   }
@@ -188,7 +190,9 @@ export default function Cotizaciones() {
         referencia: `COT-${c.folio}`, notas: 'Apartado al aprobar la cotización'
       }))
     }
-    if (anterior === 'aceptada' && ['rechazada', 'vencida', 'borrador'].includes(nuevo)) {
+    // Salir de "aceptada" hacia cualquier otro estado libera lo apartado; si no,
+    // pasar a "enviada" dejaría material apartado para una cotización no aprobada.
+    if (anterior === 'aceptada' && nuevo !== 'aceptada') {
       movimientos = conProducto.map(p => ({
         producto_id: p.producto_id, tipo: 'libera_apartado', cantidad: p.cantidad,
         cliente_id: c.cliente_id, cotizacion_id: c.id,
@@ -223,11 +227,7 @@ export default function Cotizaciones() {
     cargar()
   }
 
-  const vence = c => {
-    const d = new Date(c.fecha)
-    d.setDate(d.getDate() + (c.vigencia_dias || 15))
-    return d.toISOString().slice(0, 10)
-  }
+  const vence = c => sumarDias(c.fecha, c.vigencia_dias || 15)
 
   const campo = { padding: 8, fontSize: 15, width: '100%', boxSizing: 'border-box' }
   const tab = a => ({

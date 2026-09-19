@@ -46,6 +46,8 @@ export default function Agenda() {
   const desde = iso(anio, mes, 1)
   const hasta = iso(anio, mes, new Date(anio, mes + 1, 0).getDate())
 
+  // cargar() lee anio y mes de aquí mismo; se vuelve a llamar solo al cambiar de mes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { cargar() }, [anio, mes])
 
   async function cargar() {

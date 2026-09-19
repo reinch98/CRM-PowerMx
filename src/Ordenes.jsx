@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { guardarFoto, fotosDeOrden, borrarFotosDeOrden } from './lib/idb'
 import { redimensionar, dataUrlABlob } from './lib/imagen'
+import { hoyLocal } from './lib/fechas'
 
 const COLA = 'ordenes_pendientes'
 const CACHE_EQUIPOS = 'cache_equipos'
@@ -24,9 +25,11 @@ function escribirLocal(clave, valor) {
   }
 }
 
-const vacio = {
+// Función y no objeto: la fecha se calcula al abrir la orden, no al cargar la
+// app, que en el celular puede quedar abierta de un día para otro.
+const vacio = () => ({
   equipo_id: '',
-  fecha: new Date().toISOString().slice(0, 10),
+  fecha: hoyLocal(),
   tipo_servicio: 'preventivo',
   tecnico: '',
   horas_equipo: '',
@@ -35,7 +38,7 @@ const vacio = {
   recomendaciones: '',
   requiere_seguimiento: false,
   fecha_seguimiento: ''
-}
+})
 
 // ---------------------------------------------------------------------------
 // Lienzo de firma. El cliente firma con el dedo; sale un PNG de ~10 KB.
@@ -115,6 +118,9 @@ export default function Ordenes() {
   const [fotos, setFotos] = useState([])          // { id, blob, url } antes de guardar
   const [enLinea, setEnLinea] = useState(navigator.onLine)
   const [subiendo, setSubiendo] = useState(false)
+  // El estado no sirve de candado: sincronizar() lo lee de una versión vieja de
+  // sí misma (la del primer render) y siempre lo vería en false.
+  const sincronizando = useRef(false)
   const [mensaje, setMensaje] = useState('')
   const [error, setError] = useState('')
   const refLienzo = useRef(null)
@@ -193,8 +199,9 @@ export default function Ordenes() {
 
   async function sincronizar() {
     const cola = leerLocal(COLA, [])
-    if (cola.length === 0 || subiendo) return
+    if (cola.length === 0 || sincronizando.current) return
 
+    sincronizando.current = true
     setSubiendo(true)
     const quedan = []
     let subidas = 0
@@ -205,8 +212,15 @@ export default function Ordenes() {
       else quedan.push(orden)
     }
 
-    escribirLocal(COLA, quedan)
-    setPendientes(quedan)
+    // Las órdenes que se guardaron mientras subíamos no estaban en `cola`:
+    // se conservan, o esta escritura las borraría de la cola.
+    const subidasIds = new Set(cola.map(o => o.id))
+    const nuevas = leerLocal(COLA, []).filter(o => !subidasIds.has(o.id))
+    const restante = [...quedan, ...nuevas]
+
+    escribirLocal(COLA, restante)
+    setPendientes(restante)
+    sincronizando.current = false
     setSubiendo(false)
     if (subidas > 0) setMensaje(`Se subieron ${subidas} orden(es).`)
   }
@@ -271,7 +285,9 @@ export default function Ordenes() {
       fecha: form.fecha,
       tipo_servicio: form.tipo_servicio,
       tecnico: form.tecnico || null,
-      tecnico_id: (await supabase.auth.getUser()).data.user?.id || null,
+      // getSession lee la sesión guardada en el celular. getUser hace una
+      // petición de red y sin señal devolvería null, dejando la orden huérfana.
+      tecnico_id: (await supabase.auth.getSession()).data.session?.user?.id || null,
       horas_equipo: form.horas_equipo === '' ? null : form.horas_equipo,
       trabajos_realizados: form.trabajos_realizados,
       refacciones: refacciones.filter(r => r.descripcion.trim() !== ''),
@@ -291,7 +307,7 @@ export default function Ordenes() {
     escribirLocal(COLA, cola)
     setPendientes(cola)
 
-    setForm({ ...vacio, tecnico: form.tecnico })  // el técnico se queda, captura varias seguidas
+    setForm({ ...vacio(), tecnico: form.tecnico })  // el técnico se queda, captura varias seguidas
     setRefacciones([])
     fotos.forEach(f => URL.revokeObjectURL(f.url))
     setFotos([])

@@ -17,5 +17,10 @@ export default defineConfig([
       globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    rules: {
+      // Sacar una clave de un objeto con { clave, ...resto } deja la variable
+      // sin usar a propósito; el guion bajo o el nombre lo avisan.
+      'no-unused-vars': ['error', { varsIgnorePattern: '^_', ignoreRestSiblings: true }],
+    },
   },
 ])

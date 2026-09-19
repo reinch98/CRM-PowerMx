@@ -42,6 +42,8 @@ español, concisas, con el paso siguiente claro.
 - `productos`: `categoria`, `atributos jsonb`, `precios jsonb` (rentas y paquetes).
   `costo` es interno.
 - Postgres no acepta `''` en columnas numéricas o de fecha: mandar `null`.
+- Las fechas de captura se sacan con `hoyLocal()` de `src/lib/fechas.js`, nunca con
+  `toISOString()`: en UTC, después de las 6 pm en Mérida ya es "mañana".
 
 ## Seguridad — lo más importante
 
@@ -61,6 +63,8 @@ español, concisas, con el paso siguiente claro.
 - El costo no sale nunca al sitio público ni a un técnico.
 - Pendiente antes del portal de clientes: las vistas no filtran por rol, así que
   un usuario con rol `cliente` podría leer `resguardo_por_cliente` de todos.
+  Parche temporal: el agente rechaza el rol `cliente`. La solución de fondo está
+  en la ruta de mejora (fase 1).
 
 ## Agente — Edge Function `agente`
 
@@ -75,8 +79,9 @@ español, concisas, con el paso siguiente claro.
 - No hay CLI de Supabase instalada: la función se despliega pegando el archivo en el
   editor web de Supabase. Al cambiarla, el archivo del repo y el de Supabase deben
   quedar iguales.
-- Siguientes fases: escribir con confirmación explícita y registro en `auditoria`;
-  luego Google Calendar y correo; luego Facturama (CFDI 4.0).
+- Rechaza el rol `cliente`, historial de más de 40 turnos y preguntas de más de
+  2,000 caracteres. El historial lo manda el navegador: no se le tiene fe.
+- Siguientes fases: ver "Ruta de mejora".
 
 ## Diseño — pasada pendiente
 
@@ -113,12 +118,56 @@ lo genera el celular y el código `23505` significa "ya existía") · `Clientes`
 - Windows no distingue mayúsculas en nombres de archivo; Cloudflare sí. El archivo
   debe llamarse exactamente como su `import` (componentes en PascalCase). Para
   renombrar solo la mayúscula: `git mv` en dos pasos, pasando por un nombre temporal.
-- Correr `npm run build` antes de cada push.
+- Correr `npm run lint` y `npm run build` antes de cada push. El lint está en cero:
+  si algo nuevo lo rompe, se arregla, no se ignora.
+- En `Ordenes` (offline) no usar nada que pida red para datos de la orden:
+  `getSession()` sí, `getUser()` no.
 - Los scripts SQL van numerados en `supabase/sql/` y deben poder repetirse sin
   tronar (`if not exists`, `drop policy if exists`).
 - Git se usa desde la terminal de VS Code; en cmd como administrador no está en el PATH.
 
-## Pendientes
+## Ruta de mejora
+
+Actualizada el 19/09/2026 tras una revisión completa del código. Con 10 horas a la
+semana, el orden importa: cada fase cierra un riesgo antes de abrir funciones nuevas.
+
+**Hecho en esa revisión:** `borrar()` de Clientes movido dentro del componente (no
+refrescaba la lista); `tecnico_id` de las órdenes offline con `getSession()`; fechas
+en hora local; cotización que sale de "aceptada" a cualquier estado libera el
+apartado; candado real contra sincronizaciones dobles en Órdenes; agente cierra el
+rol `cliente` y limita historial y pregunta; lint en cero.
+**Por desplegar:** pegar `agente/index.ts` en el editor de Supabase.
+
+1. **Cerrar seguridad de datos** (antes de cualquier portal de cliente)
+   - Vistas por rol: sacar con `pg_get_viewdef` la definición de `existencias`,
+     `disponibles`, `por_reordenar` y `resguardo_por_cliente`; recrearlas con
+     `security_invoker = true` o con `where mi_rol() in ('admin','tecnico')`, y
+     guardar el script como `supabase/sql/05_...`. Ojo: `productos` solo la lee el
+     admin, así que con `security_invoker` el técnico dejaría de ver existencias;
+     probar con cuenta de técnico.
+   - RLS: `with check` en `tecnico_actualiza_sus_citas` (que no reasigne la cita);
+     en `tecnico_crea_ordenes` exigir `tecnico_id = auth.uid()` **solo después** de
+     vaciar la cola offline de los celulares, o las órdenes con `tecnico_id` nulo
+     se quedarían atoradas; restringir escritura en `catalogos` y `auditoria`.
+   - Probar el agente y las pantallas con una cuenta de técnico y otra de cliente.
+2. **Confiabilidad del campo**
+   - Que se vea por qué una orden no sube (hoy falla en silencio y reintenta).
+   - PWA: manifest y service worker, para que Órdenes abra al recargar sin señal.
+   - Cambio de estado de cotización + movimientos de inventario en **una** función
+     RPC transaccional, no dos escrituras desde el navegador.
+   - Recuperar `supabase/sql/01_...` (esquema base, hoy ausente del repo) para poder
+     reconstruir la base desde cero.
+3. **Diseño** (ver sección Diseño): tokens y componentes compartidos → Órdenes →
+   Agenda → oficina. De paso: `Login` con estilo y marca; dividir el bundle
+   (500 kB) con `import()` por pantalla; quitar `react-router-dom` si no se va a usar.
+4. **Agente fase 3:** escritura con confirmación explícita y registro en `auditoria`.
+   Instalar la CLI de Supabase para dejar de pegar la función a mano.
+5. **Portal del cliente** (solo tras la fase 1): equipos, historial y cotizaciones.
+6. **Integraciones:** Google Calendar y correo; luego Facturama (CFDI 4.0).
+7. **Calidad:** pruebas mínimas de lo que dinero e inventario tocan (totales de
+   cotización, disponible, cola offline); reescribir el README.
+
+## Pendientes de datos
 
 - Capturar 49 precios de refacciones y todos los costos; conteo físico real
   (el 5 que traen muchos productos es relleno de la plantilla).

@@ -18,6 +18,8 @@ const JSON_H = { ...CORS, "Content-Type": "application/json" };
 
 const MODELO = "claude-sonnet-5";
 const MAX_VUELTAS = 8; // tope de seguridad: sin esto, un bucle raro se come el saldo
+const MAX_HISTORIAL = 40; // turnos previos aceptados; con herramientas de por medio, unas 8 preguntas
+const MAX_PREGUNTA = 2000; // caracteres
 
 const INSTRUCCIONES = `Eres el asistente interno de PowerMx, una empresa de Mérida, Yucatán
 que instala y da mantenimiento a generadores eléctricos y sistemas solares fotovoltaicos.
@@ -471,8 +473,25 @@ Deno.serve(async (req) => {
       return responder({ error: "Tu cuenta todavía no tiene rol asignado." }, 403);
     }
 
+    // El agente es para el equipo. Las vistas de inventario corren con permisos
+    // de su dueño y no filtran por cliente: un cliente vería datos de otros.
+    // Se abre a este rol cuando las vistas se cierren por rol.
+    if (rol === "cliente") {
+      return responder({ error: "El agente todavía no está disponible para cuentas de cliente." }, 403);
+    }
+
     const { pregunta, historial = [] } = await req.json();
     if (!pregunta || !String(pregunta).trim()) return responder({ error: "Pregunta vacía." }, 400);
+    if (String(pregunta).length > MAX_PREGUNTA) return responder({ error: "La pregunta es demasiado larga." }, 400);
+
+    // El historial lo manda el navegador, así que no se le tiene fe: debe ser
+    // una lista acotada de turnos con la forma que espera la API. Cortarlo a
+    // media conversación rompería los pares herramienta/resultado; por eso se
+    // rechaza en vez de recortar (el CRM ofrece "Empezar de nuevo").
+    if (!Array.isArray(historial) || historial.length > MAX_HISTORIAL ||
+        historial.some((m: any) => !m || (m.role !== "user" && m.role !== "assistant"))) {
+      return responder({ error: "La conversación ya es muy larga. Empieza de nuevo." }, 400);
+    }
 
     const ctx: Ctx = { rol, hoy: hoyMerida() };
     const sistema = `${INSTRUCCIONES}\n\nHoy es ${ctx.hoy} (hora de Mérida). Quien pregunta tiene el rol: ${rol}.`;
