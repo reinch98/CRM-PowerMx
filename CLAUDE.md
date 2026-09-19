@@ -47,6 +47,10 @@ español, concisas, con el paso siguiente claro.
 
 ## Seguridad — lo más importante
 
+- Storage: bucket `ordenes` (**minúscula**, privado; Storage distingue mayúsculas).
+  Un bucket `Ordenes` con mayúscula rompió la subida de fotos y firmas hasta el
+  19/09/2026. Políticas en `supabase/sql/06_storage_ordenes.sql`: solo admin y
+  técnico ven, suben y actualizan; nadie borra desde el CRM.
 - Roles en `perfiles`: `admin`, `tecnico`, `cliente`, `sin_rol`. Toda cuenta nueva
   entra como `sin_rol` (trigger) y el admin la promueve. Funciones SQL de apoyo:
   `mi_rol()`, `es_admin()`, `mi_cliente()`.
