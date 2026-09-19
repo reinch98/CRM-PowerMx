@@ -8,6 +8,7 @@ import Equipos from './Equipos'
 import Ordenes from './Ordenes'
 import Inventario from './Inventario'
 import Cotizaciones from './Cotizaciones'
+import Requisiciones from './Requisiciones'
 import Tecnicos from './Tecnicos'
 import Agente from './Agente'
 
@@ -20,6 +21,7 @@ const PANTALLAS = {
   equipos:      { titulo: 'Equipos',      componente: Equipos,      roles: ['admin'] },
   inventario:   { titulo: 'Inventario',   componente: Inventario,   roles: ['admin'] },
   cotizaciones: { titulo: 'Cotizaciones', componente: Cotizaciones, roles: ['admin'] },
+  requisiciones:{ titulo: 'Requisiciones',componente: Requisiciones,roles: ['admin'] },
   usuarios:     { titulo: 'Usuarios',     componente: Tecnicos,     roles: ['admin'] },
   agente:       { titulo: 'Agente',       componente: Agente,       roles: ['admin'] },
 }
@@ -152,7 +154,7 @@ export default function App() {
   return (
     <div>
       {barra}
-      {Actual ? <Actual /> : <p style={{ padding: 20 }}>No hay pantallas disponibles para tu rol.</p>}
+      {Actual ? <Actual irA={setPantalla} /> : <p style={{ padding: 20 }}>No hay pantallas disponibles para tu rol.</p>}
     </div>
   )
 }

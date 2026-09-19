@@ -43,7 +43,7 @@ const vacio = () => ({
   notas_internas: ''
 })
 
-export default function Cotizaciones() {
+export default function Cotizaciones({ irA }) {
   const [vista, setVista] = useState('lista')
   const [cotizaciones, setCotizaciones] = useState([])
   const [clientes, setClientes] = useState([])
@@ -57,6 +57,7 @@ export default function Cotizaciones() {
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
+  const [aviso, setAviso] = useState(null)   // requisiciones generadas o canceladas por el último cambio
   const [detalle, setDetalle] = useState(null)
 
   useEffect(() => { cargar() }, [])
@@ -174,25 +175,24 @@ export default function Cotizaciones() {
 
   // -------------------------------------------------------------------------
   // Cambiar de estado mueve inventario: aceptar aparta, salir de aceptada libera.
-  // Todo eso ocurre DENTRO de la base (supabase/sql/07_cotizacion_estado.sql), en
-  // una sola operación: o se cambia el estado y se mueve el inventario, o no se
-  // hace nada. Aquí solo se pide y se cuenta lo que respondió.
+  // Todo eso ocurre DENTRO de la base (supabase/sql/08_requisiciones.sql), en una
+  // sola operación: o se cambia el estado y se mueve el inventario, o no se hace
+  // nada. Si al aceptar falta material, la cotización se acepta igual y lo que
+  // falta se manda a Requisiciones. Aquí solo se pide y se cuenta lo que respondió.
   // -------------------------------------------------------------------------
-  async function cambiarEstado(c, nuevo, forzar = false) {
-    setError(''); setMensaje('')
+  async function cambiarEstado(c, nuevo) {
+    setError(''); setMensaje(''); setAviso(null)
     if (c.estado === nuevo) return
 
     const { data, error } = await supabase.rpc('cambiar_estado_cotizacion', {
-      p_id: c.id, p_nuevo: nuevo, p_forzar: forzar
+      p_id: c.id, p_nuevo: nuevo
     })
     if (error) return setError(error.message)
 
-    // No alcanza el disponible: la base no cambió nada y devolvió qué falta.
-    if (!data.ok) {
-      const lista = (data.faltantes || [])
-        .map(f => `${f.sku} (hay ${f.disponible}, piden ${f.pide})`).join(', ')
-      if (!confirm(`No alcanza el disponible en: ${lista}.\n\n¿Aceptar de todos modos? El disponible quedará en negativo y se verá en Inventario.`)) return
-      return cambiarEstado(c, nuevo, true)
+    // La versión anterior de la función devolvía ok:false al faltar material y no
+    // cambiaba nada. Si eso llega aquí, la base no tiene 08_requisiciones.sql.
+    if (data.ok === false) {
+      return setError('La base tiene una versión vieja de cambiar_estado_cotizacion y no se cambió nada. Corre supabase/sql/08_requisiciones.sql.')
     }
 
     if (data.sin_cambio) {
@@ -202,8 +202,21 @@ export default function Cotizaciones() {
     } else {
       setMensaje(`Cotización marcada como ${nuevo}.`)
     }
+
+    if (data.requisiciones > 0 || data.requisiciones_canceladas > 0 || data.requisiciones_en_curso > 0) {
+      setAviso({
+        faltantes: data.faltantes || [],
+        canceladas: data.requisiciones_canceladas || 0,
+        enCurso: data.requisiciones_en_curso || 0
+      })
+    }
     cargar()
   }
+
+  // Cuánto de una partida no tiene existencia. El disponible negativo (material ya
+  // prometido a otra cotización) cuenta como cero: falta todo lo que se pide.
+  const faltaDePartida = p =>
+    p.producto_id ? Math.max(0, num(p.cantidad) - Math.max(dispoPorId[p.producto_id] ?? 0, 0)) : 0
 
   const vence = c => sumarDias(c.fecha, c.vigencia_dias || 15)
 
@@ -229,6 +242,37 @@ export default function Cotizaciones() {
 
       {error && <p style={{ color: 'crimson' }}>{error}</p>}
       {mensaje && <p style={{ color: 'green' }}>{mensaje}</p>}
+
+      {aviso && (
+        <div style={{ padding: 12, background: '#fef3c7', color: '#0c1520', borderRadius: 8, marginBottom: 14, maxWidth: 680 }}>
+          {aviso.faltantes.length > 0 && (
+            <>
+              <strong>Faltó material: se generó una requisición de pedido.</strong>
+              <ul style={{ margin: '6px 0' , paddingLeft: 20 }}>
+                {aviso.faltantes.map(f => (
+                  <li key={f.sku}>
+                    {f.sku}: se piden {f.pide}, hay {Math.max(f.disponible, 0)} → <strong>a pedir {f.a_pedir}</strong>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {aviso.canceladas > 0 && (
+            <div>Se cancelaron {aviso.canceladas} requisición(es) que aún no se pedían.</div>
+          )}
+          {aviso.enCurso > 0 && (
+            <div>
+              <strong>Ojo:</strong> {aviso.enCurso} requisición(es) ya estaban pedidas al proveedor y
+              siguen activas. Revisa si todavía las necesitas.
+            </div>
+          )}
+          {irA && (
+            <button onClick={() => irA('requisiciones')} style={{ marginTop: 8, padding: '8px 14px' }}>
+              Ir a Requisiciones
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ------------------------------------------------------------------ */}
       {vista === 'lista' && (
@@ -411,7 +455,14 @@ export default function Cotizaciones() {
             <tbody>
               {partidas.map((p, i) => (
                 <tr key={i}>
-                  <td style={{ fontSize: 12 }}>{p.sku || '—'}</td>
+                  <td style={{ fontSize: 12 }}>
+                    {p.sku || '—'}
+                    {faltaDePartida(p) > 0 && (
+                      <div style={{ color: '#92400e', fontWeight: 600 }}>
+                        Sin existencia suficiente: faltan {faltaDePartida(p)}. Se pedirá al aceptar.
+                      </div>
+                    )}
+                  </td>
                   <td>
                     <input
                       value={p.descripcion}

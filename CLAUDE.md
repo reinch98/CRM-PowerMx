@@ -39,8 +39,15 @@ español, concisas, con el paso siguiente claro.
   Disponible = físico − apartado − resguardo. Solo el disponible se puede prometer.
 - Aceptar una cotización genera movimientos `apartado`; sacarla de aceptada genera
   `libera_apartado`. Lo hace la función SQL `cambiar_estado_cotizacion` en una sola
-  transacción; el CRM no escribe esos movimientos por su cuenta. Si no alcanza el
-  disponible, la función no cambia nada y devuelve los faltantes.
+  transacción; el CRM no escribe esos movimientos por su cuenta.
+- **Requisiciones de pedido** (`requisiciones`, una línea por producto): al aceptar una
+  cotización sin material suficiente, la función la acepta igual, aparta y crea la
+  requisición por lo que falta (faltante = pide − max(disponible, 0), menos lo ya
+  pedido para esa cotización). Estados: `pendiente` → `pedida` → `recibida`, o
+  `cancelada`. Marcar `recibida` inserta el movimiento `entrada` (referencia `REQ-n`)
+  en la misma transacción: **no registrar esa entrada a mano**. Salir de "aceptada"
+  cancela las requisiciones `pendiente`; las `pedida` no se cancelan solas, solo se
+  avisa. Las cambia la función `cambiar_estado_requisicion`; solo admin.
 - `productos`: `categoria`, `atributos jsonb`, `precios jsonb` (rentas y paquetes).
   `costo` es interno.
 - Postgres no acepta `''` en columnas numéricas o de fecha: mandar `null`.
@@ -124,8 +131,9 @@ Los técnicos trabajan casi siempre **bajo el sol directo**. Eso manda:
 `Agenda` (calendario, mantenimientos por vencer) · `Ordenes` (móvil, funciona sin
 señal: cola en localStorage, fotos encogidas en IndexedDB, firma en canvas, el `id`
 lo genera el celular y el código `23505` significa "ya existía") · `Clientes` ·
-`Equipos` · `Inventario` · `Cotizaciones` · `Tecnicos` (pestaña "Usuarios") ·
-`Agente` · `Login`. El portal del cliente es un aviso de "en construcción".
+`Equipos` · `Inventario` · `Cotizaciones` · `Requisiciones` (solo admin) ·
+`Tecnicos` (pestaña "Usuarios") · `Agente` · `Login`. Las pantallas reciben la
+prop `irA(clave)` de `App.jsx` para saltar a otra pantalla. El portal del cliente es un aviso de "en construcción".
 
 ## Sin señal (Órdenes)
 
@@ -222,10 +230,15 @@ Supabase); lint en cero.
      (`supabase/sql/07_cotizacion_estado.sql`, función `cambiar_estado_cotizacion`;
      `Cotizaciones.jsx` la llama con `supabase.rpc`). Corrido y probado en la base el
      19/09/2026 como admin: aceptar aparta, rechazar libera en la misma cantidad, el
-     estado vuelve a cambiar y quien no es admin es rechazado. **Sin probar aún:** el
-     camino de "no alcanza el disponible" (devuelve `ok: false` con los faltantes) y
-     aceptar forzando, ni desde la pantalla del CRM. Los movimientos anteriores a la
-     función tienen `usuario` vacío: los hacía el código viejo del CRM.
+     estado vuelve a cambiar y quien no es admin es rechazado. Los movimientos
+     anteriores a la función tienen `usuario` vacío: los hacía el código viejo del CRM.
+   - **Requisiciones de pedido** (`supabase/sql/08_requisiciones.sql`, `Requisiciones.jsx`):
+     escrito, **falta correr el SQL y probarlo**. Reemplaza la pregunta "¿aceptar de
+     todos modos?" por la generación automática de la requisición. Pendiente para
+     después: entregas parciales (hoy se recibe la cantidad completa; una parcial se
+     resuelve con una `entrada` en Inventario y cancelando la línea), una herramienta
+     de solo lectura del agente para consultar requisiciones, e indicador de
+     pendientes en el menú.
      **Orden de despliegue de cualquier función nueva: primero el SQL, después el
      código que la llama.**
    - Recuperar `supabase/sql/01_...` (esquema base, hoy ausente del repo) para poder

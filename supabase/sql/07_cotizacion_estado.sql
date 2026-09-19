@@ -1,6 +1,11 @@
 -- ===========================================================================
 -- CAMBIO DE ESTADO DE UNA COTIZACIÓN, EN UNA SOLA OPERACIÓN
 --
+-- ⚠ REEMPLAZADO por 08_requisiciones.sql: esa versión de la función también genera
+-- requisiciones y ya no pregunta por faltantes. Este archivo se conserva para la
+-- historia y para reconstruir la base en orden (07 y luego 08). NO correrlo solo
+-- después del 08: dejaría la función vieja.
+--
 -- Antes el CRM hacía dos escrituras desde el navegador: cambiar el estado y luego
 -- insertar los movimientos de inventario. Si la segunda fallaba (señal, permisos),
 -- la cotización quedaba aceptada sin material apartado, o liberada sin haberse
