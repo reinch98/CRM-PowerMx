@@ -169,19 +169,18 @@ Actualizada el 19/09/2026 tras una revisión completa del código. Con 10 horas 
 semana, el orden importa: cada fase cierra un riesgo antes de abrir funciones nuevas.
 
 **Hecho en esa revisión:** `borrar()` de Clientes movido dentro del componente (no
-refrescaba la lista); `tecnico_id` de las órdenes offline con `getSession()`; fechas
-en hora local; cotización que sale de "aceptada" a cualquier estado libera el
-apartado; candado real contra sincronizaciones dobles en Órdenes; agente cierra el
-rol `cliente` y limita historial y pregunta; lint en cero.
-**Por desplegar:** pegar `agente/index.ts` en el editor de Supabase.
+refrescaba la lista); `tecnico_id` de las órdenes offline desde la sesión guardada
+(`usuarioLocal()`); fechas en hora local; cotización que sale de "aceptada" a
+cualquier estado libera el apartado; candado real contra sincronizaciones dobles en
+Órdenes; agente cierra el rol `cliente` y limita historial y pregunta (ya pegado en
+Supabase); lint en cero.
 
 1. **Cerrar seguridad de datos** (antes de cualquier portal de cliente)
-   - Vistas por rol: `supabase/sql/05_vistas_por_rol.sql` (ya corrido una vez; la
-     versión con `alter view ... security_invoker = off` y filtro en `catalogo`
-     **falta correrla y probarla**). Prueba de técnico: existencias y catálogo
-     iguales a las del admin, `productos_directo` en 0. Prueba de cliente/sin rol:
-     todo en 0. Con eso, decidir si se quita el bloqueo del rol `cliente` en el
-     agente (no hasta que exista el portal).
+   - ~~Vistas por rol.~~ Hecho y probado el 19/09/2026 (`05_vistas_por_rol.sql`):
+     técnico ve 95 en `disponibles` y `catalogo` y 0 en `productos`; una cuenta sin
+     rol ve 0 en todo; los modos quedaron definer/invoker como se describe arriba.
+     Falta probar con una cuenta de **cliente** real cuando exista el portal; hasta
+     entonces el agente sigue rechazando ese rol.
    - Opción limpia a futuro: mover `costo` a una tabla solo-admin
      (`productos_costos`) y dar al técnico lectura de `productos`. Así todas las
      vistas quedan en invoker, sin `mi_rol()` en cada una y sin el aviso del
@@ -196,11 +195,13 @@ rol `cliente` y limita historial y pregunta; lint en cero.
    - ~~Que se vea por qué una orden no sube.~~ Hecho: cada orden en cola lleva
      `sync` (motivo en español, si es temporal, intentos), se muestra en "Pendientes
      por subir" y se reintenta cada minuto. `sync` se quita antes del insert. Los
-     motivos salen de `src/lib/errores.js`; ahí se agregan casos nuevos.
-     Falta: probarlo en el celular con un técnico real (sin señal, señal mala, y
-     una orden con permiso denegado).
-   - ~~PWA: que Órdenes abra al recargar sin señal.~~ Hecho en código, **falta probarlo
-     en Chrome y en el celular**: service worker propio (`sw/plantilla.js`, generado a
+     motivos salen de `src/lib/errores.js`; ahí se agregan casos nuevos. Probado por
+     Caña el 19/09/2026 (una orden con fotos subió de punta a punta tras arreglar el
+     bucket). Sin probar aún con una cuenta de técnico real: señal mala y permiso
+     denegado.
+   - ~~PWA: que Órdenes abra al recargar sin señal.~~ Hecho y publicado; probado por
+     Caña el 19/09/2026 ("quedó bien"). Sin probar de forma explícita: recargar
+     sin señal **con el token ya vencido** (más de 1 h). Service worker propio (`sw/plantilla.js`, generado a
      `dist/sw.js` por un plugin en `vite.config.js`), `manifest.webmanifest` y
      sesión/perfil guardados en el celular (`src/lib/local.js`). Ver "Sin señal".
      Íconos PNG (192, 512, maskable 512 y `apple-touch-icon` de 180 para iPhone)
