@@ -54,17 +54,26 @@ español, concisas, con el paso siguiente claro.
   sus citas, crea y lee sus órdenes. **No** ve `productos`, `cotizaciones` ni
   `datos_fiscales`. El cliente solo ve lo suyo.
 - El técnico lee el catálogo por la vista `catalogo`, que no trae `costo`.
-- Las vistas corren con permisos de su dueño y **se saltan RLS**. Por eso todas
-  tienen revocado `anon` y solo `select` para `authenticated`
+- Todas las vistas tienen revocado `anon` y solo `select` para `authenticated`
   (`supabase/sql/04_vistas_seguras.sql`). Toda vista nueva lleva el mismo trato.
   Ojo: una vista simple sobre una sola tabla es escribible.
+- **Modo de las vistas** (comprobado en la base el 19/09/2026): nacieron con
+  `security_invoker = on`, o sea que aplican RLS de quien consulta. Como `productos`
+  solo la lee el admin, el técnico las veía vacías. Por eso `existencias`,
+  `resguardo_por_cliente` y `catalogo` están en **definer a propósito**
+  (`security_invoker = off`) y se cierran ellas mismas con `mi_rol()`
+  (`05_vistas_por_rol.sql`). `disponibles` y `por_reordenar` siguen en invoker y
+  heredan. El asesor de Supabase marca esas tres como "Security Definer View":
+  **no usar su botón de arreglo**, deja al técnico sin existencias ni catálogo.
+  Verificar el modo con `select relname, reloptions from pg_class ...`.
+  `create or replace view` no cambia el modo: hace falta `alter view ... set`.
 - La llave anon es pública por diseño; lo que protege es RLS. Nunca usar
   `service_role` ni en el front ni en el agente.
 - El costo no sale nunca al sitio público ni a un técnico.
-- Pendiente antes del portal de clientes: las vistas no filtran por rol, así que
-  un usuario con rol `cliente` podría leer `resguardo_por_cliente` de todos.
-  Parche temporal: el agente rechaza el rol `cliente`. La solución de fondo está
-  en la ruta de mejora (fase 1).
+- Toda vista en modo definer (que se salta RLS) debe llevar dentro
+  `where mi_rol() in (...)`. El agente sigue rechazando el rol `cliente` hasta
+  que el portal de clientes exista y `05_vistas_por_rol.sql` esté probado con
+  cuentas de técnico y cliente.
 
 ## Agente — Edge Function `agente`
 
@@ -139,12 +148,16 @@ rol `cliente` y limita historial y pregunta; lint en cero.
 **Por desplegar:** pegar `agente/index.ts` en el editor de Supabase.
 
 1. **Cerrar seguridad de datos** (antes de cualquier portal de cliente)
-   - Vistas por rol: sacar con `pg_get_viewdef` la definición de `existencias`,
-     `disponibles`, `por_reordenar` y `resguardo_por_cliente`; recrearlas con
-     `security_invoker = true` o con `where mi_rol() in ('admin','tecnico')`, y
-     guardar el script como `supabase/sql/05_...`. Ojo: `productos` solo la lee el
-     admin, así que con `security_invoker` el técnico dejaría de ver existencias;
-     probar con cuenta de técnico.
+   - Vistas por rol: `supabase/sql/05_vistas_por_rol.sql` (ya corrido una vez; la
+     versión con `alter view ... security_invoker = off` y filtro en `catalogo`
+     **falta correrla y probarla**). Prueba de técnico: existencias y catálogo
+     iguales a las del admin, `productos_directo` en 0. Prueba de cliente/sin rol:
+     todo en 0. Con eso, decidir si se quita el bloqueo del rol `cliente` en el
+     agente (no hasta que exista el portal).
+   - Opción limpia a futuro: mover `costo` a una tabla solo-admin
+     (`productos_costos`) y dar al técnico lectura de `productos`. Así todas las
+     vistas quedan en invoker, sin `mi_rol()` en cada una y sin el aviso del
+     asesor. Toca Inventario, Cotizaciones y el agente: hacerlo con calma.
    - RLS: `with check` en `tecnico_actualiza_sus_citas` (que no reasigne la cita);
      en `tecnico_crea_ordenes` exigir `tecnico_id = auth.uid()` **solo después** de
      vaciar la cola offline de los celulares, o las órdenes con `tecnico_id` nulo
