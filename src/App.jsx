@@ -8,6 +8,7 @@ import Ordenes from './Ordenes'
 import Inventario from './Inventario'
 import Cotizaciones from './Cotizaciones'
 import Tecnicos from './Tecnicos'
+import Agente from './Agente'
 
 // Qué pantallas ve cada rol. El menú y el contenido salen de aquí, así que
 // agregar una pantalla es agregar un renglón, no tocar el resto.
@@ -18,7 +19,8 @@ const PANTALLAS = {
   equipos:      { titulo: 'Equipos',      componente: Equipos,      roles: ['admin'] },
   inventario:   { titulo: 'Inventario',   componente: Inventario,   roles: ['admin'] },
   cotizaciones: { titulo: 'Cotizaciones', componente: Cotizaciones, roles: ['admin'] },
-  usuarios:     { titulo: 'Usuarios',     componente: Tecnicos,     roles: ['admin'] }
+  usuarios:     { titulo: 'Usuarios',     componente: Tecnicos,     roles: ['admin'] },
+  agente:       { titulo: 'Agente',       componente: Agente,       roles: ['admin'] },
 }
 
 export default function App() {
