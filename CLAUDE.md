@@ -165,7 +165,12 @@ rol `cliente` y limita historial y pregunta; lint en cero.
    - Probar las pantallas con una cuenta de técnico (Agenda, Órdenes) y, cuando
      exista el portal, con una de cliente. El agente es solo de admin.
 2. **Confiabilidad del campo**
-   - Que se vea por qué una orden no sube (hoy falla en silencio y reintenta).
+   - ~~Que se vea por qué una orden no sube.~~ Hecho: cada orden en cola lleva
+     `sync` (motivo en español, si es temporal, intentos), se muestra en "Pendientes
+     por subir" y se reintenta cada minuto. `sync` se quita antes del insert. Los
+     motivos salen de `src/lib/errores.js`; ahí se agregan casos nuevos.
+     Falta: probarlo en el celular con un técnico real (sin señal, señal mala, y
+     una orden con permiso denegado).
    - PWA: manifest y service worker, para que Órdenes abra al recargar sin señal.
    - Cambio de estado de cotización + movimientos de inventario en **una** función
      RPC transaccional, no dos escrituras desde el navegador.

@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase'
 import { guardarFoto, fotosDeOrden, borrarFotosDeOrden } from './lib/idb'
 import { redimensionar, dataUrlABlob } from './lib/imagen'
 import { hoyLocal } from './lib/fechas'
+import { explicarError } from './lib/errores'
 
 const COLA = 'ordenes_pendientes'
 const CACHE_EQUIPOS = 'cache_equipos'
@@ -134,9 +135,14 @@ export default function Ordenes() {
 
     if (navigator.onLine) { cargarEquipos(); sincronizar() }
 
+    // El evento "online" no salta cuando hay señal pero es mala. Cada minuto se
+    // reintenta lo pendiente; con la cola vacía sincronizar() no hace nada.
+    const reintento = setInterval(() => { if (navigator.onLine) sincronizar() }, 60000)
+
     return () => {
       window.removeEventListener('online', alConectar)
       window.removeEventListener('offline', alDesconectar)
+      clearInterval(reintento)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -159,42 +165,55 @@ export default function Ordenes() {
   // Si la orden se insertara antes, podría quedar apuntando a fotos que nunca
   // subieron.
   // -------------------------------------------------------------------------
+  // Devuelve { ok: true } o { ok: false, motivo, temporal }. El motivo ya viene
+  // en español para mostrarlo tal cual en la lista de pendientes.
   async function subirOrden(orden) {
-    const rutas = []
+    try {
+      const rutas = []
 
-    const guardadas = await fotosDeOrden(orden.id)
-    for (const foto of guardadas) {
-      const ruta = `${orden.id}/${foto.id}.jpg`
-      const { error } = await supabase.storage
-        .from(BUCKET)
-        .upload(ruta, foto.blob, { contentType: 'image/jpeg', upsert: true })
-      if (error) return false
-      rutas.push(ruta)
+      const guardadas = await fotosDeOrden(orden.id)
+      for (const foto of guardadas) {
+        const ruta = `${orden.id}/${foto.id}.jpg`
+        const { error } = await supabase.storage
+          .from(BUCKET)
+          .upload(ruta, foto.blob, { contentType: 'image/jpeg', upsert: true })
+        if (error) return fallo(error)
+        rutas.push(ruta)
+      }
+
+      let rutaFirma = null
+      if (orden.firma_data) {
+        rutaFirma = `${orden.id}/firma.png`
+        const { error } = await supabase.storage
+          .from(BUCKET)
+          .upload(rutaFirma, dataUrlABlob(orden.firma_data), {
+            contentType: 'image/png',
+            upsert: true
+          })
+        if (error) return fallo(error)
+      }
+
+      // firma_data y sync solo existen mientras la orden está en la cola: a la
+      // base va la ruta de la firma, y sync es la libreta de intentos.
+      const { firma_data, sync, ...limpio } = orden
+      const { error } = await supabase
+        .from('ordenes_servicio')
+        .insert([{ ...limpio, fotos: rutas, firma_cliente: rutaFirma }])
+
+      // 23505 = ya existía ese id. Pasó en un intento anterior que se cortó; cuenta como subida.
+      if (error && error.code !== '23505') return fallo(error)
+
+      await borrarFotosDeOrden(orden.id)
+      return { ok: true }
+    } catch (e) {
+      // fetch lanza en vez de devolver error cuando no hay red.
+      return fallo(e)
     }
+  }
 
-    let rutaFirma = null
-    if (orden.firma_data) {
-      rutaFirma = `${orden.id}/firma.png`
-      const { error } = await supabase.storage
-        .from(BUCKET)
-        .upload(rutaFirma, dataUrlABlob(orden.firma_data), {
-          contentType: 'image/png',
-          upsert: true
-        })
-      if (error) return false
-    }
-
-    // firma_data solo existe mientras la orden está en la cola: a la base va la ruta.
-    const { firma_data, ...limpio } = orden
-    const { error } = await supabase
-      .from('ordenes_servicio')
-      .insert([{ ...limpio, fotos: rutas, firma_cliente: rutaFirma }])
-
-    // 23505 = ya existía ese id. Pasó en un intento anterior que se cortó; cuenta como subida.
-    if (error && error.code !== '23505') return false
-
-    await borrarFotosDeOrden(orden.id)
-    return true
+  function fallo(error) {
+    const { texto, temporal } = explicarError(error)
+    return { ok: false, motivo: texto, temporal }
   }
 
   async function sincronizar() {
@@ -207,9 +226,20 @@ export default function Ordenes() {
     let subidas = 0
 
     for (const orden of cola) {
-      const ok = await subirOrden(orden)
-      if (ok) subidas++
-      else quedan.push(orden)
+      const r = await subirOrden(orden)
+      if (r.ok) {
+        subidas++
+      } else {
+        quedan.push({
+          ...orden,
+          sync: {
+            error: r.motivo,
+            temporal: r.temporal,
+            intentos: (orden.sync?.intentos || 0) + 1,
+            ultimo_intento: new Date().toISOString()
+          }
+        })
+      }
     }
 
     // Las órdenes que se guardaron mientras subíamos no estaban en `cola`:
@@ -223,6 +253,12 @@ export default function Ordenes() {
     sincronizando.current = false
     setSubiendo(false)
     if (subidas > 0) setMensaje(`Se subieron ${subidas} orden(es).`)
+    // Los motivos por orden están en la lista de pendientes; aquí solo el aviso.
+    // Solo se avisa en rojo lo que no se arregla solo: la señal débil no.
+    const atoradas = quedan.filter(o => !o.sync.temporal).length
+    setError(atoradas > 0
+      ? `${atoradas} orden(es) no se pudieron subir. Revisa el motivo en "Pendientes por subir".`
+      : '')
   }
 
   function cambiar(campo, valor) {
@@ -511,8 +547,15 @@ export default function Ordenes() {
           <h3>Pendientes por subir</h3>
           <ul>
             {pendientes.map(o => (
-              <li key={o.id}>
+              <li key={o.id} style={{ marginBottom: 8 }}>
                 {o.fecha} — {equipos.find(eq => eq.id === o.equipo_id)?.numero_serie || 'equipo'} — {o.tipo_servicio}
+                {o.sync?.error && (
+                  <div style={{ fontSize: 14, color: o.sync.temporal ? '#92400e' : 'crimson' }}>
+                    <strong>{o.sync.temporal ? 'En espera: ' : 'No se pudo subir: '}</strong>
+                    {o.sync.error}
+                    {o.sync.intentos > 1 && ` (intento ${o.sync.intentos})`}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
