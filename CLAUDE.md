@@ -38,7 +38,9 @@ español, concisas, con el paso siguiente claro.
   Vistas: `existencias`, `disponibles`, `por_reordenar`, `resguardo_por_cliente`.
   Disponible = físico − apartado − resguardo. Solo el disponible se puede prometer.
 - Aceptar una cotización genera movimientos `apartado`; sacarla de aceptada genera
-  `libera_apartado`.
+  `libera_apartado`. Lo hace la función SQL `cambiar_estado_cotizacion` en una sola
+  transacción; el CRM no escribe esos movimientos por su cuenta. Si no alcanza el
+  disponible, la función no cambia nada y devuelve los faltantes.
 - `productos`: `categoria`, `atributos jsonb`, `precios jsonb` (rentas y paquetes).
   `costo` es interno.
 - Postgres no acepta `''` en columnas numéricas o de fecha: mandar `null`.
@@ -162,6 +164,13 @@ lo genera el celular y el código `23505` significa "ya existía") · `Clientes`
 - Los scripts SQL van numerados en `supabase/sql/` y deben poder repetirse sin
   tronar (`if not exists`, `drop policy if exists`).
 - Git se usa desde la terminal de VS Code; en cmd como administrador no está en el PATH.
+- **Pruebas en el editor SQL de Supabase:** solo muestra el resultado de la **última**
+  sentencia. `begin; ... rollback;` sí deshace los cambios. Para ver resultados de
+  varios pasos, guardar cada uno con `set_config('app.x', valor::text, true)` y leerlos
+  en el `select` final (las tablas temporales no funcionaron ahí). Para probar como un
+  usuario: `set local role authenticated` + `set_config('request.jwt.claims', ...)`.
+  Correr **siempre** el bloque completo: una línea suelta de una prueba puede tocar
+  datos reales si el usuario simulado no la frena.
 
 ## Ruta de mejora
 
@@ -209,8 +218,16 @@ Supabase); lint en cero.
      sobre azul noche): sustituir por el logotipo real de `POWERMX-sitio/LOGOS` en la
      pasada de diseño, regenerando los cuatro PNG. Las pantallas distintas de Órdenes
      siguen necesitando red (Agenda, etc.).
-   - Cambio de estado de cotización + movimientos de inventario en **una** función
-     RPC transaccional, no dos escrituras desde el navegador.
+   - ~~Cambio de estado de cotización + inventario en una sola operación.~~ Hecho
+     (`supabase/sql/07_cotizacion_estado.sql`, función `cambiar_estado_cotizacion`;
+     `Cotizaciones.jsx` la llama con `supabase.rpc`). Corrido y probado en la base el
+     19/09/2026 como admin: aceptar aparta, rechazar libera en la misma cantidad, el
+     estado vuelve a cambiar y quien no es admin es rechazado. **Sin probar aún:** el
+     camino de "no alcanza el disponible" (devuelve `ok: false` con los faltantes) y
+     aceptar forzando, ni desde la pantalla del CRM. Los movimientos anteriores a la
+     función tienen `usuario` vacío: los hacía el código viejo del CRM.
+     **Orden de despliegue de cualquier función nueva: primero el SQL, después el
+     código que la llama.**
    - Recuperar `supabase/sql/01_...` (esquema base, hoy ausente del repo) para poder
      reconstruir la base desde cero.
 3. **Diseño** (ver sección Diseño): tokens y componentes compartidos → Órdenes →

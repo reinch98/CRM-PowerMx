@@ -173,54 +173,32 @@ export default function Cotizaciones() {
   }
 
   // -------------------------------------------------------------------------
-  // Cambiar de estado mueve inventario. Aceptar aparta, rechazar libera.
+  // Cambiar de estado mueve inventario: aceptar aparta, salir de aceptada libera.
+  // Todo eso ocurre DENTRO de la base (supabase/sql/07_cotizacion_estado.sql), en
+  // una sola operación: o se cambia el estado y se mueve el inventario, o no se
+  // hace nada. Aquí solo se pide y se cuenta lo que respondió.
   // -------------------------------------------------------------------------
-  async function cambiarEstado(c, nuevo) {
+  async function cambiarEstado(c, nuevo, forzar = false) {
     setError(''); setMensaje('')
-    const anterior = c.estado
-    if (anterior === nuevo) return
+    if (c.estado === nuevo) return
 
-    const conProducto = (c.partidas || []).filter(p => p.producto_id)
-    let movimientos = []
-
-    if (nuevo === 'aceptada' && anterior !== 'aceptada') {
-      movimientos = conProducto.map(p => ({
-        producto_id: p.producto_id, tipo: 'apartado', cantidad: p.cantidad,
-        cliente_id: c.cliente_id, cotizacion_id: c.id,
-        referencia: `COT-${c.folio}`, notas: 'Apartado al aprobar la cotización'
-      }))
-    }
-    // Salir de "aceptada" hacia cualquier otro estado libera lo apartado; si no,
-    // pasar a "enviada" dejaría material apartado para una cotización no aprobada.
-    if (anterior === 'aceptada' && nuevo !== 'aceptada') {
-      movimientos = conProducto.map(p => ({
-        producto_id: p.producto_id, tipo: 'libera_apartado', cantidad: p.cantidad,
-        cliente_id: c.cliente_id, cotizacion_id: c.id,
-        referencia: `COT-${c.folio}`, notas: `Liberado: la cotización pasó a ${nuevo}`
-      }))
-    }
-
-    if (nuevo === 'aceptada') {
-      const faltantes = conProducto.filter(p => (dispoPorId[p.producto_id] ?? 0) < p.cantidad)
-      if (faltantes.length > 0) {
-        const lista = faltantes.map(p => `${p.sku} (hay ${dispoPorId[p.producto_id] ?? 0}, piden ${p.cantidad})`).join(', ')
-        if (!confirm(`No alcanza el disponible en: ${lista}.\n\n¿Aceptar de todos modos? El disponible quedará en negativo y se verá en Inventario.`)) return
-      }
-    }
-
-    const cambios = { estado: nuevo }
-    if (nuevo === 'aceptada') {
-      cambios.aprobada_por = (await supabase.auth.getUser()).data.user?.email || 'crm'
-      cambios.fecha_aprobacion = new Date().toISOString()
-    }
-
-    const { error } = await supabase.from('cotizaciones').update(cambios).eq('id', c.id)
+    const { data, error } = await supabase.rpc('cambiar_estado_cotizacion', {
+      p_id: c.id, p_nuevo: nuevo, p_forzar: forzar
+    })
     if (error) return setError(error.message)
 
-    if (movimientos.length > 0) {
-      const { error: em } = await supabase.from('movimientos_inventario').insert(movimientos)
-      if (em) setError(`La cotización cambió, pero el inventario no se movió: ${em.message}`)
-      else setMensaje(`${nuevo === 'aceptada' ? 'Apartadas' : 'Liberadas'} ${movimientos.length} partida(s) en almacén.`)
+    // No alcanza el disponible: la base no cambió nada y devolvió qué falta.
+    if (!data.ok) {
+      const lista = (data.faltantes || [])
+        .map(f => `${f.sku} (hay ${f.disponible}, piden ${f.pide})`).join(', ')
+      if (!confirm(`No alcanza el disponible en: ${lista}.\n\n¿Aceptar de todos modos? El disponible quedará en negativo y se verá en Inventario.`)) return
+      return cambiarEstado(c, nuevo, true)
+    }
+
+    if (data.sin_cambio) {
+      setMensaje('La cotización ya estaba en ese estado.')
+    } else if (data.movimientos > 0) {
+      setMensaje(`${data.movimiento === 'apartado' ? 'Apartadas' : 'Liberadas'} ${data.movimientos} partida(s) en almacén.`)
     } else {
       setMensaje(`Cotización marcada como ${nuevo}.`)
     }
