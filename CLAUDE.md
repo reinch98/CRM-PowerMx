@@ -162,7 +162,8 @@ rol `cliente` y limita historial y pregunta; lint en cero.
      en `tecnico_crea_ordenes` exigir `tecnico_id = auth.uid()` **solo después** de
      vaciar la cola offline de los celulares, o las órdenes con `tecnico_id` nulo
      se quedarían atoradas; restringir escritura en `catalogos` y `auditoria`.
-   - Probar el agente y las pantallas con una cuenta de técnico y otra de cliente.
+   - Probar las pantallas con una cuenta de técnico (Agenda, Órdenes) y, cuando
+     exista el portal, con una de cliente. El agente es solo de admin.
 2. **Confiabilidad del campo**
    - Que se vea por qué una orden no sube (hoy falla en silencio y reintenta).
    - PWA: manifest y service worker, para que Órdenes abra al recargar sin señal.
@@ -188,4 +189,7 @@ rol `cliente` y limita historial y pregunta; lint en cero.
 - SKUs a corregir: `22676` y `99727` (les falta el cero inicial), `REF-FILTRO-CAT-001`
   (datos del ejemplo original), `LIQ-34` contra la foto `LIQ-32.jpg`.
 - Que `convertir.js` del sitio lea del CRM en vez del Excel.
-- Probar el agente con una cuenta de técnico: no debe dar costos.
+- Decisión (19/09/2026): el agente es **solo para admin** (`PANTALLAS.agente` en
+  `App.jsx`) para cuidar el saldo de la API. La función igual acepta al técnico por
+  llamada directa; el costo solo sale si el rol es `admin`. Si algún día se abre al
+  técnico, probar antes que no dé costos ni cotizaciones.
