@@ -294,28 +294,17 @@ export default function Cotizaciones({ irA }) {
 
   const vence = c => sumarDias(c.fecha, c.vigencia_dias || 15)
 
-  const campo = { padding: 8, fontSize: 15, width: '100%', boxSizing: 'border-box' }
-  const tab = a => ({
-    padding: '8px 16px', marginRight: 6, cursor: 'pointer',
-    border: '1px solid #ccc', borderRadius: 6,
-    background: a ? '#333' : '#fff', color: a ? '#fff' : '#333'
-  })
-  const colorEstado = {
-    borrador: '#757575', enviada: '#1565c0', aceptada: '#2e7d32',
-    rechazada: '#c62828', vencida: '#ef6c00'
-  }
-
   return (
-    <div style={{ padding: 20, fontFamily: 'system-ui' }}>
+    <div className="pagina">
       <h2>Cotizaciones</h2>
 
-      <div style={{ marginBottom: 16 }}>
-        <button style={tab(vista === 'lista')} onClick={() => setVista('lista')}>Lista</button>
-        <button style={tab(vista === 'nueva')} onClick={() => setVista('nueva')}>Nueva</button>
+      <div className="pestanas">
+        <button className="pestana" aria-pressed={vista === 'lista'} onClick={() => setVista('lista')}>Lista</button>
+        <button className="pestana" aria-pressed={vista === 'nueva'} onClick={() => setVista('nueva')}>Nueva</button>
       </div>
 
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {mensaje && <p style={{ color: 'green' }}>{mensaje}</p>}
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {mensaje && <Alerta tipo="ok" palabra="Listo">{mensaje}</Alerta>}
 
       {aviso?.visita && (
         <Alerta tipo="ok" palabra="Visita">
@@ -346,11 +335,11 @@ export default function Cotizaciones({ irA }) {
       )}
 
       {aviso && (aviso.faltantes.length > 0 || aviso.canceladas > 0 || aviso.enCurso > 0) && (
-        <div style={{ padding: 12, background: '#fef3c7', color: '#0c1520', borderRadius: 8, marginBottom: 14, maxWidth: 680 }}>
+        <Alerta tipo="aviso" palabra={aviso.faltantes.length > 0 ? 'Faltó material' : 'Requisiciones'}>
           {aviso.faltantes.length > 0 && (
             <>
-              <strong>Faltó material: se generó una requisición de pedido.</strong>
-              <ul style={{ margin: '6px 0' , paddingLeft: 20 }}>
+              Se generó una requisición de pedido.
+              <ul style={{ margin: '6px 0', paddingLeft: 20 }}>
                 {aviso.faltantes.map(f => (
                   <li key={f.sku}>
                     {f.sku}: se piden {f.pide}, hay {Math.max(f.disponible, 0)} → <strong>a pedir {f.a_pedir}</strong>
@@ -364,94 +353,102 @@ export default function Cotizaciones({ irA }) {
           )}
           {aviso.enCurso > 0 && (
             <div>
-              <strong>Ojo:</strong> {aviso.enCurso} requisición(es) ya estaban pedidas al proveedor y
+              {aviso.enCurso} requisición(es) ya estaban pedidas al proveedor y
               siguen activas. Revisa si todavía las necesitas.
             </div>
           )}
           {irA && (
-            <button onClick={() => irA('requisiciones')} style={{ marginTop: 8, padding: '8px 14px' }}>
-              Ir a Requisiciones
-            </button>
+            <div style={{ marginTop: 8 }}>
+              <button onClick={() => irA('requisiciones')}>Ir a Requisiciones</button>
+            </div>
           )}
-        </div>
+        </Alerta>
       )}
 
       {/* ------------------------------------------------------------------ */}
       {vista === 'lista' && (
         <>
-          <table border="1" cellPadding="6" style={{ borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr>
-                <th>Folio</th><th>Cliente</th><th>Fecha</th><th>Vence</th>
-                <th>Tipo</th><th>Total</th><th>Estado</th><th>Visita</th><th>Cambiar a</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {cotizaciones.map(c => (
-                <tr key={c.id}>
-                  <td>{c.folio}</td>
-                  <td>{c.clientes?.nombre}</td>
-                  <td>{c.fecha}</td>
-                  <td>{vence(c)}</td>
-                  <td>{c.tipo}{c.requiere_visita && ' · visita'}</td>
-                  <td align="right">{pesos(c.total)}</td>
-                  <td><strong style={{ color: colorEstado[c.estado] }}>{c.estado}</strong></td>
-                  <td>
-                    {citaDe[c.id]
-                      ? (citaDe[c.id].estado === 'por_programar' ? 'Por programar' : citaDe[c.id].fecha)
-                      : (llevaVisita(c) ? 'Sin cita' : '—')}
-                  </td>
-                  <td>
-                    <select value="" onChange={e => e.target.value && cambiarEstado(c, e.target.value)}>
-                      <option value="">—</option>
-                      {ESTADOS.filter(([v]) => v !== c.estado).map(([v, t]) => (
-                        <option key={v} value={v}>{t}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td><button onClick={() => setDetalle(detalle === c.id ? null : c.id)}>
-                    {detalle === c.id ? 'Cerrar' : 'Ver'}
-                  </button></td>
+          <div className="tabla-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Folio</th><th>Cliente</th><th>Fecha</th><th>Vence</th>
+                  <th>Tipo</th><th>Total</th><th>Estado</th><th>Visita</th><th>Cambiar a</th><th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {cotizaciones.map(c => (
+                  <tr key={c.id}>
+                    <td>{c.folio}</td>
+                    <td>{c.clientes?.nombre}</td>
+                    <td>{c.fecha}</td>
+                    <td>{vence(c)}</td>
+                    <td>{c.tipo}{c.requiere_visita && ' · visita'}</td>
+                    <td align="right">{pesos(c.total)}</td>
+                    <td><span className={`estado estado-${c.estado}`}>{c.estado}</span></td>
+                    <td>
+                      {citaDe[c.id]
+                        ? (citaDe[c.id].estado === 'por_programar' ? 'Por programar' : citaDe[c.id].fecha)
+                        : (llevaVisita(c) ? 'Sin cita' : '—')}
+                    </td>
+                    <td>
+                      <select value="" aria-label={`Cambiar el estado de la cotización ${c.folio}`}
+                        onChange={e => e.target.value && cambiarEstado(c, e.target.value)}>
+                        <option value="">—</option>
+                        {ESTADOS.filter(([v]) => v !== c.estado).map(([v, t]) => (
+                          <option key={v} value={v}>{t}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td><button onClick={() => setDetalle(detalle === c.id ? null : c.id)}>
+                      {detalle === c.id ? 'Cerrar' : 'Ver'}
+                    </button></td>
+                  </tr>
+                ))}
+                {cotizaciones.length === 0 && (
+                  <tr><td colSpan={10} className="ayuda">Todavía no hay cotizaciones.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
           {detalle && (() => {
             const c = cotizaciones.find(x => x.id === detalle)
             if (!c) return null
             return (
-              <div style={{ marginTop: 20, padding: 16, border: '1px solid #ccc', borderRadius: 8, maxWidth: 720 }}>
+              <section className="tarjeta" style={{ maxWidth: 760 }}>
                 <h3>Cotización {c.folio} — {c.clientes?.nombre}</h3>
-                <table border="1" cellPadding="6" style={{ borderCollapse: 'collapse', fontSize: 14, width: '100%' }}>
-                  <thead>
-                    <tr><th>SKU</th><th>Descripción</th><th>Cant.</th><th>P. unitario</th><th>Importe</th></tr>
-                  </thead>
-                  <tbody>
-                    {(c.partidas || []).map((p, i) => (
-                      <tr key={i}>
-                        <td>{p.sku || '—'}</td>
-                        <td>{p.descripcion}</td>
-                        <td align="right">{p.cantidad}</td>
-                        <td align="right">{pesos(p.precio_unitario)}</td>
-                        <td align="right">{pesos(p.importe)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div style={{ textAlign: 'right', marginTop: 10, lineHeight: 1.8 }}>
+                <div className="tabla-scroll">
+                  <table style={{ width: '100%' }}>
+                    <thead>
+                      <tr><th>SKU</th><th>Descripción</th><th>Cant.</th><th>P. unitario</th><th>Importe</th></tr>
+                    </thead>
+                    <tbody>
+                      {(c.partidas || []).map((p, i) => (
+                        <tr key={i}>
+                          <td>{p.sku || '—'}</td>
+                          <td>{p.descripcion}</td>
+                          <td align="right">{p.cantidad}</td>
+                          <td align="right">{pesos(p.precio_unitario)}</td>
+                          <td align="right">{pesos(p.importe)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ textAlign: 'right', lineHeight: 1.8 }}>
                   <div>Subtotal: {pesos(c.subtotal)}</div>
                   {c.descuento > 0 && <div>Descuento: −{pesos(c.descuento)}</div>}
                   <div>IVA: {pesos(c.iva)}</div>
-                  <div style={{ fontSize: 18 }}><strong>Total: {pesos(c.total)}</strong></div>
+                  <div style={{ fontSize: 20 }}><strong>Total: {pesos(c.total)}</strong></div>
                 </div>
-                {c.condiciones && <p style={{ whiteSpace: 'pre-line', color: '#555', fontSize: 13 }}>{c.condiciones}</p>}
+                {c.condiciones && <p className="ayuda" style={{ whiteSpace: 'pre-line' }}>{c.condiciones}</p>}
                 {c.notas_internas && (
-                  <p style={{ background: '#fff3e0', padding: 8, fontSize: 13 }}>
-                    Nota interna (no se manda al cliente): {c.notas_internas}
-                  </p>
+                  <Alerta tipo="aviso" palabra="Nota interna">
+                    No se manda al cliente: {c.notas_internas}
+                  </Alerta>
                 )}
-              </div>
+              </section>
             )
           })()}
         </>
@@ -460,22 +457,21 @@ export default function Cotizaciones({ irA }) {
       {/* ------------------------------------------------------------------ */}
       {vista === 'nueva' && (
         <form onSubmit={guardar} style={{ maxWidth: 820 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
-            <label>
-              Cliente *
+          <div className="rejilla-2">
+            <label className="campo">
+              <span>Cliente *</span>
               <select
                 value={form.cliente_id}
                 onChange={e => setForm({ ...form, cliente_id: e.target.value, equipo_id: '' })}
-                style={campo}
               >
                 <option value="">— Elige el cliente —</option>
                 {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </label>
 
-            <label>
-              Equipo (opcional)
-              <select value={form.equipo_id} onChange={e => setForm({ ...form, equipo_id: e.target.value })} style={campo}>
+            <label className="campo">
+              <span>Equipo (opcional)</span>
+              <select value={form.equipo_id} onChange={e => setForm({ ...form, equipo_id: e.target.value })}>
                 <option value="">— Ninguno —</option>
                 {equiposDelCliente.map(e => (
                   <option key={e.id} value={e.id}>
@@ -485,48 +481,48 @@ export default function Cotizaciones({ irA }) {
               </select>
             </label>
 
-            <label>
-              Tipo
-              <select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })} style={campo}>
+            <label className="campo">
+              <span>Tipo</span>
+              <select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>
                 {TIPOS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
               </select>
             </label>
 
-            <label>
-              Fecha
-              <input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} style={campo} />
+            <label className="campo">
+              <span>Fecha</span>
+              <input type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} />
             </label>
 
-            <label>
-              Vigencia (días)
-              <input type="number" value={form.vigencia_dias} onChange={e => setForm({ ...form, vigencia_dias: e.target.value })} style={campo} />
+            <label className="campo">
+              <span>Vigencia (días)</span>
+              <input type="number" value={form.vigencia_dias}
+                onChange={e => setForm({ ...form, vigencia_dias: e.target.value })} />
             </label>
 
-            <label style={{ alignSelf: 'end' }}>
+            <label className="casilla">
               <input
                 type="checkbox"
                 checked={form.requiere_visita}
                 onChange={e => setForm({ ...form, requiere_visita: e.target.checked })}
               />
-              {' '}Requiere visita técnica
+              Requiere visita técnica
             </label>
           </div>
 
           {form.requiere_visita && (
-            <p style={{ background: '#fff3e0', padding: 10, borderRadius: 6, fontSize: 14 }}>
-              Marcada como visita: fuera del metraje estándar el precio no sale de catálogo.
-              Cotiza después de medir en sitio.
-            </p>
+            <Alerta tipo="aviso" palabra="Visita">
+              Fuera del metraje estándar el precio no sale de catálogo. Cotiza después de medir en sitio.
+            </Alerta>
           )}
 
           {llevaVisita(form) && (
-            <section className="tarjeta" style={{ maxWidth: 820 }}>
+            <section className="tarjeta">
               <h3>Programación propuesta</h3>
               <p className="ayuda">
                 Al <strong>aceptar</strong> la cotización se abre la cita con estos datos y su orden de
                 servicio. Sin fecha, la cita queda <strong>por programar</strong> en la Agenda.
               </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="rejilla-2">
                 <label className="campo">
                   <span>Fecha</span>
                   <input type="date" value={form.prog_fecha}
@@ -565,7 +561,7 @@ export default function Cotizaciones({ irA }) {
           )}
 
           {form.tipo === 'diagnostico' && (
-            <section className="tarjeta" style={{ maxWidth: 820 }}>
+            <section className="tarjeta">
               <h3>Diagnóstico y traslado</h3>
               <p className="ayuda">
                 El precio del diagnóstico sale de la clase y capacidad del equipo. El traslado
@@ -582,121 +578,112 @@ export default function Cotizaciones({ irA }) {
 
           <h3>Partidas</h3>
 
-          <div style={{ marginBottom: 10, position: 'relative', maxWidth: 420 }}>
+          <div className="buscador">
             <input
               placeholder="Buscar producto por SKU o nombre"
+              aria-label="Buscar producto por SKU o nombre"
               value={buscar}
               onChange={e => setBuscar(e.target.value)}
-              style={campo}
             />
             {encontrados.length > 0 && (
-              <div style={{
-                position: 'absolute', zIndex: 10, background: '#fff', border: '1px solid #ccc',
-                width: '100%', maxHeight: 260, overflowY: 'auto'
-              }}>
+              <div className="buscador-lista">
                 {encontrados.map(p => (
-                  <div
-                    key={p.id}
-                    onClick={() => agregarProducto(p)}
-                    style={{ padding: 8, cursor: 'pointer', borderBottom: '1px solid #eee', fontSize: 14 }}
-                  >
+                  <button key={p.id} type="button" onClick={() => agregarProducto(p)}>
                     <strong>{p.sku}</strong> — {p.nombre}
-                    <div style={{ color: '#666', fontSize: 12 }}>
+                    <span className="ayuda">
                       {p.precio == null ? 'sin precio' : pesos(p.precio)}
                       {' · disponible '}{dispoPorId[p.id] ?? 0}
-                    </div>
-                  </div>
+                    </span>
+                  </button>
                 ))}
               </div>
             )}
           </div>
 
           <button type="button" onClick={agregarLibre} style={{ marginBottom: 12 }}>
-            Agregar partida libre
+            ＋ Agregar partida libre
           </button>
 
-          <table border="1" cellPadding="6" style={{ borderCollapse: 'collapse', fontSize: 14, width: '100%', marginBottom: 16 }}>
-            <thead>
-              <tr>
-                <th>SKU</th><th>Descripción</th><th style={{ width: 80 }}>Cant.</th>
-                <th style={{ width: 110 }}>P. unitario</th><th style={{ width: 110 }}>Importe</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {partidas.map((p, i) => (
-                <tr key={i}>
-                  <td style={{ fontSize: 12 }}>
-                    {p.sku || '—'}
-                    {faltaDePartida(p) > 0 && (
-                      <div style={{ color: '#92400e', fontWeight: 600 }}>
-                        Sin existencia suficiente: faltan {faltaDePartida(p)}. Se pedirá al aceptar.
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    <input
-                      value={p.descripcion}
-                      onChange={e => cambiarPartida(i, 'descripcion', e.target.value)}
-                      style={{ width: '100%', padding: 4 }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number" value={p.cantidad}
-                      onChange={e => cambiarPartida(i, 'cantidad', e.target.value)}
-                      style={{ width: '100%', padding: 4, textAlign: 'right' }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number" value={p.precio_unitario}
-                      onChange={e => cambiarPartida(i, 'precio_unitario', e.target.value)}
-                      style={{ width: '100%', padding: 4, textAlign: 'right' }}
-                    />
-                  </td>
-                  <td align="right">{pesos(num(p.cantidad) * num(p.precio_unitario))}</td>
-                  <td><button type="button" onClick={() => quitarPartida(i)}>×</button></td>
+          <div className="tabla-scroll">
+            <table style={{ width: '100%', minWidth: 640 }}>
+              <thead>
+                <tr>
+                  <th>SKU</th><th>Descripción</th><th style={{ width: 96 }}>Cant.</th>
+                  <th style={{ width: 130 }}>P. unitario</th><th style={{ width: 130 }}>Importe</th><th></th>
                 </tr>
-              ))}
-              {partidas.length === 0 && (
-                <tr><td colSpan={6} style={{ color: '#888', textAlign: 'center' }}>Sin partidas todavía</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {partidas.map((p, i) => (
+                  <tr key={i}>
+                    <td>
+                      {p.sku || '—'}
+                      {faltaDePartida(p) > 0 && (
+                        <div className="estado-pendiente" style={{ fontWeight: 700 }}>
+                          Sin existencia suficiente: faltan {faltaDePartida(p)}. Se pedirá al aceptar.
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <input
+                        aria-label={`Descripción de la partida ${i + 1}`} style={{ width: '100%' }}
+                        value={p.descripcion}
+                        onChange={e => cambiarPartida(i, 'descripcion', e.target.value)}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number" aria-label={`Cantidad de la partida ${i + 1}`}
+                        style={{ width: '100%', textAlign: 'right' }} value={p.cantidad}
+                        onChange={e => cambiarPartida(i, 'cantidad', e.target.value)}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number" aria-label={`Precio unitario de la partida ${i + 1}`}
+                        style={{ width: '100%', textAlign: 'right' }} value={p.precio_unitario}
+                        onChange={e => cambiarPartida(i, 'precio_unitario', e.target.value)}
+                      />
+                    </td>
+                    <td align="right">{pesos(num(p.cantidad) * num(p.precio_unitario))}</td>
+                    <td><button type="button" className="btn-peligro" aria-label={`Quitar la partida ${i + 1}`}
+                      onClick={() => quitarPartida(i)}>×</button></td>
+                  </tr>
+                ))}
+                {partidas.length === 0 && (
+                  <tr><td colSpan={6} className="ayuda" style={{ textAlign: 'center' }}>Sin partidas todavía</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
           <div style={{ textAlign: 'right', lineHeight: 1.9, marginBottom: 16 }}>
             <div>Subtotal: {pesos(subtotal)}</div>
             <div>
-              Descuento:{' '}
-              <input
-                type="number" value={form.descuento}
-                onChange={e => setForm({ ...form, descuento: e.target.value })}
-                style={{ width: 110, padding: 4, textAlign: 'right' }}
-              />
+              <label className="fila" style={{ justifyContent: 'flex-end' }}>
+                Descuento
+                <input
+                  type="number" style={{ width: 130, textAlign: 'right' }} value={form.descuento}
+                  onChange={e => setForm({ ...form, descuento: e.target.value })}
+                />
+              </label>
             </div>
             <div>IVA ({IVA * 100}%): {pesos(iva)}</div>
-            <div style={{ fontSize: 19 }}><strong>Total: {pesos(total)}</strong></div>
+            <div style={{ fontSize: 22 }}><strong>Total: {pesos(total)}</strong></div>
           </div>
 
-          <label style={{ display: 'block', marginBottom: 10 }}>
-            Condiciones (se imprimen para el cliente)
-            <textarea
-              rows={4} value={form.condiciones}
-              onChange={e => setForm({ ...form, condiciones: e.target.value })}
-              style={campo}
-            />
+          <label className="campo">
+            <span>Condiciones (se imprimen para el cliente)</span>
+            <textarea rows={4} value={form.condiciones}
+              onChange={e => setForm({ ...form, condiciones: e.target.value })} />
           </label>
 
-          <label style={{ display: 'block', marginBottom: 16 }}>
-            Notas internas (nunca se mandan al cliente)
-            <textarea
-              rows={2} value={form.notas_internas}
-              onChange={e => setForm({ ...form, notas_internas: e.target.value })}
-              style={campo}
-            />
+          <label className="campo">
+            <span>Notas internas (nunca se mandan al cliente)</span>
+            <textarea rows={2} value={form.notas_internas}
+              onChange={e => setForm({ ...form, notas_internas: e.target.value })} />
           </label>
 
-          <button type="submit" disabled={guardando} style={{ padding: 12, fontSize: 16 }}>
+          <button type="submit" className="btn-primario btn-grande" disabled={guardando}>
             {guardando ? 'Guardando…' : 'Guardar como borrador'}
           </button>
         </form>

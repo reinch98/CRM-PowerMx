@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { Alerta } from './ui'
 
 // Requisiciones de pedido: lo que faltó en almacén al aceptar una cotización.
 // El cambio de estado lo hace la base (supabase/sql/08_requisiciones.sql); al
@@ -14,7 +15,6 @@ const ESTADOS = [
 ]
 
 const ETIQUETA = { pendiente: 'Por pedir', pedida: 'Pedida', recibida: 'Recibida', cancelada: 'Cancelada' }
-const COLOR = { pendiente: '#92400e', pedida: '#1565c0', recibida: '#2e7d32', cancelada: '#475569' }
 
 export default function Requisiciones() {
   const [filas, setFilas] = useState([])
@@ -78,27 +78,19 @@ export default function Requisiciones() {
     cargar()
   }
 
-  const campo = { padding: 6, fontSize: 14, width: 130, boxSizing: 'border-box' }
-  const tab = a => ({
-    padding: '8px 14px', marginRight: 6, marginBottom: 6, cursor: 'pointer',
-    border: '1px solid #ccc', borderRadius: 6,
-    background: a ? '#333' : '#fff', color: a ? '#fff' : '#333'
-  })
-
   return (
-    <div style={{ padding: 20, fontFamily: 'system-ui' }}>
+    <div className="pagina">
       <h2>Requisiciones de pedido</h2>
-      <p style={{ color: '#475569', marginTop: 0, fontSize: 14, maxWidth: 680 }}>
+      <p className="ayuda" style={{ maxWidth: 680 }}>
         Aquí llega lo que faltó en almacén al aceptar una cotización. Al marcar una
         como <strong>Recibida</strong> el material entra solo al inventario.
       </p>
 
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {mensaje && <p style={{ color: 'green' }}>{mensaje}</p>}
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {mensaje && <Alerta tipo="ok" palabra="Listo">{mensaje}</Alerta>}
 
       {porProducto.length > 0 && (
-        <div style={{ padding: 12, background: '#fef3c7', color: '#0c1520', borderRadius: 8, marginBottom: 16, maxWidth: 680 }}>
-          <strong>Por pedir ({porProducto.length} producto{porProducto.length === 1 ? '' : 's'}):</strong>
+        <Alerta tipo="aviso" palabra={`Por pedir (${porProducto.length} producto${porProducto.length === 1 ? '' : 's'})`}>
           <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
             {porProducto.map(p => (
               <li key={p.sku}>
@@ -106,85 +98,89 @@ export default function Requisiciones() {
               </li>
             ))}
           </ul>
-        </div>
+        </Alerta>
       )}
 
-      <div style={{ marginBottom: 12 }}>
+      <div className="pestanas">
         {ESTADOS.map(([v, t]) => (
-          <button key={v} style={tab(filtro === v)} onClick={() => setFiltro(v)}>
+          <button key={v} className="pestana" aria-pressed={filtro === v} onClick={() => setFiltro(v)}>
             {t} ({cuantas[v] || 0})
           </button>
         ))}
       </div>
 
-      <table border="1" cellPadding="6" style={{ borderCollapse: 'collapse', fontSize: 14 }}>
-        <thead>
-          <tr>
-            <th>Folio</th><th>Producto</th><th>Cantidad</th><th>Cotización</th>
-            <th>Estado</th><th>Proveedor / referencia</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibles.map(f => {
-            const ed = datos[f.id] || {}
-            const abierta = f.estado === 'pendiente' || f.estado === 'pedida'
-            return (
-              <tr key={f.id}>
-                <td>REQ-{f.folio}</td>
-                <td>
-                  <strong>{f.productos?.sku}</strong>
-                  <div style={{ color: '#475569', fontSize: 13 }}>{f.productos?.nombre}</div>
-                </td>
-                <td align="right">{f.cantidad} {f.productos?.unidad || ''}</td>
-                <td>
-                  {f.cotizaciones ? `COT-${f.cotizaciones.folio}` : '—'}
-                  <div style={{ color: '#475569', fontSize: 13 }}>{f.clientes?.nombre}</div>
-                </td>
-                <td><strong style={{ color: COLOR[f.estado] }}>{ETIQUETA[f.estado]}</strong></td>
-                <td>
-                  {f.estado === 'pendiente' ? (
-                    <div style={{ display: 'grid', gap: 4 }}>
-                      <input
-                        placeholder="Proveedor" style={campo} value={ed.proveedor || ''}
-                        onChange={e => setDatos({ ...datos, [f.id]: { ...ed, proveedor: e.target.value } })}
-                      />
-                      <input
-                        placeholder="Orden de compra" style={campo} value={ed.referencia || ''}
-                        onChange={e => setDatos({ ...datos, [f.id]: { ...ed, referencia: e.target.value } })}
-                      />
-                    </div>
-                  ) : (
-                    <>
-                      {f.proveedor || '—'}
-                      {f.referencia && <div style={{ color: '#475569', fontSize: 13 }}>{f.referencia}</div>}
-                      {f.fecha_pedido && <div style={{ color: '#475569', fontSize: 13 }}>Pedida: {f.fecha_pedido}</div>}
-                      {f.fecha_recibida && <div style={{ color: '#475569', fontSize: 13 }}>Recibida: {f.fecha_recibida}</div>}
-                    </>
-                  )}
-                </td>
-                <td>
-                  {abierta && (
-                    <div style={{ display: 'grid', gap: 4 }}>
-                      {f.estado === 'pendiente' && (
-                        <button disabled={!!trabajando} onClick={() => cambiar(f, 'pedida')}>
-                          {trabajando === f.id ? 'Guardando…' : 'Marcar pedida'}
-                        </button>
-                      )}
-                      <button disabled={!!trabajando} onClick={() => cambiar(f, 'recibida')}>Recibida</button>
-                      <button disabled={!!trabajando} onClick={() => cambiar(f, 'cancelada')}>Cancelar</button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-          {visibles.length === 0 && (
-            <tr><td colSpan={7} style={{ color: '#475569', textAlign: 'center' }}>
-              {filas.length === 0 ? 'Todavía no hay requisiciones.' : 'Nada en esta lista.'}
-            </td></tr>
-          )}
-        </tbody>
-      </table>
+      <div className="tabla-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Folio</th><th>Producto</th><th>Cantidad</th><th>Cotización</th>
+              <th>Estado</th><th>Proveedor / referencia</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibles.map(f => {
+              const ed = datos[f.id] || {}
+              const abierta = f.estado === 'pendiente' || f.estado === 'pedida'
+              return (
+                <tr key={f.id}>
+                  <td>REQ-{f.folio}</td>
+                  <td>
+                    <strong>{f.productos?.sku}</strong>
+                    <div className="ayuda">{f.productos?.nombre}</div>
+                  </td>
+                  <td align="right">{f.cantidad} {f.productos?.unidad || ''}</td>
+                  <td>
+                    {f.cotizaciones ? `COT-${f.cotizaciones.folio}` : '—'}
+                    <div className="ayuda">{f.clientes?.nombre}</div>
+                  </td>
+                  <td><span className={`estado estado-${f.estado}`}>{ETIQUETA[f.estado]}</span></td>
+                  <td>
+                    {f.estado === 'pendiente' ? (
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        <input
+                          placeholder="Proveedor" aria-label="Proveedor" style={{ width: 170 }}
+                          value={ed.proveedor || ''}
+                          onChange={e => setDatos({ ...datos, [f.id]: { ...ed, proveedor: e.target.value } })}
+                        />
+                        <input
+                          placeholder="Orden de compra" aria-label="Orden de compra" style={{ width: 170 }}
+                          value={ed.referencia || ''}
+                          onChange={e => setDatos({ ...datos, [f.id]: { ...ed, referencia: e.target.value } })}
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        {f.proveedor || '—'}
+                        {f.referencia && <div className="ayuda">{f.referencia}</div>}
+                        {f.fecha_pedido && <div className="ayuda">Pedida: {f.fecha_pedido}</div>}
+                        {f.fecha_recibida && <div className="ayuda">Recibida: {f.fecha_recibida}</div>}
+                      </>
+                    )}
+                  </td>
+                  <td>
+                    {abierta && (
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        {f.estado === 'pendiente' && (
+                          <button className="btn-primario" disabled={!!trabajando} onClick={() => cambiar(f, 'pedida')}>
+                            {trabajando === f.id ? 'Guardando…' : 'Marcar pedida'}
+                          </button>
+                        )}
+                        <button disabled={!!trabajando} onClick={() => cambiar(f, 'recibida')}>Recibida</button>
+                        <button className="btn-peligro" disabled={!!trabajando} onClick={() => cambiar(f, 'cancelada')}>Cancelar</button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+            {visibles.length === 0 && (
+              <tr><td colSpan={7} className="ayuda">
+                {filas.length === 0 ? 'Todavía no hay requisiciones.' : 'Nada en esta lista.'}
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

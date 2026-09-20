@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { Alerta } from './ui'
 
 const ROLES = [
   ['admin', 'Administrador', 'Ve y hace todo: precios, costos, cotizaciones e inventario.'],
@@ -53,82 +54,92 @@ export default function Tecnicos() {
   }
 
   const val = (p, campo) => (campo in (edicion[p.id] || {}) ? edicion[p.id][campo] : (p[campo] ?? ''))
-  const campo = { padding: 5, fontSize: 14, width: '100%', boxSizing: 'border-box' }
   const sinRol = perfiles.filter(p => p.rol === 'sin_rol').length
 
   return (
-    <div style={{ padding: 20, fontFamily: 'system-ui' }}>
+    <div className="pagina">
       <h2>Usuarios y técnicos</h2>
 
-      <div style={{ padding: 12, background: '#e8eaf6', borderRadius: 6, marginBottom: 16, maxWidth: 720, fontSize: 14 }}>
-        Las cuentas se crean en Supabase, en Authentication → Add user. En cuanto
-        el usuario existe aparece aquí solo, sin permisos, y tú le das su rol.
-        Mientras tanto puede entrar pero no ve nada.
-      </div>
+      <Alerta tipo="info" palabra="Cómo se crean">
+        Las cuentas se crean en Supabase, en Authentication → Add user. En cuanto el usuario
+        existe aparece aquí solo, sin permisos, y tú le das su rol. Mientras tanto puede
+        entrar pero no ve nada.
+      </Alerta>
 
       {sinRol > 0 && (
-        <p style={{ padding: 10, background: '#fff3e0', borderRadius: 6, maxWidth: 720 }}>
-          Hay <strong>{sinRol}</strong> cuenta(s) esperando rol.
-        </p>
+        <Alerta tipo="aviso" palabra="Esperando rol">
+          Hay <strong>{sinRol}</strong> cuenta(s) sin rol asignado.
+        </Alerta>
       )}
 
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {mensaje && <p style={{ color: 'green' }}>{mensaje}</p>}
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {mensaje && <Alerta tipo="ok" palabra="Listo">{mensaje}</Alerta>}
 
-      <table border="1" cellPadding="6" style={{ borderCollapse: 'collapse', fontSize: 14 }}>
-        <thead>
-          <tr>
-            <th>Correo</th><th>Nombre</th><th>Rol</th><th>Cliente</th>
-            <th>Teléfono</th><th>Zona</th><th>Activo</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {perfiles.map(p => {
-            const rolActual = val(p, 'rol')
-            return (
-              <tr key={p.id} style={p.rol === 'sin_rol' ? { background: '#fff8e1' } : undefined}>
-                <td style={{ fontSize: 13 }}>{p.email}</td>
-                <td><input value={val(p, 'nombre')} onChange={e => editar(p.id, 'nombre', e.target.value)} style={{ ...campo, width: 130 }} /></td>
-                <td>
-                  <select value={rolActual} onChange={e => editar(p.id, 'rol', e.target.value)} style={campo}>
-                    {ROLES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-                  </select>
-                </td>
-                <td>
-                  {rolActual === 'cliente' ? (
-                    <select value={val(p, 'cliente_id')} onChange={e => editar(p.id, 'cliente_id', e.target.value)} style={campo}>
-                      <option value="">— Elige —</option>
-                      {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+      <div className="tabla-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Correo</th><th>Nombre</th><th>Rol</th><th>Cliente</th>
+              <th>Teléfono</th><th>Zona</th><th>Activo</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {perfiles.map(p => {
+              const rolActual = val(p, 'rol')
+              return (
+                <tr key={p.id} style={p.rol === 'sin_rol' ? { background: 'var(--aviso-fondo)' } : undefined}>
+                  <td>
+                    {p.email}
+                    {p.rol === 'sin_rol' && <div><span className="estado estado-pendiente">Sin rol</span></div>}
+                  </td>
+                  <td><input aria-label={`Nombre de ${p.email}`} style={{ width: 150 }}
+                    value={val(p, 'nombre')} onChange={e => editar(p.id, 'nombre', e.target.value)} /></td>
+                  <td>
+                    <select aria-label={`Rol de ${p.email}`} value={rolActual} onChange={e => editar(p.id, 'rol', e.target.value)}>
+                      {ROLES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
                     </select>
-                  ) : <span style={{ color: '#aaa' }}>—</span>}
-                </td>
-                <td><input value={val(p, 'telefono')} onChange={e => editar(p.id, 'telefono', e.target.value)} style={{ ...campo, width: 110 }} /></td>
-                <td><input value={val(p, 'zona')} onChange={e => editar(p.id, 'zona', e.target.value)} style={{ ...campo, width: 100 }} /></td>
-                <td align="center">
-                  <input
-                    type="checkbox"
-                    checked={'activo' in (edicion[p.id] || {}) ? edicion[p.id].activo : p.activo}
-                    onChange={e => editar(p.id, 'activo', e.target.checked)}
-                  />
-                </td>
-                <td>{edicion[p.id] && <button onClick={() => guardar(p)}>Guardar</button>}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+                  </td>
+                  <td>
+                    {rolActual === 'cliente' ? (
+                      <select aria-label={`Cliente de ${p.email}`} value={val(p, 'cliente_id')} onChange={e => editar(p.id, 'cliente_id', e.target.value)}>
+                        <option value="">— Elige —</option>
+                        {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                      </select>
+                    ) : <span className="ayuda">—</span>}
+                  </td>
+                  <td><input aria-label={`Teléfono de ${p.email}`} style={{ width: 130 }}
+                    value={val(p, 'telefono')} onChange={e => editar(p.id, 'telefono', e.target.value)} /></td>
+                  <td><input aria-label={`Zona de ${p.email}`} style={{ width: 120 }}
+                    value={val(p, 'zona')} onChange={e => editar(p.id, 'zona', e.target.value)} /></td>
+                  <td align="center">
+                    <label className="fila" style={{ justifyContent: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={'activo' in (edicion[p.id] || {}) ? edicion[p.id].activo : p.activo}
+                        onChange={e => editar(p.id, 'activo', e.target.checked)}
+                      />
+                      {('activo' in (edicion[p.id] || {}) ? edicion[p.id].activo : p.activo) ? 'Sí' : 'No'}
+                    </label>
+                  </td>
+                  <td>{edicion[p.id] && <button className="btn-primario" onClick={() => guardar(p)}>Guardar</button>}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
 
-      <h3 style={{ marginTop: 28 }}>Qué ve cada rol</h3>
-      <div style={{ display: 'grid', gap: 10, maxWidth: 640 }}>
+      <h3 style={{ marginTop: 24 }}>Qué ve cada rol</h3>
+      <div style={{ maxWidth: 640 }}>
         {ROLES.map(([v, t, d]) => (
-          <div key={v} style={{ padding: 12, border: '1px solid #ddd', borderRadius: 6 }}>
+          <div key={v} className="tarjeta" style={{ marginBottom: 10 }}>
             <strong>{t}</strong>
-            <div style={{ color: '#666', fontSize: 14 }}>{d}</div>
+            <div className="ayuda">{d}</div>
           </div>
         ))}
       </div>
 
-      <p style={{ color: '#666', fontSize: 13, marginTop: 20, maxWidth: 640 }}>
+      <p className="ayuda" style={{ maxWidth: 640 }}>
         Desactivar a alguien es mejor que borrarlo: las órdenes que capturó siguen
         apuntando a su nombre, y si lo borras se pierde quién hizo cada servicio.
       </p>

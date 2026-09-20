@@ -264,12 +264,19 @@ Los técnicos trabajan casi siempre **bajo el sol directo**. Eso manda:
   color), estados con palabra. Medido: 0 textos de menos de 17 px, 0 contrastes bajo 4.5, 0
   objetivos de menos de 48 px. No definir componentes dentro de otros componentes (pierden el
   foco al escribir): usar componentes de nivel superior o funciones que devuelvan JSX.
-- **Pendiente, en este orden:** oficina: `Clientes`, `Equipos`, `Inventario`,
-  `Cotizaciones`, `Requisiciones`, `Usuarios`, `Agente`. Cada una:
-  cambiar los estilos en línea por las clases, `Alerta` en vez de texto de color, y
-  envolver las tablas en un contenedor con `overflow-x: auto` (hoy desbordan en
-  celular). El texto mínimo de 17 px y los grises `#888`/`#666`/`#999` siguen sin
-  arreglarse en esas pantallas.
+- **Oficina: hecha** (20/09/2026): `Clientes`, `Equipos`, `Inventario`, `Cotizaciones`,
+  `Requisiciones`, `Usuarios`, `Agente` y `Tarifas`. Medido en celular emulado en las ocho
+  (y en cada pestaña de Inventario y Cotizaciones): 0 textos de menos de 17 px, 0 contrastes bajo
+  4.5, 0 objetivos de menos de 48 px, 0 px de desborde horizontal. Convenciones nuevas en
+  `index.css`: `.tabla-scroll` (toda tabla va dentro; se desplaza por dentro en vez de ensanchar
+  la página), `<details className="tarjeta"><summary className="resumen">` para altas plegables
+  (la lista es lo que más se usa), `.pestanas` + `.pestana[aria-pressed]` para pestañas de una
+  pantalla, `.rejilla-2` (dos columnas que pasan a una), `.buscador` (lista de resultados con
+  botones, no `div` con clic), `.estado-<nombre>` para estados con palabra, `.chat`.
+  **Un `.campo` nunca empuja su columna** (`min-width: 0`, controles al 100%): un
+  `<input type="number">` ensanchaba los formularios más allá del celular.
+  Solo queda por revisar visualmente el escritorio ancho (el panel del navegador integrado mide
+  375 px) y sustituir el marcador del logotipo.
 - **Ícono/logotipo:** `Logo` (ui.jsx) y `public/icono.svg` son un marcador (hexágono
   ámbar con P). Sustituirlos por los de `POWERMX-sitio/LOGOS`, y regenerar los cuatro
   PNG de `public/`. Chakra Petch no está cargada (tampoco funcionaría sin señal):
@@ -407,7 +414,7 @@ Supabase); lint en cero.
    - Recuperar `supabase/sql/01_...` (esquema base, hoy ausente del repo) para poder
      reconstruir la base desde cero.
 3. **Diseño** (ver sección Diseño): ~~tokens y componentes compartidos → Órdenes →
-   `Login`~~ hecho; falta Agenda → oficina. Además: dividir el bundle (500 kB) con
+   `Login` → Agenda → oficina~~ hecho. Además: dividir el bundle (500 kB) con
    `import()` por pantalla; quitar `react-router-dom` si no se va a usar; y
    `signOut()` sin señal no cierra la sesión local (supabase-js devuelve el error de
    red sin borrarla): decidir si "Salir" debe funcionar desconectado.

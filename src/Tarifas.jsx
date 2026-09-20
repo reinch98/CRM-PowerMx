@@ -212,7 +212,7 @@ export default function Tarifas() {
 
       <section className="tarjeta">
         <h3>Agregar tarifa</h3>
-        <form onSubmit={agregar} style={{ display: 'grid', gap: 10, maxWidth: 520 }}>
+        <form onSubmit={agregar} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, maxWidth: 520 }}>
           <label className="campo">
             <span>Concepto</span>
             <select value={nueva.concepto} onChange={e => setNueva({ ...nueva, concepto: e.target.value })}>
@@ -229,7 +229,7 @@ export default function Tarifas() {
                   {CLASES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
                 </select>
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
                 <label className="campo">
                   <span>Desde (kW)</span>
                   <input type="number" step="any" min="0" value={nueva.kw_desde}

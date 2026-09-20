@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { Alerta } from './ui'
 
 const vacio = {
   nombre: '', nombre_comercial: '', tipo_cliente: 'residencial',
@@ -82,69 +83,77 @@ export default function Clientes() {
   ]
 
   return (
-    <div style={{ padding: 20, fontFamily: 'system-ui' }}>
+    <div className="pagina">
       <h2>Clientes</h2>
 
-      <form onSubmit={guardar} style={{ display: 'grid', gap: 8, maxWidth: 480, marginBottom: 32 }}>
-        <label>
-          Tipo de cliente<br />
-          <select value={form.tipo_cliente} onChange={e => cambiar('tipo_cliente', e.target.value)}>
-            <option value="residencial">Residencial</option>
-            <option value="comercial">Comercial</option>
-            <option value="industrial">Industrial</option>
-            <option value="gobierno">Gobierno</option>
-          </select>
-        </label>
+      {error && <Alerta tipo="error">{error}</Alerta>}
 
-        {campos.map(([campo, etiqueta]) => (
-          <label key={campo}>
-            {etiqueta}<br />
-            <input
-              type={campo === 'distancia_km' ? 'number' : 'text'}
-              min={campo === 'distancia_km' ? 0 : undefined}
-              step={campo === 'distancia_km' ? 'any' : undefined}
-              value={form[campo]}
-              onChange={e => cambiar(campo, e.target.value)}
-              style={{ width: '100%' }}
-            />
+      <details className="tarjeta">
+        <summary className="resumen">＋ Agregar cliente</summary>
+        <form onSubmit={guardar} style={{ maxWidth: 520, marginTop: 12 }}>
+          <label className="campo">
+            <span>Tipo de cliente</span>
+            <select value={form.tipo_cliente} onChange={e => cambiar('tipo_cliente', e.target.value)}>
+              <option value="residencial">Residencial</option>
+              <option value="comercial">Comercial</option>
+              <option value="industrial">Industrial</option>
+              <option value="gobierno">Gobierno</option>
+            </select>
           </label>
-        ))}
 
-        <button type="submit" disabled={guardando}>
-          {guardando ? 'Guardando…' : 'Guardar cliente'}
-        </button>
-        {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      </form>
+          {campos.map(([campo, etiqueta]) => (
+            <label key={campo} className="campo">
+              <span>{etiqueta}</span>
+              <input
+                type={campo === 'distancia_km' ? 'number' : 'text'}
+                min={campo === 'distancia_km' ? 0 : undefined}
+                step={campo === 'distancia_km' ? 'any' : undefined}
+                value={form[campo]}
+                onChange={e => cambiar(campo, e.target.value)}
+              />
+            </label>
+          ))}
+
+          <button type="submit" className="btn-primario" disabled={guardando}>
+            {guardando ? 'Guardando…' : 'Guardar cliente'}
+          </button>
+        </form>
+      </details>
 
       <h3>Registrados ({clientes.length})</h3>
-      <table border="1" cellPadding="6" style={{ borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th>Nombre</th><th>Tipo</th><th>Teléfono</th><th>Zona</th><th>Municipio</th><th>Km</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {clientes.map(c => (
-            <tr key={c.id}>
-              <td>{c.nombre}</td>
-              <td>{c.tipo_cliente}</td>
-              <td>{c.telefono}</td>
-              <td>{c.zona}</td>
-              <td>{c.municipio}</td>
-              <td>
-                {/* Se guarda al salir del campo. Hace falta para el cargo de traslado. */}
-                <input
-                  type="number" min="0" step="any" style={{ width: 90 }}
-                  aria-label={`Distancia en km de ${c.nombre}`}
-                  defaultValue={c.distancia_km ?? ''}
-                  onBlur={e => guardarKm(c, e.target.value)}
-                />
-              </td>
-              <td><button onClick={() => borrar(c.id)}>Borrar</button></td>
+      <div className="tabla-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre</th><th>Tipo</th><th>Teléfono</th><th>Zona</th><th>Municipio</th><th>Km</th><th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {clientes.map(c => (
+              <tr key={c.id}>
+                <td>{c.nombre}</td>
+                <td>{c.tipo_cliente}</td>
+                <td>{c.telefono}</td>
+                <td>{c.zona}</td>
+                <td>{c.municipio}</td>
+                <td>
+                  {/* Se guarda al salir del campo. Hace falta para el cargo de traslado. */}
+                  <input
+                    type="number" min="0" step="any" style={{ width: 96 }}
+                    aria-label={`Distancia en km de ${c.nombre}`}
+                    defaultValue={c.distancia_km ?? ''}
+                    onBlur={e => guardarKm(c, e.target.value)}
+                  />
+                </td>
+                <td><button className="btn-peligro" onClick={() => borrar(c.id)}>Borrar</button></td>
+              </tr>
+            ))}
+            {clientes.length === 0 && (
+              <tr><td colSpan={7} className="ayuda">Todavía no hay clientes.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

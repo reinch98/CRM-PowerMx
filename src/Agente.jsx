@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { Alerta } from './ui'
 
 // Preguntas de arranque, para probar sin pensar qué escribir.
 const EJEMPLOS = [
@@ -82,81 +83,51 @@ export default function Agente() {
     .map((m, i) => ({ ...m, i, texto: textoDe(m) }))
     .filter(m => m.texto.trim() !== '')
 
-  const burbuja = mio => ({
-    maxWidth: '80%',
-    alignSelf: mio ? 'flex-end' : 'flex-start',
-    background: mio ? '#14314F' : '#fff',
-    color: mio ? '#fff' : '#111',
-    border: mio ? 'none' : '1px solid #ddd',
-    borderRadius: 10,
-    padding: '10px 14px',
-    whiteSpace: 'pre-wrap',
-    lineHeight: 1.5,
-  })
-
   return (
-    <div style={{ padding: 20, fontFamily: 'system-ui', maxWidth: 760, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 4 }}>
+    <div className="pagina pagina-angosta">
+      <div className="fila" style={{ justifyContent: 'space-between' }}>
         <h2 style={{ margin: 0 }}>Agente</h2>
-        {historial.length > 0 && (
-          <button onClick={limpiar} style={{ marginLeft: 'auto' }}>Empezar de nuevo</button>
-        )}
+        {historial.length > 0 && <button onClick={limpiar}>Empezar de nuevo</button>}
       </div>
-      <p style={{ color: '#666', marginTop: 0, fontSize: 14 }}>
+      <p className="ayuda">
         Consulta clientes, equipos, historial, inventario, mantenimientos y cotizaciones. No puede modificar nada.
       </p>
 
-      <div style={{
-        display: 'flex', flexDirection: 'column', gap: 10,
-        minHeight: 260, padding: 14, background: '#f6f7f9',
-        borderRadius: 10, marginBottom: 12,
-      }}>
+      <div className="chat" aria-live="polite">
         {visibles.length === 0 && !pensando && (
-          <div style={{ color: '#888', margin: 'auto', textAlign: 'center' }}>
+          <div className="chat-vacio">
             <p>Pregúntale algo.</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-              {EJEMPLOS.map(e => (
-                <button key={e} onClick={() => preguntar(e)} style={{ padding: '6px 12px' }}>
-                  {e}
-                </button>
-              ))}
+            <div className="fila" style={{ justifyContent: 'center' }}>
+              {EJEMPLOS.map(e => <button key={e} onClick={() => preguntar(e)}>{e}</button>)}
             </div>
           </div>
         )}
 
         {visibles.map(m => (
-          <div key={m.i} style={burbuja(m.role === 'user')}>{m.texto}</div>
+          <div key={m.i} className={`burbuja${m.role === 'user' ? ' burbuja-mia' : ''}`}>{m.texto}</div>
         ))}
 
-        {pensando && (
-          <div style={{ ...burbuja(false), color: '#888' }}>Buscando…</div>
-        )}
+        {pensando && <div className="burbuja">Buscando…</div>}
 
         <div ref={final} />
       </div>
 
       {ultimasHerramientas.length > 0 && !pensando && (
-        <p style={{ fontSize: 12, color: '#888', marginTop: 0 }}>
-          Consultó: {ultimasHerramientas.join(', ')}
-        </p>
+        <p className="ayuda">Consultó: {ultimasHerramientas.join(', ')}</p>
       )}
 
-      {error && (
-        <p style={{ color: 'crimson', fontSize: 14 }}>{error}</p>
-      )}
+      {error && <Alerta tipo="error">{error}</Alerta>}
 
-      <form
-        onSubmit={e => { e.preventDefault(); preguntar() }}
-        style={{ display: 'flex', gap: 8 }}
-      >
+      <form onSubmit={e => { e.preventDefault(); preguntar() }} className="fila" style={{ flexWrap: 'nowrap' }}>
         <input
           value={pregunta}
           onChange={e => setPregunta(e.target.value)}
           placeholder="Escribe tu pregunta"
+          aria-label="Tu pregunta"
           disabled={pensando}
-          style={{ flex: 1, padding: 12, fontSize: 16, boxSizing: 'border-box' }}
+          style={{ flex: 1, minWidth: 0 }}
         />
-        <button type="submit" disabled={pensando || !pregunta.trim()} style={{ padding: '12px 20px' }}>
+        <button type="submit" className="btn-primario" disabled={pensando || !pregunta.trim()}>
           Enviar
         </button>
       </form>

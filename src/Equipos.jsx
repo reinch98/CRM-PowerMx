@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { Alerta } from './ui'
 
 // Campos que cambian según el tipo de equipo. Se guardan dentro de atributos (jsonb).
 const ATRIBUTOS = {
@@ -162,145 +163,121 @@ export default function Equipos() {
   ]
 
   return (
-    <div style={{ padding: 20, fontFamily: 'system-ui' }}>
+    <div className="pagina">
       <h2>Equipos</h2>
 
-      <form onSubmit={guardar} style={{ display: 'grid', gap: 8, maxWidth: 480, marginBottom: 32 }}>
-        <label>
-          Cliente *<br />
-          <select
-            value={form.cliente_id}
-            onChange={e => cambiar('cliente_id', e.target.value)}
-            style={{ width: '100%' }}
-          >
-            <option value="">— Elige un cliente —</option>
-            {clientes.map(c => (
-              <option key={c.id} value={c.id}>{c.nombre}</option>
-            ))}
-          </select>
-        </label>
+      {error && <Alerta tipo="error">{error}</Alerta>}
 
-        <label>
-          Tipo de equipo<br />
-          <select value={form.tipo} onChange={e => cambiarTipo(e.target.value)}>
-            <option value="generador">Generador</option>
-            <option value="solar">Solar</option>
-            <option value="bateria">Batería</option>
-            <option value="otro">Otro</option>
-          </select>
-        </label>
-
-        {camposTexto.map(([campo, etiqueta]) => (
-          <label key={campo}>
-            {etiqueta}<br />
-            <input
-              value={form[campo]}
-              onChange={e => cambiar(campo, e.target.value)}
-              style={{ width: '100%' }}
-            />
+      <details className="tarjeta">
+        <summary className="resumen">＋ Agregar equipo</summary>
+        <form onSubmit={guardar} style={{ maxWidth: 520, marginTop: 12 }}>
+          <label className="campo">
+            <span>Cliente *</span>
+            <select value={form.cliente_id} onChange={e => cambiar('cliente_id', e.target.value)}>
+              <option value="">— Elige un cliente —</option>
+              {clientes.map(c => (
+                <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))}
+            </select>
           </label>
-        ))}
 
-        <label>
-          Fecha de instalación<br />
-          <input
-            type="date"
-            value={form.fecha_instalacion}
-            onChange={e => cambiar('fecha_instalacion', e.target.value)}
-          />
-        </label>
+          <label className="campo">
+            <span>Tipo de equipo</span>
+            <select value={form.tipo} onChange={e => cambiarTipo(e.target.value)}>
+              <option value="generador">Generador</option>
+              <option value="solar">Solar</option>
+              <option value="bateria">Batería</option>
+              <option value="otro">Otro</option>
+            </select>
+          </label>
 
-        <label>
-          Próximo mantenimiento<br />
-          <input
-            type="date"
-            value={form.proximo_mantenimiento}
-            onChange={e => cambiar('proximo_mantenimiento', e.target.value)}
-          />
-        </label>
+          {camposTexto.map(([campo, etiqueta]) => (
+            <label key={campo} className="campo">
+              <span>{etiqueta}</span>
+              <input value={form[campo]} onChange={e => cambiar(campo, e.target.value)} />
+            </label>
+          ))}
 
-        <label>
-          <input
-            type="checkbox"
-            checked={form.en_poliza}
-            onChange={e => cambiar('en_poliza', e.target.checked)}
-          />
-          {' '}En póliza
-        </label>
+          <label className="campo">
+            <span>Fecha de instalación</span>
+            <input type="date" value={form.fecha_instalacion}
+              onChange={e => cambiar('fecha_instalacion', e.target.value)} />
+          </label>
 
-        <label>
-          Estado<br />
-          <select value={form.estado} onChange={e => cambiar('estado', e.target.value)}>
-            <option value="activo">Activo</option>
-            <option value="baja">Baja</option>
-            <option value="en_renta">En renta</option>
-          </select>
-        </label>
+          <label className="campo">
+            <span>Próximo mantenimiento</span>
+            <input type="date" value={form.proximo_mantenimiento}
+              onChange={e => cambiar('proximo_mantenimiento', e.target.value)} />
+          </label>
 
-        {ATRIBUTOS[form.tipo].length > 0 && (
-          <fieldset style={{ border: '1px solid #ccc', padding: 12 }}>
-            <legend>Datos de {form.tipo}</legend>
-            <div style={{ display: 'grid', gap: 8 }}>
+          <label className="casilla">
+            <input type="checkbox" checked={form.en_poliza}
+              onChange={e => cambiar('en_poliza', e.target.checked)} />
+            En póliza
+          </label>
+
+          <label className="campo">
+            <span>Estado</span>
+            <select value={form.estado} onChange={e => cambiar('estado', e.target.value)}>
+              <option value="activo">Activo</option>
+              <option value="baja">Baja</option>
+              <option value="en_renta">En renta</option>
+            </select>
+          </label>
+
+          {ATRIBUTOS[form.tipo].length > 0 && (
+            <fieldset className="conjunto">
+              <legend>Datos de {form.tipo}</legend>
               {ATRIBUTOS[form.tipo].map(([campo, etiqueta]) => (
-                <label key={campo}>
-                  {etiqueta}<br />
+                <label key={campo} className="campo">
+                  <span>{etiqueta}</span>
                   {OPCIONES[campo] ? (
-                    <select
-                      value={atributos[campo] || ''}
-                      onChange={e => cambiarAtributo(campo, e.target.value)}
-                      style={{ width: '100%' }}
-                    >
+                    <select value={atributos[campo] || ''} onChange={e => cambiarAtributo(campo, e.target.value)}>
                       <option value="">— Elige —</option>
                       {OPCIONES[campo].map(([v, t]) => <option key={v} value={v}>{t}</option>)}
                     </select>
                   ) : (
-                    <input
-                      value={atributos[campo] || ''}
-                      onChange={e => cambiarAtributo(campo, e.target.value)}
-                      style={{ width: '100%' }}
-                    />
+                    <input value={atributos[campo] || ''} onChange={e => cambiarAtributo(campo, e.target.value)} />
                   )}
                 </label>
               ))}
-            </div>
-          </fieldset>
-        )}
+            </fieldset>
+          )}
 
-        <button type="submit" disabled={guardando}>
-          {guardando ? 'Guardando…' : 'Guardar equipo'}
-        </button>
-        {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      </form>
+          <button type="submit" className="btn-primario" disabled={guardando}>
+            {guardando ? 'Guardando…' : 'Guardar equipo'}
+          </button>
+        </form>
+      </details>
 
       <h3>Registrados ({equipos.length})</h3>
-      <table border="1" cellPadding="6" style={{ borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th>Número de serie</th>
-            <th>Tipo</th>
-            <th>Cliente</th>
-            <th>Marca</th>
-            <th>Modelo</th>
-            <th>Próx. mtto.</th>
-            <th>Póliza</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {equipos.map(eq => (
-            <tr key={eq.id}>
-              <td>{eq.numero_serie}</td>
-              <td>{eq.tipo}</td>
-              <td>{eq.clientes?.nombre}</td>
-              <td>{eq.marca}</td>
-              <td>{eq.modelo}</td>
-              <td>{eq.proximo_mantenimiento}</td>
-              <td>{eq.en_poliza ? 'Sí' : 'No'}</td>
-              <td><button onClick={() => borrar(eq.id)}>Borrar</button></td>
+      <div className="tabla-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Número de serie</th><th>Tipo</th><th>Cliente</th><th>Marca</th><th>Modelo</th>
+              <th>Próx. mtto.</th><th>Póliza</th><th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {equipos.map(eq => (
+              <tr key={eq.id}>
+                <td>{eq.numero_serie}</td>
+                <td>{eq.tipo}</td>
+                <td>{eq.clientes?.nombre}</td>
+                <td>{eq.marca}</td>
+                <td>{eq.modelo}</td>
+                <td>{eq.proximo_mantenimiento}</td>
+                <td>{eq.en_poliza ? 'Sí' : 'No'}</td>
+                <td><button className="btn-peligro" onClick={() => borrar(eq.id)}>Borrar</button></td>
+              </tr>
+            ))}
+            {equipos.length === 0 && (
+              <tr><td colSpan={8} className="ayuda">Todavía no hay equipos.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

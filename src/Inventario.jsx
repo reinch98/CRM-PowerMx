@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { Alerta } from './ui'
 
 const CATEGORIAS = [
   ['generador', 'Generadores'],
@@ -158,35 +159,28 @@ export default function Inventario() {
     cargar()
   }
 
-  const campo = { padding: 8, fontSize: 15, width: '100%', boxSizing: 'border-box' }
-  const chico = { padding: 4, width: 90, textAlign: 'right' }
-  const tab = activo => ({
-    padding: '8px 16px', marginRight: 6, cursor: 'pointer',
-    border: '1px solid #ccc', borderRadius: 6,
-    background: activo ? '#333' : '#fff', color: activo ? '#fff' : '#333'
-  })
-  const ayuda = TIPOS.find(t => t[0] === mov.tipo)?.[2]
+  const ayudaTipo = TIPOS.find(t => t[0] === mov.tipo)?.[2]
 
   return (
-    <div style={{ padding: 20, fontFamily: 'system-ui' }}>
+    <div className="pagina">
       <h2>Inventario</h2>
 
-      <div style={{ marginBottom: 16 }}>
-        <button style={tab(vista === 'existencias')} onClick={() => setVista('existencias')}>Existencias</button>
-        <button style={tab(vista === 'catalogo')} onClick={() => setVista('catalogo')}>Catálogo</button>
-        <button style={tab(vista === 'movimiento')} onClick={() => setVista('movimiento')}>Registrar movimiento</button>
+      <div className="pestanas">
+        <button className="pestana" aria-pressed={vista === 'existencias'} onClick={() => setVista('existencias')}>Existencias</button>
+        <button className="pestana" aria-pressed={vista === 'catalogo'} onClick={() => setVista('catalogo')}>Catálogo</button>
+        <button className="pestana" aria-pressed={vista === 'movimiento'} onClick={() => setVista('movimiento')}>Registrar movimiento</button>
       </div>
 
       {(sinPrecio > 0 || sinCosto > 0) && (
-        <div style={{ padding: 10, marginBottom: 14, background: '#fff3e0', borderRadius: 6 }}>
-          Faltan <strong>{sinPrecio}</strong> precios y <strong>{sinCosto}</strong> costos por capturar.
+        <Alerta tipo="aviso" palabra="Faltan datos">
+          <strong>{sinPrecio}</strong> precios y <strong>{sinCosto}</strong> costos por capturar.
           Se editan en la pestaña Catálogo.
-        </div>
+        </Alerta>
       )}
 
       {vista !== 'movimiento' && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14, maxWidth: 560 }}>
-          <select value={categoria} onChange={e => setCategoria(e.target.value)} style={campo}>
+        <div className="fila" style={{ marginBottom: 14 }}>
+          <select value={categoria} onChange={e => setCategoria(e.target.value)} aria-label="Categoría">
             <option value="">Todas las categorías</option>
             {CATEGORIAS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
           </select>
@@ -194,129 +188,154 @@ export default function Inventario() {
             placeholder="Buscar por SKU o nombre"
             value={busqueda}
             onChange={e => setBusqueda(e.target.value)}
-            style={campo}
+            aria-label="Buscar por SKU o nombre"
+            style={{ flex: 1, minWidth: 200 }}
           />
         </div>
       )}
 
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {mensaje && <p style={{ color: 'green' }}>{mensaje}</p>}
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {mensaje && <Alerta tipo="ok" palabra="Listo">{mensaje}</Alerta>}
 
       {/* ------------------------------------------------------------------ */}
       {vista === 'existencias' && (
         <>
-          <p style={{ color: '#666' }}>
+          <p className="ayuda">
             Disponible = físico − apartado − resguardo. Es lo único que puedes prometer.
+            Las filas con <strong>Bajo el mínimo</strong> hay que reordenarlas.
           </p>
-          <table border="1" cellPadding="6" style={{ borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr>
-                <th>SKU</th><th>Producto</th><th>Categoría</th>
-                <th>Físico</th><th>Apartado</th><th>Resguardo</th><th>Disponible</th><th>Mínimo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {existencias.map(f => {
-                const bajo = f.minimo > 0 && f.disponible < f.minimo
-                return (
-                  <tr key={f.id} style={bajo ? { background: '#ffebee' } : undefined}>
-                    <td>{f.sku}</td>
-                    <td>{f.nombre}</td>
-                    <td>{f.categoria}</td>
-                    <td align="right">{f.fisico}</td>
-                    <td align="right">{f.apartado}</td>
-                    <td align="right">{f.resguardo}</td>
-                    <td align="right"><strong>{f.disponible}</strong></td>
-                    <td align="right">{f.minimo || '—'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="tabla-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th><th>Producto</th><th>Categoría</th>
+                  <th>Físico</th><th>Apartado</th><th>Resguardo</th><th>Disponible</th><th>Mínimo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {existencias.map(f => {
+                  const bajo = f.minimo > 0 && f.disponible < f.minimo
+                  return (
+                    <tr key={f.id} style={bajo ? { background: 'var(--error-fondo)' } : undefined}>
+                      <td>{f.sku}</td>
+                      <td>{f.nombre}</td>
+                      <td>{f.categoria}</td>
+                      <td align="right">{f.fisico}</td>
+                      <td align="right">{f.apartado}</td>
+                      <td align="right">{f.resguardo}</td>
+                      <td align="right">
+                        <strong>{f.disponible}</strong>
+                        {bajo && <div><span className="estado estado-rechazada">Bajo el mínimo</span></div>}
+                      </td>
+                      <td align="right">{f.minimo || '—'}</td>
+                    </tr>
+                  )
+                })}
+                {existencias.length === 0 && (
+                  <tr><td colSpan={8} className="ayuda">No hay productos con esos filtros.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
       {/* ------------------------------------------------------------------ */}
       {vista === 'catalogo' && (
         <>
-          <table border="1" cellPadding="6" style={{ borderCollapse: 'collapse', fontSize: 14, marginBottom: 28 }}>
-            <thead>
-              <tr>
-                <th>SKU</th><th>Producto</th><th>Marca</th>
-                <th>Precio</th><th>Costo</th><th>Margen</th><th>Mínimo</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibles.map(p => {
-                const ed = editando[p.id] || {}
-                const precio = 'precio' in ed ? num(ed.precio) : p.precio
-                const costo = 'costo' in ed ? num(ed.costo) : p.costo
-                const margen = precio && costo ? Math.round(((precio - costo) / precio) * 100) : null
-                return (
-                  <tr key={p.id} style={p.precio == null ? { background: '#fff8e1' } : undefined}>
-                    <td>{p.sku}</td>
-                    <td>{p.nombre}</td>
-                    <td>{p.marca}</td>
-                    <td>
-                      <input
-                        type="number" style={chico}
-                        value={'precio' in ed ? ed.precio : (p.precio ?? '')}
-                        onChange={e => editar(p.id, 'precio', e.target.value)}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="number" style={chico}
-                        value={'costo' in ed ? ed.costo : (p.costo ?? '')}
-                        onChange={e => editar(p.id, 'costo', e.target.value)}
-                      />
-                    </td>
-                    <td align="right">{margen == null ? '—' : `${margen}%`}</td>
-                    <td>
-                      <input
-                        type="number" style={{ ...chico, width: 60 }}
-                        value={'minimo' in ed ? ed.minimo : (p.minimo ?? '')}
-                        onChange={e => editar(p.id, 'minimo', e.target.value)}
-                      />
-                    </td>
-                    <td>
-                      {editando[p.id] && <button onClick={() => guardarFila(p)}>Guardar</button>}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="tabla-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th><th>Producto</th><th>Marca</th>
+                  <th>Precio</th><th>Costo</th><th>Margen</th><th>Mínimo</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibles.map(p => {
+                  const ed = editando[p.id] || {}
+                  const precio = 'precio' in ed ? num(ed.precio) : p.precio
+                  const costo = 'costo' in ed ? num(ed.costo) : p.costo
+                  const margen = precio && costo ? Math.round(((precio - costo) / precio) * 100) : null
+                  return (
+                    <tr key={p.id} style={p.precio == null ? { background: 'var(--aviso-fondo)' } : undefined}>
+                      <td>{p.sku}</td>
+                      <td>
+                        {p.nombre}
+                        {p.precio == null && <div><span className="estado estado-pendiente">Sin precio</span></div>}
+                      </td>
+                      <td>{p.marca}</td>
+                      <td>
+                        <input
+                          type="number" style={{ width: 110, textAlign: 'right' }} aria-label={`Precio de ${p.sku}`}
+                          value={'precio' in ed ? ed.precio : (p.precio ?? '')}
+                          onChange={e => editar(p.id, 'precio', e.target.value)}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number" style={{ width: 110, textAlign: 'right' }} aria-label={`Costo de ${p.sku}`}
+                          value={'costo' in ed ? ed.costo : (p.costo ?? '')}
+                          onChange={e => editar(p.id, 'costo', e.target.value)}
+                        />
+                      </td>
+                      <td align="right">{margen == null ? '—' : `${margen}%`}</td>
+                      <td>
+                        <input
+                          type="number" style={{ width: 90, textAlign: 'right' }} aria-label={`Mínimo de ${p.sku}`}
+                          value={'minimo' in ed ? ed.minimo : (p.minimo ?? '')}
+                          onChange={e => editar(p.id, 'minimo', e.target.value)}
+                        />
+                      </td>
+                      <td>
+                        {editando[p.id] && <button className="btn-primario" onClick={() => guardarFila(p)}>Guardar</button>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
 
-          <h3>Agregar producto</h3>
-          <form onSubmit={guardarProducto} style={{ display: 'grid', gap: 8, maxWidth: 420 }}>
-            <label>SKU *<input value={nuevo.sku} onChange={e => setNuevo({ ...nuevo, sku: e.target.value })} style={campo} /></label>
-            <label>
-              Categoría
-              <select value={nuevo.categoria} onChange={e => setNuevo({ ...nuevo, categoria: e.target.value })} style={campo}>
-                {CATEGORIAS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-              </select>
-            </label>
-            <label>Nombre *<input value={nuevo.nombre} onChange={e => setNuevo({ ...nuevo, nombre: e.target.value })} style={campo} /></label>
-            <label>Marca<input value={nuevo.marca} onChange={e => setNuevo({ ...nuevo, marca: e.target.value })} style={campo} /></label>
-            <label>Modelo<input value={nuevo.modelo} onChange={e => setNuevo({ ...nuevo, modelo: e.target.value })} style={campo} /></label>
-            <label>Precio<input type="number" value={nuevo.precio} onChange={e => setNuevo({ ...nuevo, precio: e.target.value })} style={campo} /></label>
-            <label>Costo<input type="number" value={nuevo.costo} onChange={e => setNuevo({ ...nuevo, costo: e.target.value })} style={campo} /></label>
-            <label>Mínimo<input type="number" value={nuevo.minimo} onChange={e => setNuevo({ ...nuevo, minimo: e.target.value })} style={campo} /></label>
-            <label>Clave producto SAT<input value={nuevo.clave_producto_sat} onChange={e => setNuevo({ ...nuevo, clave_producto_sat: e.target.value })} style={campo} /></label>
-            <label>Clave unidad SAT<input value={nuevo.clave_unidad_sat} onChange={e => setNuevo({ ...nuevo, clave_unidad_sat: e.target.value })} style={campo} /></label>
-            <label>Descripción<textarea rows={2} value={nuevo.descripcion} onChange={e => setNuevo({ ...nuevo, descripcion: e.target.value })} style={campo} /></label>
-            <button type="submit">Agregar</button>
-          </form>
+          <details className="tarjeta">
+            <summary className="resumen">＋ Agregar producto</summary>
+            <form onSubmit={guardarProducto} style={{ maxWidth: 520, marginTop: 12 }}>
+              <label className="campo"><span>SKU *</span>
+                <input value={nuevo.sku} onChange={e => setNuevo({ ...nuevo, sku: e.target.value })} /></label>
+              <label className="campo"><span>Categoría</span>
+                <select value={nuevo.categoria} onChange={e => setNuevo({ ...nuevo, categoria: e.target.value })}>
+                  {CATEGORIAS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+                </select></label>
+              <label className="campo"><span>Nombre *</span>
+                <input value={nuevo.nombre} onChange={e => setNuevo({ ...nuevo, nombre: e.target.value })} /></label>
+              <label className="campo"><span>Marca</span>
+                <input value={nuevo.marca} onChange={e => setNuevo({ ...nuevo, marca: e.target.value })} /></label>
+              <label className="campo"><span>Modelo</span>
+                <input value={nuevo.modelo} onChange={e => setNuevo({ ...nuevo, modelo: e.target.value })} /></label>
+              <label className="campo"><span>Precio</span>
+                <input type="number" value={nuevo.precio} onChange={e => setNuevo({ ...nuevo, precio: e.target.value })} /></label>
+              <label className="campo"><span>Costo</span>
+                <input type="number" value={nuevo.costo} onChange={e => setNuevo({ ...nuevo, costo: e.target.value })} /></label>
+              <label className="campo"><span>Mínimo</span>
+                <input type="number" value={nuevo.minimo} onChange={e => setNuevo({ ...nuevo, minimo: e.target.value })} /></label>
+              <label className="campo"><span>Clave producto SAT</span>
+                <input value={nuevo.clave_producto_sat} onChange={e => setNuevo({ ...nuevo, clave_producto_sat: e.target.value })} /></label>
+              <label className="campo"><span>Clave unidad SAT</span>
+                <input value={nuevo.clave_unidad_sat} onChange={e => setNuevo({ ...nuevo, clave_unidad_sat: e.target.value })} /></label>
+              <label className="campo"><span>Descripción</span>
+                <textarea rows={2} value={nuevo.descripcion} onChange={e => setNuevo({ ...nuevo, descripcion: e.target.value })} /></label>
+              <button type="submit" className="btn-primario">Agregar</button>
+            </form>
+          </details>
         </>
       )}
 
       {/* ------------------------------------------------------------------ */}
       {vista === 'movimiento' && (
-        <form onSubmit={guardarMovimiento} style={{ display: 'grid', gap: 10, maxWidth: 480 }}>
-          <label>
-            Producto *
-            <select value={mov.producto_id} onChange={e => setMov({ ...mov, producto_id: e.target.value })} style={campo}>
+        <form onSubmit={guardarMovimiento} className="tarjeta" style={{ maxWidth: 520 }}>
+          <label className="campo">
+            <span>Producto *</span>
+            <select value={mov.producto_id} onChange={e => setMov({ ...mov, producto_id: e.target.value })}>
               <option value="">— Elige el producto —</option>
               {productos.map(p => (
                 <option key={p.id} value={p.id}>{p.sku} — {p.nombre}</option>
@@ -324,52 +343,44 @@ export default function Inventario() {
             </select>
           </label>
 
-          <label>
-            Tipo de movimiento
-            <select value={mov.tipo} onChange={e => setMov({ ...mov, tipo: e.target.value })} style={campo}>
+          <label className="campo">
+            <span>Tipo de movimiento</span>
+            <select value={mov.tipo} onChange={e => setMov({ ...mov, tipo: e.target.value })}>
               {TIPOS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
             </select>
-            <small style={{ color: '#666' }}>{ayuda}</small>
+            <span className="ayuda" style={{ fontWeight: 500 }}>{ayudaTipo}</span>
           </label>
 
-          <label>
-            Cantidad *
-            <input
-              type="number" inputMode="decimal"
-              value={mov.cantidad}
-              onChange={e => setMov({ ...mov, cantidad: e.target.value })}
-              style={campo}
-            />
+          <label className="campo">
+            <span>Cantidad *</span>
+            <input type="number" inputMode="decimal" value={mov.cantidad}
+              onChange={e => setMov({ ...mov, cantidad: e.target.value })} />
           </label>
 
           {NECESITAN_CLIENTE.includes(mov.tipo) && (
-            <label>
-              Cliente *
-              <select value={mov.cliente_id} onChange={e => setMov({ ...mov, cliente_id: e.target.value })} style={campo}>
+            <label className="campo">
+              <span>Cliente *</span>
+              <select value={mov.cliente_id} onChange={e => setMov({ ...mov, cliente_id: e.target.value })}>
                 <option value="">— Elige el cliente —</option>
                 {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </label>
           )}
 
-          <label>
-            Referencia
-            <input
-              placeholder="Factura, remisión, orden de compra"
-              value={mov.referencia}
-              onChange={e => setMov({ ...mov, referencia: e.target.value })}
-              style={campo}
-            />
+          <label className="campo">
+            <span>Referencia</span>
+            <input placeholder="Factura, remisión, orden de compra"
+              value={mov.referencia} onChange={e => setMov({ ...mov, referencia: e.target.value })} />
           </label>
 
-          <label>
-            Notas
-            <textarea rows={2} value={mov.notas} onChange={e => setMov({ ...mov, notas: e.target.value })} style={campo} />
+          <label className="campo">
+            <span>Notas</span>
+            <textarea rows={2} value={mov.notas} onChange={e => setMov({ ...mov, notas: e.target.value })} />
           </label>
 
-          <button type="submit" style={{ padding: 12, fontSize: 16 }}>Registrar movimiento</button>
+          <button type="submit" className="btn-primario btn-grande">Registrar movimiento</button>
 
-          <p style={{ color: '#666', fontSize: 13 }}>
+          <p className="ayuda" style={{ marginTop: 12 }}>
             Los movimientos no se editan ni se borran. Si te equivocas, lo corriges
             con otro movimiento en sentido contrario, igual que en contabilidad.
           </p>
