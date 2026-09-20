@@ -18,7 +18,7 @@ function serviceWorker() {
         .sort()
       // '/' es el index.html. Los de public/ no aparecen en el bundle: van a mano.
       const publicos = [
-        '/manifest.webmanifest', '/favicon.svg', '/icono.svg',
+        '/manifest.webmanifest', '/icono.svg',
         '/icono-192.png', '/icono-512.png', '/icono-maskable-512.png', '/apple-touch-icon.png',
       ]
       const lista = ['/', ...publicos, ...archivos]

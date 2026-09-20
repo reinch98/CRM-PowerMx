@@ -56,3 +56,14 @@ export async function borrarFotosDeOrden(orden_id) {
     tx.onerror = () => reject(tx.error)
   })
 }
+
+// Quita una sola foto (la que el técnico descartó antes de subirla).
+export async function borrarFoto(id) {
+  const db = await abrir()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(ALMACEN, 'readwrite')
+    tx.objectStore(ALMACEN).delete(id)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}

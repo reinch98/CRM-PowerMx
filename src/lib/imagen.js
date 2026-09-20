@@ -34,3 +34,10 @@ export function dataUrlABlob(dataUrl) {
   for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i)
   return new Blob([bytes], { type: tipo })
 }
+
+// ¿El lienzo de la firma no tiene ningún trazo?
+export function firmaEnBlanco(lienzo) {
+  const { data } = lienzo.getContext('2d').getImageData(0, 0, lienzo.width, lienzo.height)
+  for (let i = 3; i < data.length; i += 4) if (data[i] !== 0) return false
+  return true
+}

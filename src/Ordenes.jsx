@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { guardarFoto, fotosDeOrden, borrarFotosDeOrden } from './lib/idb'
-import { redimensionar, dataUrlABlob } from './lib/imagen'
+import { redimensionar, dataUrlABlob, firmaEnBlanco } from './lib/imagen'
 import { hoyLocal } from './lib/fechas'
 import { explicarError } from './lib/errores'
 import { leerLocal, escribirLocal, usuarioLocal } from './lib/local'
+import { Alerta } from './ui'
+import Firma from './Firma'
+
+const TIPOS_SERVICIO = [
+  ['preventivo', 'Preventivo'],
+  ['correctivo', 'Correctivo'],
+  ['instalacion', 'Instalación'],
+  ['diagnostico', 'Diagnóstico']
+]
 
 const COLA = 'ordenes_pendientes'
 const CACHE_EQUIPOS = 'cache_equipos'
@@ -25,80 +34,11 @@ const vacio = () => ({
   fecha_seguimiento: ''
 })
 
-// ---------------------------------------------------------------------------
-// Lienzo de firma. El cliente firma con el dedo; sale un PNG de ~10 KB.
-// ---------------------------------------------------------------------------
-function Firma({ refLienzo }) {
-  const dibujando = useRef(false)
-
-  function posicion(e) {
-    const lienzo = refLienzo.current
-    const caja = lienzo.getBoundingClientRect()
-    return {
-      x: (e.clientX - caja.left) * (lienzo.width / caja.width),
-      y: (e.clientY - caja.top) * (lienzo.height / caja.height)
-    }
-  }
-
-  function iniciar(e) {
-    e.preventDefault()
-    dibujando.current = true
-    const ctx = refLienzo.current.getContext('2d')
-    const { x, y } = posicion(e)
-    ctx.beginPath()
-    ctx.moveTo(x, y)
-  }
-
-  function mover(e) {
-    if (!dibujando.current) return
-    e.preventDefault()
-    const ctx = refLienzo.current.getContext('2d')
-    const { x, y } = posicion(e)
-    ctx.lineWidth = 2
-    ctx.lineCap = 'round'
-    ctx.strokeStyle = '#000'
-    ctx.lineTo(x, y)
-    ctx.stroke()
-  }
-
-  function terminar() {
-    dibujando.current = false
-  }
-
-  function limpiar() {
-    const lienzo = refLienzo.current
-    lienzo.getContext('2d').clearRect(0, 0, lienzo.width, lienzo.height)
-  }
-
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ marginBottom: 4 }}>Firma del cliente</div>
-      <canvas
-        ref={refLienzo}
-        width={600}
-        height={200}
-        onPointerDown={iniciar}
-        onPointerMove={mover}
-        onPointerUp={terminar}
-        onPointerLeave={terminar}
-        style={{
-          width: '100%',
-          height: 160,
-          border: '1px solid #999',
-          borderRadius: 6,
-          background: '#fff',
-          touchAction: 'none'   // sin esto, arrastrar el dedo desplaza la página
-        }}
-      />
-      <button type="button" onClick={limpiar}>Limpiar firma</button>
-    </div>
-  )
-}
-
 export default function Ordenes() {
   const [equipos, setEquipos] = useState(() => leerLocal(CACHE_EQUIPOS, []))
   const [pendientes, setPendientes] = useState(() => leerLocal(COLA, []))
-  const [form, setForm] = useState(vacio)
+  // El técnico llega con su nombre puesto (del perfil guardado en el celular).
+  const [form, setForm] = useState(() => ({ ...vacio(), tecnico: leerLocal('cache_perfil', null)?.nombre || '' }))
   const [refacciones, setRefacciones] = useState([])
   const [fotos, setFotos] = useState([])          // { id, blob, url } antes de guardar
   const [enLinea, setEnLinea] = useState(navigator.onLine)
@@ -278,12 +218,6 @@ export default function Ordenes() {
     setFotos(fotos.filter(f => f.id !== id))
   }
 
-  function firmaEnBlanco(lienzo) {
-    const { data } = lienzo.getContext('2d').getImageData(0, 0, lienzo.width, lienzo.height)
-    for (let i = 3; i < data.length; i += 4) if (data[i] !== 0) return false
-    return true
-  }
-
   async function guardar(e) {
     e.preventDefault()
     setError('')
@@ -334,6 +268,8 @@ export default function Ordenes() {
     setFotos([])
     if (lienzo) lienzo.getContext('2d').clearRect(0, 0, lienzo.width, lienzo.height)
     setMensaje('Orden guardada en el celular.')
+    // La pantalla es larga y el botón está abajo: sin esto el aviso queda fuera de vista.
+    window.scrollTo({ top: 0, behavior: 'smooth' })
 
     if (navigator.onLine) sincronizar()
   }
@@ -341,210 +277,200 @@ export default function Ordenes() {
   const etiqueta = eq =>
     `${eq.numero_serie} — ${eq.clientes?.nombre || 'sin cliente'}${eq.marca ? ` (${eq.marca})` : ''}`
 
-  const campo = { width: '100%', padding: 10, fontSize: 16, boxSizing: 'border-box' }
-  const bloque = { display: 'block', marginBottom: 12 }
+  const nombreTipo = v => TIPOS_SERVICIO.find(([k]) => k === v)?.[1] || v
 
   return (
-    <div style={{ padding: 16, fontFamily: 'system-ui', maxWidth: 560, margin: '0 auto' }}>
+    <div className="pagina pagina-angosta">
       <h2>Orden de servicio</h2>
 
-      <div style={{
-        padding: 10,
-        marginBottom: 16,
-        borderRadius: 6,
-        background: enLinea ? '#e8f5e9' : '#fff3e0'
-      }}>
-        {enLinea ? 'Con señal' : 'Sin señal — se guarda en el celular'}
-        {pendientes.length > 0 && (
-          <>
-            {' · '}
-            <strong>{pendientes.length} por subir</strong>
-            {enLinea && (
-              <button onClick={sincronizar} disabled={subiendo} style={{ marginLeft: 10 }}>
-                {subiendo ? 'Subiendo…' : 'Subir ahora'}
-              </button>
-            )}
-          </>
-        )}
-      </div>
+      {enLinea ? (
+        <Alerta tipo="ok" palabra="Con señal">
+          {pendientes.length === 0 ? 'Todo al día.' : <strong>{pendientes.length} por subir.</strong>}
+          {pendientes.length > 0 && (
+            <button type="button" onClick={sincronizar} disabled={subiendo} style={{ marginLeft: 8 }}>
+              {subiendo ? 'Subiendo…' : 'Subir ahora'}
+            </button>
+          )}
+        </Alerta>
+      ) : (
+        <Alerta tipo="aviso" palabra="Sin señal">
+          Puedes seguir capturando: la orden se guarda en el celular y sube sola cuando haya señal.
+          {pendientes.length > 0 && <> <strong>{pendientes.length} por subir.</strong></>}
+        </Alerta>
+      )}
+
+      {mensaje && <Alerta tipo="ok" palabra="Listo">{mensaje}</Alerta>}
 
       <form onSubmit={guardar}>
-        <label style={bloque}>
-          Equipo *<br />
-          <select value={form.equipo_id} onChange={e => cambiar('equipo_id', e.target.value)} style={campo}>
-            <option value="">— Elige el equipo —</option>
-            {equipos.map(eq => (
-              <option key={eq.id} value={eq.id}>{etiqueta(eq)}</option>
-            ))}
-          </select>
+        <section className="tarjeta">
+          <h3>1 · Equipo y fecha</h3>
+
+          <label className="campo">
+            <span>Equipo *</span>
+            <select value={form.equipo_id} onChange={e => cambiar('equipo_id', e.target.value)}>
+              <option value="">— Elige el equipo —</option>
+              {equipos.map(eq => (
+                <option key={eq.id} value={eq.id}>{etiqueta(eq)}</option>
+              ))}
+            </select>
+          </label>
           {equipos.length === 0 && (
-            <small>No hay equipos guardados en este celular. Conéctate una vez para descargarlos.</small>
+            <Alerta tipo="aviso">
+              No hay equipos guardados en este celular. Conéctate una vez para descargarlos.
+            </Alerta>
           )}
-        </label>
 
-        <label style={bloque}>
-          Fecha<br />
-          <input type="date" value={form.fecha} onChange={e => cambiar('fecha', e.target.value)} style={campo} />
-        </label>
+          <label className="campo">
+            <span>Fecha</span>
+            <input type="date" value={form.fecha} onChange={e => cambiar('fecha', e.target.value)} />
+          </label>
 
-        <label style={bloque}>
-          Tipo de servicio<br />
-          <select value={form.tipo_servicio} onChange={e => cambiar('tipo_servicio', e.target.value)} style={campo}>
-            <option value="preventivo">Preventivo</option>
-            <option value="correctivo">Correctivo</option>
-            <option value="instalacion">Instalación</option>
-            <option value="diagnostico">Diagnóstico</option>
-          </select>
-        </label>
-
-        <label style={bloque}>
-          Técnico<br />
-          <input value={form.tecnico} onChange={e => cambiar('tecnico', e.target.value)} style={campo} />
-        </label>
-
-        <label style={bloque}>
-          Horómetro / horas del equipo<br />
-          <input
-            type="number"
-            inputMode="decimal"
-            value={form.horas_equipo}
-            onChange={e => cambiar('horas_equipo', e.target.value)}
-            style={campo}
-          />
-        </label>
-
-        <label style={bloque}>
-          Trabajos realizados *<br />
-          <textarea
-            rows={4}
-            value={form.trabajos_realizados}
-            onChange={e => cambiar('trabajos_realizados', e.target.value)}
-            style={campo}
-          />
-        </label>
-
-        <fieldset style={{ border: '1px solid #ccc', padding: 12, marginBottom: 12 }}>
-          <legend>Refacciones</legend>
-          {refacciones.map((r, i) => (
-            <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-              <input
-                placeholder="Descripción"
-                value={r.descripcion}
-                onChange={e => cambiarRefaccion(i, 'descripcion', e.target.value)}
-                style={{ ...campo, flex: 3 }}
-              />
-              <input
-                type="number"
-                inputMode="numeric"
-                value={r.cantidad}
-                onChange={e => cambiarRefaccion(i, 'cantidad', e.target.value)}
-                style={{ ...campo, flex: 1 }}
-              />
-              <button type="button" onClick={() => quitarRefaccion(i)}>×</button>
-            </div>
-          ))}
-          <button type="button" onClick={agregarRefaccion}>Agregar refacción</button>
-        </fieldset>
-
-        <fieldset style={{ border: '1px solid #ccc', padding: 12, marginBottom: 12 }}>
-          <legend>Fotos</legend>
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            multiple
-            onChange={agregarFotos}
-            style={{ marginBottom: 8 }}
-          />
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {fotos.map(f => (
-              <div key={f.id} style={{ position: 'relative' }}>
-                <img
-                  src={f.url}
-                  alt=""
-                  style={{ width: 90, height: 90, objectFit: 'cover', borderRadius: 4 }}
-                />
+          <div className="campo" role="radiogroup" aria-label="Tipo de servicio">
+            <span>Tipo de servicio</span>
+            <div className="opciones">
+              {TIPOS_SERVICIO.map(([v, t]) => (
                 <button
-                  type="button"
-                  onClick={() => quitarFoto(f.id)}
-                  style={{ position: 'absolute', top: 2, right: 2 }}
+                  type="button" key={v} className="opcion" role="radio"
+                  aria-checked={form.tipo_servicio === v}
+                  onClick={() => cambiar('tipo_servicio', v)}
                 >
-                  ×
+                  {form.tipo_servicio === v && <span aria-hidden="true">✓</span>} {t}
                 </button>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </fieldset>
 
-        <label style={bloque}>
-          Observaciones<br />
-          <textarea
-            rows={3}
-            value={form.observaciones}
-            onChange={e => cambiar('observaciones', e.target.value)}
-            style={campo}
-          />
-        </label>
+          <label className="campo">
+            <span>Técnico</span>
+            <input value={form.tecnico} onChange={e => cambiar('tecnico', e.target.value)} autoComplete="name" />
+          </label>
 
-        <label style={bloque}>
-          Recomendaciones<br />
-          <textarea
-            rows={3}
-            value={form.recomendaciones}
-            onChange={e => cambiar('recomendaciones', e.target.value)}
-            style={campo}
-          />
-        </label>
-
-        <label style={bloque}>
-          <input
-            type="checkbox"
-            checked={form.requiere_seguimiento}
-            onChange={e => cambiar('requiere_seguimiento', e.target.checked)}
-          />
-          {' '}Requiere seguimiento
-        </label>
-
-        {form.requiere_seguimiento && (
-          <label style={bloque}>
-            Fecha de seguimiento<br />
+          <label className="campo">
+            <span>Horómetro / horas del equipo</span>
             <input
-              type="date"
-              value={form.fecha_seguimiento}
-              onChange={e => cambiar('fecha_seguimiento', e.target.value)}
-              style={campo}
+              type="number" inputMode="decimal"
+              value={form.horas_equipo} onChange={e => cambiar('horas_equipo', e.target.value)}
             />
           </label>
-        )}
+        </section>
 
-        <Firma refLienzo={refLienzo} />
+        <section className="tarjeta">
+          <h3>2 · Trabajo realizado</h3>
 
-        <button type="submit" style={{ ...campo, padding: 14, fontSize: 17 }}>
-          Guardar orden
-        </button>
+          <label className="campo">
+            <span>Trabajos realizados *</span>
+            <textarea rows={4} value={form.trabajos_realizados}
+              onChange={e => cambiar('trabajos_realizados', e.target.value)} />
+          </label>
 
-        {error && <p style={{ color: 'crimson' }}>{error}</p>}
-        {mensaje && <p style={{ color: 'green' }}>{mensaje}</p>}
+          <label className="campo">
+            <span>Observaciones</span>
+            <textarea rows={3} value={form.observaciones}
+              onChange={e => cambiar('observaciones', e.target.value)} />
+          </label>
+
+          <label className="campo">
+            <span>Recomendaciones</span>
+            <textarea rows={3} value={form.recomendaciones}
+              onChange={e => cambiar('recomendaciones', e.target.value)} />
+          </label>
+
+          <label className="casilla">
+            <input type="checkbox" checked={form.requiere_seguimiento}
+              onChange={e => cambiar('requiere_seguimiento', e.target.checked)} />
+            Requiere seguimiento
+          </label>
+
+          {form.requiere_seguimiento && (
+            <label className="campo">
+              <span>Fecha de seguimiento</span>
+              <input type="date" value={form.fecha_seguimiento}
+                onChange={e => cambiar('fecha_seguimiento', e.target.value)} />
+            </label>
+          )}
+        </section>
+
+        <section className="tarjeta">
+          <h3>3 · Refacciones</h3>
+
+          {refacciones.map((r, i) => (
+            <div key={i} className="refaccion">
+              <input
+                aria-label={`Descripción de la refacción ${i + 1}`} placeholder="Descripción"
+                value={r.descripcion} onChange={e => cambiarRefaccion(i, 'descripcion', e.target.value)}
+              />
+              <div className="fila">
+                <label className="fila">
+                  Cantidad
+                  <input
+                    type="number" inputMode="numeric" style={{ width: 96 }}
+                    value={r.cantidad} onChange={e => cambiarRefaccion(i, 'cantidad', e.target.value)}
+                  />
+                </label>
+                <button type="button" className="btn-peligro" onClick={() => quitarRefaccion(i)}>
+                  Quitar
+                </button>
+              </div>
+            </div>
+          ))}
+          {refacciones.length === 0 && <p className="ayuda">Sin refacciones. Agrega solo si se usó alguna.</p>}
+
+          <button type="button" onClick={agregarRefaccion}>＋ Agregar refacción</button>
+        </section>
+
+        <section className="tarjeta">
+          <h3>4 · Fotos</h3>
+
+          <label className="btn btn-primario boton-archivo">
+            ＋ Agregar fotos
+            <input type="file" accept="image/*" capture="environment" multiple
+              className="oculto-accesible" onChange={agregarFotos} />
+          </label>
+
+          {fotos.length > 0 && (
+            <div className="fotos">
+              {fotos.map((f, i) => (
+                <div key={f.id} className="foto">
+                  <img src={f.url} alt={`Foto ${i + 1}`} />
+                  <button type="button" className="foto-quitar" aria-label={`Quitar foto ${i + 1}`}
+                    onClick={() => quitarFoto(f.id)}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="tarjeta">
+          <h3>5 · Firma del cliente</h3>
+          <Firma refLienzo={refLienzo} />
+        </section>
+
+        <div className="barra-accion">
+          {error && <Alerta tipo="error">{error}</Alerta>}
+          <button type="submit" className="btn-primario btn-grande">Guardar orden</button>
+        </div>
       </form>
 
       {pendientes.length > 0 && (
-        <>
-          <h3>Pendientes por subir</h3>
-          <ul>
-            {pendientes.map(o => (
-              <li key={o.id} style={{ marginBottom: 8 }}>
-                {o.fecha} — {equipos.find(eq => eq.id === o.equipo_id)?.numero_serie || 'equipo'} — {o.tipo_servicio}
+        <section>
+          <h3>Pendientes por subir ({pendientes.length})</h3>
+          {pendientes.map(o => {
+            const eq = equipos.find(x => x.id === o.equipo_id)
+            return (
+              <div key={o.id} className="tarjeta">
+                <strong>{eq?.numero_serie || 'Equipo'}</strong> — {nombreTipo(o.tipo_servicio)}
+                <div className="ayuda">{eq?.clientes?.nombre || 'sin cliente'} · {o.fecha}</div>
                 {o.sync?.error && (
-                  <div style={{ fontSize: 14, color: o.sync.temporal ? '#92400e' : 'crimson' }}>
-                    <strong>{o.sync.temporal ? 'En espera: ' : 'No se pudo subir: '}</strong>
-                    {o.sync.error}
-                    {o.sync.intentos > 1 && ` (intento ${o.sync.intentos})`}
+                  <div style={{ marginTop: 10 }}>
+                    <Alerta tipo={o.sync.temporal ? 'aviso' : 'error'} palabra={o.sync.temporal ? 'En espera' : 'No se pudo subir'}>
+                      {o.sync.error}{o.sync.intentos > 1 && ` (intento ${o.sync.intentos})`}
+                    </Alerta>
                   </div>
                 )}
-              </li>
-            ))}
-          </ul>
-        </>
+              </div>
+            )
+          })}
+        </section>
       )}
     </div>
   )

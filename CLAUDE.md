@@ -54,6 +54,127 @@ español, concisas, con el paso siguiente claro.
 - Las fechas de captura se sacan con `hoyLocal()` de `src/lib/fechas.js`, nunca con
   `toISOString()`: en UTC, después de las 6 pm en Mérida ya es "mañana".
 
+## Flujo de servicio — plan acordado con Caña el 19/09/2026 (aún sin construir)
+
+**Roles:** admin · T1 (técnico responsable) · T2 (ayudante) · almacenista (rol nuevo) · cliente.
+
+**Origen y reglas**
+1. Dos caminos: (a) una **cotización aceptada** abre una cita y una orden; (b) una
+   **cita agendada** en la Agenda abre su orden, y si es de **diagnóstico** también una
+   cotización de diagnóstico (nueva o enlazada a una existente). Las citas de **póliza**
+   (`equipos.en_poliza`, preventivo) abren **solo orden**, sin cotización. Correctivo,
+   instalación y visita técnica agendadas a mano: cotización **opcional**, con aviso.
+2. **Cita 1 : 1 orden** (una orden por visita). Una cotización puede tener varias citas.
+3. Fecha, hora, duración, T1 y T2 se capturan **al cotizar como propuesta** y se vuelven
+   cita real **al aceptar**. Sin fecha: cita `por_programar` (lista en la Agenda). Si la
+   cotización ya tiene cita (nació de una), al aceptar se **enlaza a esa**; no se abre otra.
+4. Aceptar abre cita y orden si el tipo es instalación, mantenimiento o diagnóstico, o si
+   marcó `requiere_visita` (venta, refacciones, renta).
+5. Rechazar o vencer cancela cita y orden si no tienen trabajo capturado; si ya lo hay,
+   avisa. Rechazar la cotización de un diagnóstico cancela su cita (avisando antes).
+6. **Orden dividida:** cada técnico escribe su parte (notas y fotos) en `orden_partes`
+   (una fila por técnico y orden); solo edita la suya y ambos leen ambas. **Solo T1**
+   cierra la orden y recoge la firma del cliente; al cerrar se juntan las partes y la
+   cita pasa a `realizada`. El técnico nunca crea órdenes: nacen de una cita.
+7. **Diagnóstico:** cotización con dos partidas **libres** (sin producto, así que no mueven
+   inventario ni generan requisiciones): el **diagnóstico**, cuyo precio depende de la
+   **clase** del equipo (gasolina 1.5–10 kW, gas LP 8–26 kW, diésel 30–500 kW) y de su
+   **capacidad**, y el **servicio de traslado**, precio fijo por km que aplica a partir de
+   los 40 km. Los precios viven en `tarifas_servicio` (solo admin; el técnico no ve
+   precios) y se **copian** a la partida al cotizar. Cuando haya clientes ubicados por
+   zonas, el traslado pasará a un esquema por zonas. Los km salen de `clientes.distancia_km`
+   (propuesta). La clase sale de `equipos.atributos.combustible` (ya es un selector en
+   `Equipos`: `gasolina`, `gas_lp`, `gas_natural`, `diesel`; el único equipo que había
+   tenía el campo vacío) y la capacidad de `equipos.capacidad_kw`.
+8. **Almacén (fases 2–3):** el almacenista entrega al T1, que **firma de recibido en su
+   celular dentro del almacén** (con internet); solo T1 firma. Las refacciones aparecen
+   en la orden **sin costo ni precio** (el técnico nunca los ve), con casilla vacía y
+   contador si son varias. Lo no usado va a **pendientes de devolución** (T1 responsable,
+   orden, T2 anotado; alerta por antigüedad; caja de observaciones). Material usado y no
+   entregado: línea "adicional" sin descuento automático, marcada para conciliar
+   (el costo al cliente es prácticamente fijo).
+9. **Cierre (fase 4):** dos PDF: copia del **cliente** (solo el trabajo realizado; las
+   piezas se ven en la cotización) y copia **interna** al expediente del cliente/equipo.
+   Envío manual con "Enviar al cliente"; los PDF enviados se ordenan en **carpetas por
+   semana** (ruta derivada de la fecha de envío, semana en hora de Mérida) más una tabla
+   de envíos.
+10. **Fase 5:** paquetes de mantenimiento por equipo que el agente va adaptando a partir de
+    las piezas que se repiten; una cita de póliza puede precargarlos en la lista de
+    surtido. Exige que las piezas usadas queden estructuradas (fase 3).
+
+**Fases (cada una se publica sola; SQL antes que código):** 1a base de datos · 1b
+cotizaciones abren cita y orden · 1c Agenda · 1d portal del técnico ("Mis trabajos"; la cola
+sin señal pasa de insertar a actualizar órdenes que ya existen) · 1e retirar la creación
+libre de órdenes (RLS) cuando los celulares vacíen sus colas · 2 almacén · 3 uso, cierre
+y devoluciones · 4 PDF, envío y expediente · 5 control y paquetes.
+
+**1a: corrida por Caña el 19/09/2026** (`supabase/sql/09_flujo_servicio_base.sql`;
+falta anotar el resultado de su consulta de verificación). Columnas nuevas en `citas`,
+`cotizaciones`, `ordenes_servicio` y `clientes`; tablas `orden_partes` y
+`tarifas_servicio`; políticas de T2. Esquema real consultado ese día: ninguna de las tres
+tablas tiene restricciones `check` (solo llaves); `ordenes_servicio` ya tenía `cita_id` y
+`estado` con default `'abierta'`, y solo `cliente_id` es obligatorio, así que la orden
+nace casi vacía; `citas.fecha` era obligatoria y ahora solo lo es fuera de `por_programar`.
+
+**1b: aplicada y probada en la base el 20/09/2026** (`supabase/sql/10_cotizacion_abre_cita.sql`,
+`Cotizaciones.jsx`, `Tarifas.jsx`, `Clientes.jsx`, `src/lib/tarifas.js`). Decisiones de
+Caña: el traslado cobra **todos los km una vez rebasados los 40, solo ida**; el gas natural
+va en la clase del gas LP; solares y baterías tienen tarifa propia de diagnóstico (clase
+`solar`/`bateria`). La lógica de precios (`tarifas.js`) tiene 24 casos probados en Node.
+Prueba con rollback: aceptar una cotización con fecha abre cita `programada` + orden
+`abierta`; sin fecha, cita `por_programar`; aceptar de nuevo no abre nada; rechazar cancela
+cita y orden. Las pantallas nuevas solo se vieron en el emulador (sin base).
+La Agenda necesita la 1c para mostrar las citas `por_programar` (filtra por fecha).
+
+**1c: aplicada y probada en la base el 20/09/2026** (`supabase/sql/11_agenda_citas.sql`, `Agenda.jsx`
+reescrita con el diseño nuevo). La Agenda ya no inserta en `citas` desde el navegador: usa
+`agendar_cita` (cita + orden; diagnóstico: crea o enlaza la cotización; póliza: solo
+orden; otros tipos: cotización opcional), `programar_cita` (pone fecha/hora/técnicos a una
+`por_programar`, o reprograma y reasigna; la orden abierta la sigue) y `cancelar_cita`
+(cancela cita y orden si no hay trabajo). Avisa de empalmes de un técnico (no bloquea:
+vuelve a llamar con `p_confirmar`). `lista_tecnicos()` (security definer) da id y nombre de
+los técnicos: un técnico no puede leer el perfil de su compañero y necesita ver el nombre de
+su ayudante. Muestra la lista "Por programar", ayudante, orden y cotización de cada cita.
+La Agenda usa el rol de `cache_perfil` cuando no hay señal.
+Prueba con rollback: agendar abre cita + orden; un horario que se empalma avisa y no crea
+nada. Los folios de órdenes y cotizaciones **se saltan números**: las secuencias no se
+revierten con `rollback`, así que cada prueba consume folios.
+
+**Estado real de la base (20/09/2026):** los SQL `09` a `12` están **aplicados y probados**
+con `begin/rollback` como admin, responsable, ayudante e intruso. Comprobado en la base:
+el ayudante **no** puede cerrar la orden ni escribir la parte del responsable; el
+responsable cierra y el reintento devuelve `sin_cambio`; ya cerrada nadie edita su parte;
+el cierre junta las partes (la del responsable primero) y las fotos.
+
+**1d: SQL aplicado y probado; pantalla probada solo en emulador** (`supabase/sql/12_cerrar_orden.sql`, `Trabajos.jsx`,
+`src/lib/trabajos.js`, `src/lib/cola.js`, `Firma.jsx`). La pestaña "Órdenes" ahora abre
+`Trabajos` ("Mis trabajos" para el técnico; para el admin, la lista de todas en solo
+lectura). Lista las órdenes que nacen de una cita (abiertas y cerradas de los últimos 14
+días); el detalle muestra cliente (Llamar / Cómo llegar), equipo, cita y **mi parte**
+(notas y fotos que se guardan solas en el celular en cada cambio y suben a los 2 s o al
+volver la señal), la parte del compañero de **solo lectura**, y —solo para T1— el cierre
+(horómetro, observaciones, recomendaciones, seguimiento, refacciones manuales, firma o
+"no pudo firmar"). `cerrar_orden` (SQL, security definer) junta las partes (la de T1
+primero) y las fotos, guarda firma y datos, cierra la orden y marca la cita `realizada`;
+es idempotente (un reintento devuelve `sin_cambio`). La orden libre de antes (`Ordenes.jsx`)
+va dentro de Trabajos en un `<details>` "Orden sin cita (temporal)" y **sigue montada** para
+que su cola vieja siga subiendo; se retira en la 1e.
+Cola sin señal (`cola_trabajos`, reglas puras y probadas en `cola.js`): un elemento por
+asunto (`parte:<orden>`, `cierre:<orden>`); guardar de nuevo REEMPLAZA (no apila); el
+contador `n` evita perder lo que se escribe mientras sube; las partes suben antes que los
+cierres, y un cierre espera a que su parte esté arriba. Otros datos locales:
+`cache_mis_trabajos`, `cache_nombres_tecnicos`, `partes_locales` (las fotos, en IndexedDB).
+Un fallo que no se arregla solo (orden cerrada o reasignada) ofrece "Tirar lo pendiente".
+**Sin probar aún en un celular real:** subida real de fotos y firma a Storage, el guardado
+de la parte desde la app (`upsert` con `onConflict`), `createSignedUrls` para ver las
+fotos del compañero, y dos técnicos editando en dos celulares sin señal. La pantalla se
+midió en el emulador: 0 textos de menos de 17 px, 0 contrastes bajo 4.5, 0 objetivos de
+menos de 48 px.
+
+**Datos que faltan capturar** (desde la pantalla Tarifas, no bloquean el código): tarifas
+de diagnóstico por clase × tramo de kW, precio por km, y `distancia_km` de cada cliente
+(se edita en la lista de Clientes).
+
 ## Seguridad — lo más importante
 
 - Storage: bucket `ordenes` (**minúscula**, privado; Storage distingue mayúsculas).
@@ -105,7 +226,7 @@ español, concisas, con el paso siguiente claro.
   2,000 caracteres. El historial lo manda el navegador: no se le tiene fe.
 - Siguientes fases: ver "Ruta de mejora".
 
-## Diseño — pasada pendiente
+## Diseño
 
 Los técnicos trabajan casi siempre **bajo el sol directo**. Eso manda:
 
@@ -119,19 +240,55 @@ Los técnicos trabajan casi siempre **bajo el sol directo**. Eso manda:
 - Nada de grises claros: texto secundario no más claro que `#475569`.
 - Texto mínimo 17 px y pesos medios o gruesos. Chakra Petch 300 itálica solo en el
   logotipo, nunca en datos.
-- Objetivos táctiles de 48 px o más.
+- Objetivos táctiles de 48 px o más (con `pointer: coarse`; con ratón, 40). En Órdenes
+  todo mide 48 o más, medido en pantalla.
 - Ningún estado se comunica solo con color: siempre con palabra o ícono.
 - La marca entra por una barra superior azul noche con el hexágono ámbar.
-- Hoy las pantallas usan estilos en línea. Orden de trabajo: primero tokens y
-  componentes compartidos en un solo lugar, luego Órdenes (la pantalla de campo),
-  luego Agenda, luego las de oficina.
+
+**Estado de la pasada de diseño (19/09/2026):**
+
+- **Hecho:** tokens y estilos base en `src/index.css` (un solo lugar; solo modo claro,
+  sin la columna centrada de 1126 px ni el modo oscuro que traía la plantilla de Vite);
+  piezas compartidas en `src/ui.jsx` (`Logo`, `Alerta` con ícono y palabra); barra de
+  marca y pestañas en `App.jsx`; `Login`; y `Ordenes` rehecha (tarjetas numeradas,
+  tipo de servicio con botones grandes, botón de guardar fijo abajo, pendientes con su
+  motivo). Medido en pantalla: 0 objetivos de menos de 48 px, 0 textos de menos de
+  17 px, 0 contrastes bajo 4.5.
+- **Cómo aplicar el estilo:** los `<button>`, `<input>`, `<select>`, `<textarea>` y
+  `<table>` ya salen con el estilo base sin hacer nada. Variantes por clase:
+  `btn-primario` (ámbar con texto noche), `btn-peligro`, `btn-grande`. Estructura:
+  `pagina`, `pagina-angosta`, `tarjeta`, `campo`, `fila`, `ayuda`. Mensajes: `<Alerta
+  tipo="ok|error|info|aviso">`, no `<p style={{color:'crimson'}}>`.
+- **Agenda: hecha** (19–20/09/2026, junto con la 1c): siete columnas que caben en celular,
+  cada día es un botón con el número de citas (y "M" si hay mantenimiento por vencer, no solo
+  color), estados con palabra. Medido: 0 textos de menos de 17 px, 0 contrastes bajo 4.5, 0
+  objetivos de menos de 48 px. No definir componentes dentro de otros componentes (pierden el
+  foco al escribir): usar componentes de nivel superior o funciones que devuelvan JSX.
+- **Pendiente, en este orden:** oficina: `Clientes`, `Equipos`, `Inventario`,
+  `Cotizaciones`, `Requisiciones`, `Usuarios`, `Agente`. Cada una:
+  cambiar los estilos en línea por las clases, `Alerta` en vez de texto de color, y
+  envolver las tablas en un contenedor con `overflow-x: auto` (hoy desbordan en
+  celular). El texto mínimo de 17 px y los grises `#888`/`#666`/`#999` siguen sin
+  arreglarse en esas pantallas.
+- **Ícono/logotipo:** `Logo` (ui.jsx) y `public/icono.svg` son un marcador (hexágono
+  ámbar con P). Sustituirlos por los de `POWERMX-sitio/LOGOS`, y regenerar los cuatro
+  PNG de `public/`. Chakra Petch no está cargada (tampoco funcionaría sin señal):
+  el nombre usa la fuente del sistema; si se quiere, servirla desde el propio sitio.
+- **Probar la interfaz sin credenciales ni tocar producción:** levantar
+  `VITE_SUPABASE_URL=http://127.0.0.1:9 VITE_SUPABASE_ANON_KEY=x npx vite --port 5174`
+  (un servidor inexistente, así la app entra por el modo sin señal) y sembrar en el
+  navegador `sb-prueba-auth-token` (sesión vencida con `user.id`), `cache_perfil`
+  (con el `rol` a probar), `cache_equipos` y `ordenes_pendientes`. Para ver anchos de
+  celular usar `resize_window` con el preajuste `mobile`; el panel de escritorio del
+  navegador integrado mide 375 px, así que no sirve para anchos grandes.
 
 ## Pantallas
 
-`Agenda` (calendario, mantenimientos por vencer) · `Ordenes` (móvil, funciona sin
-señal: cola en localStorage, fotos encogidas en IndexedDB, firma en canvas, el `id`
-lo genera el celular y el código `23505` significa "ya existía") · `Clientes` ·
-`Equipos` · `Inventario` · `Cotizaciones` · `Requisiciones` (solo admin) ·
+`Agenda` (calendario, por programar, empalmes) · `Trabajos` (pestaña "Órdenes"; móvil,
+funciona sin señal; ver 1d) con `Ordenes` (orden libre, temporal: cola en localStorage,
+fotos encogidas en IndexedDB, firma en canvas, el `id` lo genera el celular y el código
+`23505` significa "ya existía") dentro · `Clientes` ·
+`Equipos` · `Inventario` · `Cotizaciones` · `Requisiciones` · `Tarifas` (ambas solo admin) ·
 `Tecnicos` (pestaña "Usuarios") · `Agente` · `Login`. Las pantallas reciben la
 prop `irA(clave)` de `App.jsx` para saltar a otra pantalla. El portal del cliente es un aviso de "en construcción".
 
@@ -155,6 +312,12 @@ prop `irA(clave)` de `App.jsx` para saltar a otra pantalla. El portal del client
   token válido, que Supabase renueva solo al volver la señal.
 - El `tecnico_id` de una orden sale de `usuarioLocal()` primero: `getUser()` pide red
   y `getSession()` puede quedarse esperando la renovación con señal mala.
+- **El perfil se lee de la copia guardada al instante** y se refresca por detrás
+  (`App.jsx`). Antes la app esperaba a la red: medido, 5.5 s mostrando un falso "tu
+  cuenta no tiene permisos" y ~7 s hasta entrar, porque supabase-js reintenta la
+  renovación del token vencido con esperas crecientes. Cualquier `supabase.from(...)`
+  con el token vencido y sin señal sufre esa misma espera: no poner un dato crítico
+  de campo detrás de una consulta.
 - Probar con la versión **construida** (`npm run build` + `npx vite preview`), en
   Chrome → DevTools → Application → Service Workers → Offline. El navegador integrado
   de Claude Code no admite service workers.
@@ -243,9 +406,11 @@ Supabase); lint en cero.
      código que la llama.**
    - Recuperar `supabase/sql/01_...` (esquema base, hoy ausente del repo) para poder
      reconstruir la base desde cero.
-3. **Diseño** (ver sección Diseño): tokens y componentes compartidos → Órdenes →
-   Agenda → oficina. De paso: `Login` con estilo y marca; dividir el bundle
-   (500 kB) con `import()` por pantalla; quitar `react-router-dom` si no se va a usar.
+3. **Diseño** (ver sección Diseño): ~~tokens y componentes compartidos → Órdenes →
+   `Login`~~ hecho; falta Agenda → oficina. Además: dividir el bundle (500 kB) con
+   `import()` por pantalla; quitar `react-router-dom` si no se va a usar; y
+   `signOut()` sin señal no cierra la sesión local (supabase-js devuelve el error de
+   red sin borrarla): decidir si "Salir" debe funcionar desconectado.
 4. **Agente fase 3:** escritura con confirmación explícita y registro en `auditoria`.
    Instalar la CLI de Supabase para dejar de pegar la función a mano.
 5. **Portal del cliente** (solo tras la fase 1): equipos, historial y cotizaciones.

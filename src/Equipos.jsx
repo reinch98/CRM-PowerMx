@@ -31,6 +31,18 @@ const ATRIBUTOS = {
   otro: []
 }
 
+// Campos de atributos que son una lista cerrada en vez de texto libre. El combustible
+// decide la clase de precio del diagnóstico (gasolina, gas, diésel): escrito a mano
+// ("Gas LP", "gas", "Diésel") no se podría calcular solo. Se guarda la clave.
+const OPCIONES = {
+  combustible: [
+    ['gasolina', 'Gasolina'],
+    ['gas_lp', 'Gas LP'],
+    ['gas_natural', 'Gas natural'],
+    ['diesel', 'Diésel']
+  ]
+}
+
 const vacio = {
   cliente_id: '',
   numero_serie: '',
@@ -232,11 +244,22 @@ export default function Equipos() {
               {ATRIBUTOS[form.tipo].map(([campo, etiqueta]) => (
                 <label key={campo}>
                   {etiqueta}<br />
-                  <input
-                    value={atributos[campo] || ''}
-                    onChange={e => cambiarAtributo(campo, e.target.value)}
-                    style={{ width: '100%' }}
-                  />
+                  {OPCIONES[campo] ? (
+                    <select
+                      value={atributos[campo] || ''}
+                      onChange={e => cambiarAtributo(campo, e.target.value)}
+                      style={{ width: '100%' }}
+                    >
+                      <option value="">— Elige —</option>
+                      {OPCIONES[campo].map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      value={atributos[campo] || ''}
+                      onChange={e => cambiarAtributo(campo, e.target.value)}
+                      style={{ width: '100%' }}
+                    />
+                  )}
                 </label>
               ))}
             </div>

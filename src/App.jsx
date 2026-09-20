@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { leerLocal, escribirLocal, borrarLocal, usuarioLocal } from './lib/local'
+import { Logo, Alerta } from './ui'
 import Login from './Login'
 import Agenda from './Agenda'
 import Clientes from './Clientes'
 import Equipos from './Equipos'
-import Ordenes from './Ordenes'
+import Trabajos from './Trabajos'
 import Inventario from './Inventario'
 import Cotizaciones from './Cotizaciones'
 import Requisiciones from './Requisiciones'
+import Tarifas from './Tarifas'
 import Tecnicos from './Tecnicos'
 import Agente from './Agente'
 
@@ -16,21 +18,37 @@ import Agente from './Agente'
 // agregar una pantalla es agregar un renglón, no tocar el resto.
 const PANTALLAS = {
   agenda:       { titulo: 'Agenda',       componente: Agenda,       roles: ['admin', 'tecnico'] },
-  ordenes:      { titulo: 'Órdenes',      componente: Ordenes,      roles: ['admin', 'tecnico'] },
+  ordenes:      { titulo: 'Órdenes',      componente: Trabajos,     roles: ['admin', 'tecnico'] },
   clientes:     { titulo: 'Clientes',     componente: Clientes,     roles: ['admin'] },
   equipos:      { titulo: 'Equipos',      componente: Equipos,      roles: ['admin'] },
   inventario:   { titulo: 'Inventario',   componente: Inventario,   roles: ['admin'] },
   cotizaciones: { titulo: 'Cotizaciones', componente: Cotizaciones, roles: ['admin'] },
   requisiciones:{ titulo: 'Requisiciones',componente: Requisiciones,roles: ['admin'] },
+  tarifas:      { titulo: 'Tarifas',      componente: Tarifas,      roles: ['admin'] },
   usuarios:     { titulo: 'Usuarios',     componente: Tecnicos,     roles: ['admin'] },
   agente:       { titulo: 'Agente',       componente: Agente,       roles: ['admin'] },
 }
 
+const ETIQUETA_ROL = {
+  admin: 'Administrador', tecnico: 'Técnico', cliente: 'Cliente', sin_rol: 'Sin permisos'
+}
+
 const CACHE_PERFIL = 'cache_perfil'
+
+function Cargando({ texto = 'Cargando…' }) {
+  return (
+    <main className="centro" style={{ textAlign: 'center', paddingTop: 64 }}>
+      <Logo tam={72} sobreClaro />
+      <p style={{ marginTop: 16 }}>{texto}</p>
+    </main>
+  )
+}
 
 export default function App() {
   const [sesion, setSesion] = useState(null)
-  const [perfilCargado, setPerfil] = useState(null)
+  const [perfilServidor, setPerfilServidor] = useState(null)   // { id, datos } lo último que dijo el servidor
+  const [falloPerfil, setFalloPerfil] = useState(false)
+  const [intento, setIntento] = useState(0)
   const [cargando, setCargando] = useState(true)
   // Sin señal el técnico llega a lo que puede usar: la agenda no funciona
   // desconectada, las órdenes sí.
@@ -59,102 +77,130 @@ export default function App() {
     return () => sub.subscription.unsubscribe()
   }, [])
 
-  // El perfil trae el rol. Sin perfil no se dibuja menú: más vale no mostrar
-  // nada que mostrar botones que van a tronar contra las políticas. Se guarda
-  // una copia para poder abrir la app sin señal; solo decide qué botones se
-  // ven, el servidor sigue aplicando los permisos de verdad.
+  const uid = sesion?.user.id
+
+  // Copia del perfil guardada en el celular. Con ella la app abre al instante,
+  // sin esperar a la red: con señal mala esa espera eran varios segundos de
+  // pantalla en blanco o, peor, de un falso "no tienes permisos".
+  const copia = useMemo(() => {
+    const c = uid ? leerLocal(CACHE_PERFIL, null) : null
+    return c?.id === uid ? c : null
+  }, [uid])
+
+  // El perfil trae el rol. Se pregunta al servidor por detrás para enterarse de
+  // cambios; solo decide qué botones se ven, el servidor sigue aplicando los
+  // permisos de verdad.
   useEffect(() => {
-    if (!sesion) return
+    if (!uid) return
     let vigente = true
-    supabase.from('perfiles').select('*').eq('id', sesion.user.id).maybeSingle()
+    supabase.from('perfiles').select('*').eq('id', uid).maybeSingle()
       .then(({ data, error }) => {
         if (!vigente) return
-        if (error) {
-          // No se pudo preguntar (sin señal): se usa la copia, si es de este usuario.
-          const copia = leerLocal(CACHE_PERFIL, null)
-          if (copia?.id === sesion.user.id) setPerfil(copia)
-          return
-        }
+        if (error) { setFalloPerfil(true); return }
+        setFalloPerfil(false)
         if (data) escribirLocal(CACHE_PERFIL, data)
-        setPerfil(data)
+        else borrarLocal(CACHE_PERFIL)
+        setPerfilServidor({ id: uid, datos: data })
       })
     return () => { vigente = false }
-  }, [sesion])
+  }, [uid, intento])
 
-  if (cargando) return <p style={{ padding: 20 }}>Cargando…</p>
+  if (cargando) return <Cargando />
   if (!sesion) return <Login />
 
   // Solo vale el perfil de la sesión actual: si alguien sale y entra otra
   // cuenta, no se dibuja por un instante el menú de la anterior.
-  const perfil = perfilCargado?.id === sesion.user.id ? perfilCargado : null
+  const delServidor = perfilServidor?.id === uid ? perfilServidor : null
+  const perfil = delServidor ? delServidor.datos : copia
+  const resuelto = !!delServidor || !!copia
+
+  if (!resuelto) {
+    if (!falloPerfil) return <Cargando texto="Cargando tu cuenta…" />
+    return (
+      <main className="centro">
+        <h2>No pude cargar tu cuenta</h2>
+        <Alerta tipo="aviso">
+          Parece que no hay señal y esta es la primera vez que entras en este celular.
+          Conéctate una vez para descargar tu perfil.
+        </Alerta>
+        <div className="fila">
+          <button className="btn-primario" onClick={() => { setFalloPerfil(false); setIntento(n => n + 1) }}>
+            Reintentar
+          </button>
+          <button onClick={() => supabase.auth.signOut()}>Salir</button>
+        </div>
+      </main>
+    )
+  }
+
   const rol = perfil?.rol
   const permitidas = Object.entries(PANTALLAS).filter(([, p]) => p.roles.includes(rol))
+  // Si el rol no alcanza para la pantalla elegida, cae a la primera permitida.
+  const clave = PANTALLAS[pantalla]?.roles.includes(rol) ? pantalla : permitidas[0]?.[0]
 
   const barra = (
-    <div style={{
-      padding: 10, background: '#eee', display: 'flex', gap: 8,
-      alignItems: 'center', flexWrap: 'wrap', fontFamily: 'system-ui'
-    }}>
-      {permitidas.map(([clave, p]) => (
-        <button
-          key={clave}
-          onClick={() => setPantalla(clave)}
-          style={{
-            padding: '6px 12px', cursor: 'pointer', borderRadius: 5,
-            border: '1px solid #bbb',
-            background: pantalla === clave ? '#333' : '#fff',
-            color: pantalla === clave ? '#fff' : '#333'
-          }}
-        >
-          {p.titulo}
-        </button>
-      ))}
-      <span style={{ marginLeft: 'auto', fontSize: 13, color: '#555' }}>
-        {perfil?.nombre || sesion.user.email}{rol && ` · ${rol}`}
-      </span>
-      <button onClick={() => supabase.auth.signOut()}>Salir</button>
-    </div>
+    <header className="barra">
+      <div className="barra-fila">
+        <div className="marca"><Logo /> PowerMx</div>
+        <div className="barra-usuario">
+          <span>{perfil?.nombre || sesion.user.email}</span>
+          {rol && <small>{ETIQUETA_ROL[rol] ?? rol}</small>}
+        </div>
+        <button onClick={() => supabase.auth.signOut()}>Salir</button>
+      </div>
+      {permitidas.length > 0 && (
+        <nav className="nav" aria-label="Pantallas">
+          {permitidas.map(([k, p]) => (
+            <button key={k} onClick={() => setPantalla(k)} aria-current={k === clave ? 'page' : undefined}>
+              {p.titulo}
+            </button>
+          ))}
+        </nav>
+      )}
+    </header>
   )
 
   if (!perfil || rol === 'sin_rol' || perfil.activo === false) {
     return (
-      <div>
+      <>
         {barra}
-        <div style={{ padding: 40, fontFamily: 'system-ui', maxWidth: 520 }}>
+        <main className="centro">
           <h2>Tu cuenta todavía no tiene permisos</h2>
-          <p style={{ color: '#666' }}>
+          <Alerta tipo="info">
             {perfil?.activo === false
               ? 'Esta cuenta está desactivada. Pide que la reactiven.'
               : 'Entraste bien, pero falta que te asignen un rol. Avísale al administrador.'}
-          </p>
-        </div>
-      </div>
+          </Alerta>
+        </main>
+      </>
     )
   }
 
   if (rol === 'cliente') {
     return (
-      <div>
+      <>
         {barra}
-        <div style={{ padding: 40, fontFamily: 'system-ui', maxWidth: 520 }}>
+        <main className="centro">
           <h2>Portal del cliente</h2>
-          <p style={{ color: '#666' }}>
+          <Alerta tipo="info">
             Tu cuenta ya quedó ligada. Las pantallas de equipos, historial de
             servicio y cotizaciones están en construcción.
-          </p>
-        </div>
-      </div>
+          </Alerta>
+        </main>
+      </>
     )
   }
 
-  // Si el rol no alcanza para la pantalla elegida, cae a la primera permitida.
-  const clave = PANTALLAS[pantalla]?.roles.includes(rol) ? pantalla : permitidas[0]?.[0]
   const Actual = clave ? PANTALLAS[clave].componente : null
 
   return (
-    <div>
+    <>
       {barra}
-      {Actual ? <Actual irA={setPantalla} /> : <p style={{ padding: 20 }}>No hay pantallas disponibles para tu rol.</p>}
-    </div>
+      <main>
+        {Actual
+          ? <Actual irA={setPantalla} />
+          : <div className="centro"><Alerta tipo="info">No hay pantallas disponibles para tu rol.</Alerta></div>}
+      </main>
+    </>
   )
 }

@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { hoyLocal, sumarDias } from './lib/fechas'
+import { partidasDeDiagnostico } from './lib/tarifas'
+import { Alerta } from './ui'
 
 const IVA = 0.16
+
+// Tipos que abren cita y orden al aceptarse. Venta, refacciones y renta solo si
+// se marca "requiere visita".
+const TIPOS_CON_VISITA = ['instalacion', 'mantenimiento', 'diagnostico']
 
 const ESTADOS = [
   ['borrador', 'Borrador'],
@@ -16,6 +22,7 @@ const TIPOS = [
   ['venta', 'Venta de equipo'],
   ['instalacion', 'Instalación'],
   ['mantenimiento', 'Mantenimiento'],
+  ['diagnostico', 'Diagnóstico'],
   ['refacciones', 'Refacciones'],
   ['renta', 'Renta']
 ]
@@ -40,7 +47,13 @@ const vacio = () => ({
   descuento: '',
   requiere_visita: false,
   condiciones: CONDICIONES,
-  notas_internas: ''
+  notas_internas: '',
+  // Programación propuesta: se vuelve cita real al aceptar la cotización.
+  prog_fecha: '',
+  prog_hora: '09:00',
+  prog_duracion_min: 120,
+  prog_tecnico_id: '',
+  prog_tecnico2_id: ''
 })
 
 export default function Cotizaciones({ irA }) {
@@ -50,6 +63,10 @@ export default function Cotizaciones({ irA }) {
   const [equipos, setEquipos] = useState([])
   const [productos, setProductos] = useState([])
   const [disponibles, setDisponibles] = useState([])
+  const [tecnicos, setTecnicos] = useState([])
+  const [tarifas, setTarifas] = useState([])
+  const [citas, setCitas] = useState([])      // citas ligadas a cotizaciones
+  const [avisosDiag, setAvisosDiag] = useState([])
 
   const [form, setForm] = useState(vacio)  // useState llama a la función una vez
   const [partidas, setPartidas] = useState([])
@@ -63,19 +80,48 @@ export default function Cotizaciones({ irA }) {
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const [co, cl, eq, pr, di] = await Promise.all([
+    const [co, cl, eq, pr, di, te, ta, ci] = await Promise.all([
       supabase.from('cotizaciones').select('*, clientes(nombre)').order('folio', { ascending: false }),
-      supabase.from('clientes').select('id, nombre').order('nombre'),
-      supabase.from('equipos').select('id, numero_serie, cliente_id, tipo, marca'),
+      supabase.from('clientes').select('id, nombre, distancia_km'),
+      supabase.from('equipos').select('id, numero_serie, cliente_id, tipo, marca, capacidad_kw, atributos'),
       supabase.from('productos').select('id, sku, nombre, precio, unidad, categoria').eq('activo', true).order('sku'),
-      supabase.from('disponibles').select('id, disponible')
+      supabase.from('disponibles').select('id, disponible'),
+      supabase.from('perfiles').select('id, nombre').eq('rol', 'tecnico').eq('activo', true).order('nombre'),
+      supabase.from('tarifas_servicio').select('*').eq('activo', true),
+      supabase.from('citas').select('id, cotizacion_id, estado, fecha, hora').not('cotizacion_id', 'is', null)
     ])
     if (co.error) return setError(co.error.message)
     setCotizaciones(co.data || [])
-    setClientes(cl.data || [])
+    setClientes((cl.data || []).sort((a, b) => a.nombre.localeCompare(b.nombre)))
     setEquipos(eq.data || [])
     setProductos(pr.data || [])
     setDisponibles(di.data || [])
+    setTecnicos(te.data || [])
+    setTarifas(ta.data || [])
+    setCitas(ci.data || [])
+  }
+
+  // Cita activa de cada cotización (por programar o programada).
+  const citaDe = useMemo(() => {
+    const m = {}
+    for (const ci of citas) {
+      if (ci.estado === 'por_programar' || ci.estado === 'programada') m[ci.cotizacion_id] ??= ci
+    }
+    return m
+  }, [citas])
+
+  const llevaVisita = f => TIPOS_CON_VISITA.includes(f.tipo) || f.requiere_visita
+
+  // Diagnóstico: arma las partidas de servicio según la clase y capacidad del equipo
+  // y la distancia del cliente. Reemplaza las que ya cargó antes, sin tocar el resto.
+  function cargarDiagnostico() {
+    setError('')
+    const cliente = clientes.find(c => c.id === form.cliente_id)
+    if (!cliente) return setError('Elige el cliente primero')
+    const equipo = equipos.find(e => e.id === form.equipo_id)
+    const { partidas: nuevas, avisos } = partidasDeDiagnostico({ tarifas, equipo, cliente })
+    setAvisosDiag(avisos)
+    setPartidas([...partidas.filter(p => !p.servicio), ...nuevas])
   }
 
   const dispoPorId = useMemo(
@@ -144,6 +190,12 @@ export default function Cotizaciones({ irA }) {
     if (!form.cliente_id) return setError('Elige el cliente')
     if (partidas.length === 0) return setError('Agrega al menos una partida')
     if (partidas.some(p => !p.descripcion.trim())) return setError('Hay partidas sin descripción')
+    if (form.prog_tecnico_id && form.prog_tecnico_id === form.prog_tecnico2_id) {
+      return setError('El técnico responsable y su ayudante no pueden ser la misma persona')
+    }
+    if (form.prog_tecnico2_id && !form.prog_tecnico_id) {
+      return setError('Elige al técnico responsable antes que a su ayudante')
+    }
 
     setGuardando(true)
     const { error } = await supabase.from('cotizaciones').insert([{
@@ -162,13 +214,19 @@ export default function Cotizaciones({ irA }) {
       requiere_visita: form.requiere_visita,
       condiciones: form.condiciones,
       notas_internas: form.notas_internas || null,
+      // Programación propuesta: solo se guarda si la cotización lleva visita.
+      prog_fecha: llevaVisita(form) ? form.prog_fecha || null : null,
+      prog_hora: llevaVisita(form) ? form.prog_hora || null : null,
+      prog_duracion_min: llevaVisita(form) ? num(form.prog_duracion_min) || null : null,
+      prog_tecnico_id: llevaVisita(form) ? form.prog_tecnico_id || null : null,
+      prog_tecnico2_id: llevaVisita(form) ? form.prog_tecnico2_id || null : null,
       estado: 'borrador',
       creada_por: (await supabase.auth.getUser()).data.user?.email || 'crm'
     }])
     setGuardando(false)
     if (error) return setError(error.message)
 
-    setForm(vacio()); setPartidas([]); setVista('lista')
+    setForm(vacio()); setPartidas([]); setAvisosDiag([]); setVista('lista')
     setMensaje('Cotización guardada como borrador.')
     cargar()
   }
@@ -183,6 +241,14 @@ export default function Cotizaciones({ irA }) {
   async function cambiarEstado(c, nuevo) {
     setError(''); setMensaje(''); setAviso(null)
     if (c.estado === nuevo) return
+
+    // Si la cotización tiene una visita agendada, avisar antes de cancelarla.
+    const cita = citaDe[c.id]
+    const cancelaVisita = nuevo !== 'aceptada' && (c.estado === 'aceptada' || nuevo === 'rechazada' || nuevo === 'vencida')
+    if (cita && cancelaVisita) {
+      const cuando = cita.estado === 'por_programar' ? 'por programar' : `del ${cita.fecha}`
+      if (!confirm(`Esta cotización tiene una cita ${cuando}.\n\nAl cambiarla a "${nuevo}" se cancelan la cita y su orden de servicio, salvo que ya tengan trabajo capturado.\n\n¿Continuar?`)) return
+    }
 
     const { data, error } = await supabase.rpc('cambiar_estado_cotizacion', {
       p_id: c.id, p_nuevo: nuevo
@@ -203,11 +269,19 @@ export default function Cotizaciones({ irA }) {
       setMensaje(`Cotización marcada como ${nuevo}.`)
     }
 
-    if (data.requisiciones > 0 || data.requisiciones_canceladas > 0 || data.requisiciones_en_curso > 0) {
+    const visita = nuevo === 'aceptada' && data.orden_folio
+      ? { estado: data.cita_estado, fecha: data.cita_fecha, folio: data.orden_folio, nueva: data.cita_nueva }
+      : null
+
+    if (data.requisiciones > 0 || data.requisiciones_canceladas > 0 || data.requisiciones_en_curso > 0 ||
+        visita || data.citas_canceladas > 0 || data.citas_con_trabajo > 0) {
       setAviso({
         faltantes: data.faltantes || [],
         canceladas: data.requisiciones_canceladas || 0,
-        enCurso: data.requisiciones_en_curso || 0
+        enCurso: data.requisiciones_en_curso || 0,
+        visita,
+        citasCanceladas: data.citas_canceladas || 0,
+        citasConTrabajo: data.citas_con_trabajo || 0
       })
     }
     cargar()
@@ -243,7 +317,35 @@ export default function Cotizaciones({ irA }) {
       {error && <p style={{ color: 'crimson' }}>{error}</p>}
       {mensaje && <p style={{ color: 'green' }}>{mensaje}</p>}
 
-      {aviso && (
+      {aviso?.visita && (
+        <Alerta tipo="ok" palabra="Visita">
+          {aviso.visita.nueva ? 'Se abrió' : 'Se enlazó'} la cita{' '}
+          {aviso.visita.estado === 'por_programar'
+            ? <strong>por programar</strong>
+            : <>programada el <strong>{aviso.visita.fecha}</strong></>}
+          {' '}y la orden de servicio <strong>OS-{aviso.visita.folio}</strong>.
+          {aviso.visita.estado === 'por_programar' && ' Falta ponerle fecha, hora y técnicos en la Agenda.'}
+          {irA && (
+            <div style={{ marginTop: 8 }}>
+              <button onClick={() => irA('agenda')}>Ir a la Agenda</button>
+            </div>
+          )}
+        </Alerta>
+      )}
+
+      {aviso?.citasCanceladas > 0 && (
+        <Alerta tipo="info" palabra="Cita cancelada">
+          Se cancelaron {aviso.citasCanceladas} cita(s) y su orden de servicio.
+        </Alerta>
+      )}
+      {aviso?.citasConTrabajo > 0 && (
+        <Alerta tipo="aviso" palabra="Ojo">
+          {aviso.citasConTrabajo} cita(s) ya tienen trabajo capturado y <strong>no se cancelaron</strong>.
+          Revísalas en la Agenda.
+        </Alerta>
+      )}
+
+      {aviso && (aviso.faltantes.length > 0 || aviso.canceladas > 0 || aviso.enCurso > 0) && (
         <div style={{ padding: 12, background: '#fef3c7', color: '#0c1520', borderRadius: 8, marginBottom: 14, maxWidth: 680 }}>
           {aviso.faltantes.length > 0 && (
             <>
@@ -281,7 +383,7 @@ export default function Cotizaciones({ irA }) {
             <thead>
               <tr>
                 <th>Folio</th><th>Cliente</th><th>Fecha</th><th>Vence</th>
-                <th>Tipo</th><th>Total</th><th>Estado</th><th>Cambiar a</th><th></th>
+                <th>Tipo</th><th>Total</th><th>Estado</th><th>Visita</th><th>Cambiar a</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -294,6 +396,11 @@ export default function Cotizaciones({ irA }) {
                   <td>{c.tipo}{c.requiere_visita && ' · visita'}</td>
                   <td align="right">{pesos(c.total)}</td>
                   <td><strong style={{ color: colorEstado[c.estado] }}>{c.estado}</strong></td>
+                  <td>
+                    {citaDe[c.id]
+                      ? (citaDe[c.id].estado === 'por_programar' ? 'Por programar' : citaDe[c.id].fecha)
+                      : (llevaVisita(c) ? 'Sin cita' : '—')}
+                  </td>
                   <td>
                     <select value="" onChange={e => e.target.value && cambiarEstado(c, e.target.value)}>
                       <option value="">—</option>
@@ -371,7 +478,9 @@ export default function Cotizaciones({ irA }) {
               <select value={form.equipo_id} onChange={e => setForm({ ...form, equipo_id: e.target.value })} style={campo}>
                 <option value="">— Ninguno —</option>
                 {equiposDelCliente.map(e => (
-                  <option key={e.id} value={e.id}>{e.numero_serie} — {e.tipo}</option>
+                  <option key={e.id} value={e.id}>
+                    {e.numero_serie} — {e.tipo}{e.capacidad_kw ? ` ${e.capacidad_kw} kW` : ''}
+                  </option>
                 ))}
               </select>
             </label>
@@ -408,6 +517,67 @@ export default function Cotizaciones({ irA }) {
               Marcada como visita: fuera del metraje estándar el precio no sale de catálogo.
               Cotiza después de medir en sitio.
             </p>
+          )}
+
+          {llevaVisita(form) && (
+            <section className="tarjeta" style={{ maxWidth: 820 }}>
+              <h3>Programación propuesta</h3>
+              <p className="ayuda">
+                Al <strong>aceptar</strong> la cotización se abre la cita con estos datos y su orden de
+                servicio. Sin fecha, la cita queda <strong>por programar</strong> en la Agenda.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label className="campo">
+                  <span>Fecha</span>
+                  <input type="date" value={form.prog_fecha}
+                    onChange={e => setForm({ ...form, prog_fecha: e.target.value })} />
+                </label>
+                <label className="campo">
+                  <span>Hora</span>
+                  <input type="time" value={form.prog_hora}
+                    onChange={e => setForm({ ...form, prog_hora: e.target.value })} />
+                </label>
+                <label className="campo">
+                  <span>Duración estimada (minutos)</span>
+                  <input type="number" min="15" step="15" value={form.prog_duracion_min}
+                    onChange={e => setForm({ ...form, prog_duracion_min: e.target.value })} />
+                </label>
+                <span />
+                <label className="campo">
+                  <span>Técnico responsable</span>
+                  <select value={form.prog_tecnico_id}
+                    onChange={e => setForm({ ...form, prog_tecnico_id: e.target.value })}>
+                    <option value="">— Sin asignar —</option>
+                    {tecnicos.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                  </select>
+                </label>
+                <label className="campo">
+                  <span>Ayudante (técnico 2)</span>
+                  <select value={form.prog_tecnico2_id}
+                    onChange={e => setForm({ ...form, prog_tecnico2_id: e.target.value })}>
+                    <option value="">— Ninguno —</option>
+                    {tecnicos.filter(t => t.id !== form.prog_tecnico_id).map(t =>
+                      <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                  </select>
+                </label>
+              </div>
+            </section>
+          )}
+
+          {form.tipo === 'diagnostico' && (
+            <section className="tarjeta" style={{ maxWidth: 820 }}>
+              <h3>Diagnóstico y traslado</h3>
+              <p className="ayuda">
+                El precio del diagnóstico sale de la clase y capacidad del equipo. El traslado
+                aplica desde los 40 km del cliente (solo ida) y se cobran todos los km.
+              </p>
+              <button type="button" className="btn-primario" onClick={cargarDiagnostico}>
+                Cargar diagnóstico y traslado
+              </button>
+              {avisosDiag.map((a, i) => (
+                <div key={i} style={{ marginTop: 10 }}><Alerta tipo="aviso" palabra="Falta">{a}</Alerta></div>
+              ))}
+            </section>
           )}
 
           <h3>Partidas</h3>

@@ -1,111 +1,465 @@
+/* ===========================================================================
+   PowerMx CRM — estilos base y componentes compartidos.
+
+   Los técnicos trabajan casi siempre BAJO EL SOL DIRECTO. Eso manda todo:
+     · Solo modo claro, alto contraste. Un fondo oscuro refleja como espejo.
+     · Texto de 17 px o más, pesos medios y gruesos.
+     · Objetivos táctiles de 48 px o más (en pantallas táctiles; con ratón 40).
+     · Ningún estado se comunica solo con color: siempre con palabra o ícono.
+     · El ámbar NUNCA es texto ni línea delgada sobre fondo claro. Solo como
+       fondo (botones, marca activa) con texto azul noche encima.
+
+   Contrastes medidos (WCAG), texto sobre fondo:
+     azul noche / blanco 18.4 · azul noche / claro 15.6 · azul noche / ámbar 8.5
+     secundario #475569 / blanco 7.6 (sobre el claro baja a 6.4: ponerlo en tarjeta)
+     verde #166534 7.1 · rojo #991b1b 8.3 · azul #1e40af 8.7 · aviso #92400e 7.1
+     borde de controles #64748b / blanco 4.8
+   No usar grises más claros que --texto-2. El #888 de antes daba 3.5.
+   =========================================================================== */
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  color-scheme: light;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --noche: #0c1520;
+  --ambar: #f59e0b;
+  --claro: #e8edf4;
+  --blanco: #ffffff;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
+  --texto: var(--noche);
+  --texto-2: #475569;       /* texto secundario: nunca más claro que esto */
+  --borde: #64748b;         /* borde de controles */
+  --linea: #cbd5e1;         /* separadores decorativos */
+
+  --ok: #166534;      --ok-fondo: #dcfce7;
+  --error: #991b1b;   --error-fondo: #fee2e2;
+  --info: #1e40af;    --info-fondo: #dbeafe;
+  --aviso: #92400e;   --aviso-fondo: #fef3c7;
+
+  --radio: 10px;
+  --objetivo: 48px;
+  --fuente: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --fuente-marca: 'Chakra Petch', var(--fuente);   /* solo el logotipo */
+
+  font: 500 17px/1.5 var(--fuente);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+*, *::before, *::after { box-sizing: border-box; }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
   min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+  background: var(--claro);
+  color: var(--texto);
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+#root { min-height: 100svh; }
+
+h1, h2, h3, h4 {
+  color: var(--noche);
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 0.5em;
+}
+h1 { font-size: 30px; }
+h2 { font-size: 25px; }
+h3 { font-size: 20px; }
+p { margin: 0 0 0.75em; }
+a { color: var(--info); font-weight: 600; }
+strong { font-weight: 700; }
+
+/* Foco siempre visible: azul noche con un halo blanco para que se vea también
+   sobre fondos de color. */
+:focus-visible {
+  outline: 3px solid var(--noche);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px var(--blanco);
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
+/* ---------------------------------------------------------------------------
+   Botones. `<button>` sin más ya sale con este estilo; las variantes se piden
+   con clase.
+   --------------------------------------------------------------------------- */
+button, .btn {
   display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--noche);
+  background: var(--blanco);
+  border: 2px solid var(--noche);
+  border-radius: var(--radio);
+  cursor: pointer;
+  text-decoration: none;
+}
+@media (pointer: coarse) {
+  button, .btn { min-height: var(--objetivo); }
+}
+button:hover:not(:disabled), .btn:hover { background: var(--claro); }
+
+/* El ámbar solo va de fondo, con texto azul noche. */
+.btn-primario { background: var(--ambar); }
+.btn-primario:hover:not(:disabled) { background: #fbbf24; }
+.btn-peligro { color: var(--error); border-color: var(--error); }
+.btn-grande { min-height: 56px; font-size: 19px; width: 100%; }
+
+button:disabled {
+  background: #e2e8f0;
+  color: var(--texto-2);
+  border-color: var(--borde);
+  border-style: dashed;
+  cursor: not-allowed;
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+/* ---------------------------------------------------------------------------
+   Campos de captura
+   --------------------------------------------------------------------------- */
+label { font-weight: 600; }
+
+input:not([type='checkbox']):not([type='radio']):not([type='file']),
+select,
+textarea {
+  font: inherit;
+  font-weight: 500;
+  color: var(--texto);
+  background: var(--blanco);
+  border: 2px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 10px 12px;
+  min-height: 44px;
+}
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='file']),
+  select { min-height: var(--objetivo); }
+}
+textarea { min-height: 96px; resize: vertical; }
+
+input[type='checkbox'], input[type='radio'] {
+  width: 26px;
+  height: 26px;
+  accent-color: var(--noche);
+  flex: none;
+}
+
+::placeholder { color: var(--texto-2); opacity: 1; }
+
+/* ---------------------------------------------------------------------------
+   Tablas (oficina)
+   --------------------------------------------------------------------------- */
+table { border-collapse: collapse; background: var(--blanco); }
+th {
+  background: var(--noche);
+  color: var(--blanco);
+  text-align: left;
+  font-weight: 700;
+}
+th, td { border: 1px solid var(--linea); padding: 8px 10px; }
+
+/* ---------------------------------------------------------------------------
+   Estructura
+   --------------------------------------------------------------------------- */
+.pagina { max-width: 1200px; margin: 0 auto; padding: 16px; }
+.pagina-angosta { max-width: 600px; }
+
+.tarjeta {
+  background: var(--blanco);
+  border: 2px solid var(--linea);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.tarjeta > h3:first-child { margin-top: 0; }
+
+.campo { display: grid; gap: 6px; margin-bottom: 14px; }
+.campo > span { font-weight: 600; }
+.ayuda { color: var(--texto-2); font-size: 1em; }
+
+.fila { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.oculto-accesible { position: absolute; opacity: 0; width: 1px; height: 1px; overflow: hidden; }
+
+/* ---------------------------------------------------------------------------
+   Alertas: color + ícono + palabra. Nunca solo color.
+   --------------------------------------------------------------------------- */
+.alerta {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  margin: 0 0 12px;
+  color: var(--noche);
+  border-left: 8px solid;
+  border-radius: var(--radio);
+}
+.alerta-icono {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  color: var(--blanco);
+  border-radius: 50%;
+}
+.alerta-ok    { background: var(--ok-fondo);    border-color: var(--ok); }
+.alerta-error { background: var(--error-fondo); border-color: var(--error); }
+.alerta-info  { background: var(--info-fondo);  border-color: var(--info); }
+.alerta-aviso { background: var(--aviso-fondo); border-color: var(--aviso); }
+.alerta-ok .alerta-icono    { background: var(--ok); }
+.alerta-error .alerta-icono { background: var(--error); }
+.alerta-info .alerta-icono  { background: var(--info); }
+.alerta-aviso .alerta-icono { background: var(--aviso); }
+
+/* ---------------------------------------------------------------------------
+   Barra superior con la marca. Azul noche, hexágono ámbar.
+   --------------------------------------------------------------------------- */
+.barra {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--noche);
+  color: var(--blanco);
+}
+.barra :focus-visible { outline-color: var(--blanco); box-shadow: 0 0 0 6px var(--noche); }
+
+.barra-fila {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+}
+.marca {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--fuente-marca);
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.3px;
+  color: var(--blanco);
+}
+.barra-usuario {
+  margin-left: auto;
+  min-width: 0;
+  text-align: right;
+  line-height: 1.25;
+}
+.barra-usuario span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.barra-usuario small { display: block; color: #cbd5e1; font-size: 1em; }
+
+.barra button {
+  color: var(--blanco);
+  background: transparent;
+  border-color: #94a3b8;
+}
+.barra button:hover:not(:disabled) { background: #1e293b; }
+
+.nav {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 16px 12px;
+  scrollbar-width: thin;
+}
+.nav button { white-space: nowrap; flex: none; }
+/* Con el ratón encima, la pestaña activa sigue siendo ámbar con texto azul noche:
+   la regla de hover de la barra la dejaba oscura con texto oscuro (ilegible). */
+.nav button[aria-current='page'],
+.nav button[aria-current='page']:hover:not(:disabled) {
+  background: var(--ambar);
+  color: var(--noche);
+  border-color: var(--ambar);
+}
+
+/* Pantalla de carga, avisos de cuenta, login */
+.centro { max-width: 520px; margin: 0 auto; padding: 24px 16px; }
+
+/* ---------------------------------------------------------------------------
+   Pantalla de Órdenes (campo, celular, sol directo)
+   --------------------------------------------------------------------------- */
+
+/* Opciones excluyentes como botones grandes: un pulgar con guante las acierta. */
+.opciones { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.opcion { min-height: 56px; }
+.opcion[aria-checked='true'] {
+  background: var(--noche);
+  color: var(--blanco);
+}
+
+/* Casilla con la fila entera como zona de toque. */
+.casilla {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.refaccion {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 2px solid var(--linea);
+  margin-bottom: 8px;
+}
+.refaccion input:not([type='number']) { width: 100%; }
+.refaccion .fila label { font-weight: 600; }
+
+.boton-archivo { cursor: pointer; width: 100%; min-height: 56px; }
+.boton-archivo:focus-within { outline: 3px solid var(--noche); outline-offset: 2px; box-shadow: 0 0 0 6px var(--blanco); }
+
+.fotos { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; }
+.foto { position: relative; width: 104px; height: 104px; }
+.foto img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 2px solid var(--noche);
+  border-radius: var(--radio);
+}
+.foto-quitar {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 48px;
+  min-height: 48px;
+  padding: 0;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--blanco);
+  background: var(--noche);
+  border-color: var(--blanco);
+  border-radius: 50%;
+}
+.foto-quitar:hover:not(:disabled) { background: var(--error); }
+
+.firma-lienzo {
+  display: block;
+  width: 100%;
+  height: 180px;
+  margin-bottom: 10px;
+  background: var(--blanco);
+  border: 2px solid var(--noche);
+  border-radius: var(--radio);
+  touch-action: none;   /* sin esto, arrastrar el dedo desplaza la página */
+}
+
+/* El botón de guardar queda a la vista en un formulario largo. */
+.barra-accion {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  margin: 0 -16px 16px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--claro);
+  border-top: 2px solid var(--linea);
+}
+.barra-accion .alerta { margin-bottom: 10px; }
+
+/* ---------------------------------------------------------------------------
+   Agenda
+   --------------------------------------------------------------------------- */
+.calendario {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  max-width: 780px;
+}
+.calendario-dia-semana {
+  text-align: center;
+  padding: 4px 0;
+  font-weight: 700;
+  color: var(--texto-2);
+}
+.dia {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-height: 72px;
+  padding: 6px;
+  font-weight: 600;
+  border-color: var(--borde);
+}
+.dia-hoy { background: var(--info-fondo); }
+.dia-activo { border-width: 4px; padding: 4px; }
+.dia-marcas { display: flex; flex-wrap: wrap; gap: 3px; }
+.marca-dia {
+  min-width: 24px;
+  padding: 0 5px;
+  text-align: center;
+  font-weight: 800;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+.marca-cita { background: var(--noche); color: var(--blanco); }
+.marca-mtto { background: var(--aviso-fondo); color: var(--noche); border: 2px solid var(--aviso); }
+
+/* Estado de una cita o requisición: palabra dentro de una cápsula. */
+.estado {
+  flex: none;
+  padding: 2px 12px;
+  font-weight: 700;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+}
+.estado-programada { color: var(--info); }
+.estado-por_programar { color: var(--aviso); }
+.estado-realizada { color: var(--ok); }
+.estado-cancelada { color: var(--texto-2); }
+
+.etiqueta {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 0 10px;
+  font-weight: 700;
+  color: var(--blanco);
+  background: var(--noche);
+  border-radius: 6px;
+}
+
+/* ---------------------------------------------------------------------------
+   Mis trabajos
+   --------------------------------------------------------------------------- */
+.orden-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 14px 16px;
+  text-align: left;
+  font-weight: 500;
+  border-radius: 14px;
+}
+.orden-item strong { font-weight: 700; }
+.estado-abierta { color: var(--info); }
+.estado-cerrada { color: var(--ok); }
+.etiqueta + .etiqueta { margin-left: 6px; }
+.etiqueta-aviso { color: var(--noche); background: var(--aviso-fondo); border: 2px solid var(--aviso); }
+.foto-vacia {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--texto-2);
+  background: var(--claro);
+  border: 2px dashed var(--borde);
+  border-radius: var(--radio);
 }

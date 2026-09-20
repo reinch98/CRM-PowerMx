@@ -6,7 +6,8 @@ const vacio = {
   rfc: '', telefono: '', telefono_alterno: '', email: '',
   contacto_nombre: '', direccion: '', colonia: '', municipio: '',
   estado_geo: 'Yucatán', codigo_postal: '', zona: '',
-  maps_url: '', referencias: '', origen: '', notas: ''
+  maps_url: '', referencias: '', origen: '', notas: '',
+  distancia_km: ''
 }
 
 export default function Clientes() {
@@ -33,6 +34,15 @@ export default function Clientes() {
     else cargar()
   }
 
+  async function guardarKm(c, valor) {
+    const km = valor === '' ? null : Number(valor)
+    if (km === (c.distancia_km ?? null)) return          // no cambió: no se toca la base
+    setError('')
+    const { error } = await supabase.from('clientes').update({ distancia_km: km }).eq('id', c.id)
+    if (error) return setError(error.message)
+    cargar()
+  }
+
   function cambiar(campo, valor) {
     setForm({ ...form, [campo]: valor })
   }
@@ -42,7 +52,9 @@ export default function Clientes() {
     if (!form.nombre.trim()) { setError('El nombre es obligatorio'); return }
     setGuardando(true)
     setError('')
-    const { error } = await supabase.from('clientes').insert([form])
+    // Postgres no acepta '' en una columna numérica: vacío se manda como null.
+    const payload = { ...form, distancia_km: form.distancia_km === '' ? null : Number(form.distancia_km) }
+    const { error } = await supabase.from('clientes').insert([payload])
     setGuardando(false)
     if (error) setError(error.message)
     else { setForm(vacio); cargar() }
@@ -63,6 +75,7 @@ export default function Clientes() {
     ['codigo_postal', 'Código postal'],
     ['zona', 'Zona'],
     ['maps_url', 'Enlace de Google Maps'],
+    ['distancia_km', 'Distancia a la oficina (km, solo ida; para el traslado)'],
     ['referencias', 'Referencias'],
     ['origen', 'Origen'],
     ['notas', 'Notas']
@@ -87,6 +100,9 @@ export default function Clientes() {
           <label key={campo}>
             {etiqueta}<br />
             <input
+              type={campo === 'distancia_km' ? 'number' : 'text'}
+              min={campo === 'distancia_km' ? 0 : undefined}
+              step={campo === 'distancia_km' ? 'any' : undefined}
               value={form[campo]}
               onChange={e => cambiar(campo, e.target.value)}
               style={{ width: '100%' }}
@@ -104,7 +120,7 @@ export default function Clientes() {
       <table border="1" cellPadding="6" style={{ borderCollapse: 'collapse' }}>
         <thead>
           <tr>
-            <th>Nombre</th><th>Tipo</th><th>Teléfono</th><th>Zona</th><th>Municipio</th><th></th>
+            <th>Nombre</th><th>Tipo</th><th>Teléfono</th><th>Zona</th><th>Municipio</th><th>Km</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -115,6 +131,15 @@ export default function Clientes() {
               <td>{c.telefono}</td>
               <td>{c.zona}</td>
               <td>{c.municipio}</td>
+              <td>
+                {/* Se guarda al salir del campo. Hace falta para el cargo de traslado. */}
+                <input
+                  type="number" min="0" step="any" style={{ width: 90 }}
+                  aria-label={`Distancia en km de ${c.nombre}`}
+                  defaultValue={c.distancia_km ?? ''}
+                  onBlur={e => guardarKm(c, e.target.value)}
+                />
+              </td>
               <td><button onClick={() => borrar(c.id)}>Borrar</button></td>
             </tr>
           ))}
