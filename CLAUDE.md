@@ -239,6 +239,23 @@ equipo, las personas a cargo con "Ligar a este equipo" (`vincular_contacto`; avi
 responsable actual) y aviso "Sin responsable". Pendiente: que el técnico vea al responsable de su
 orden; ligar contactos desde la pantalla Equipos.
 
+**Avisos de cita (SQL 16): escrito, sin correr** (`supabase/sql/16_avisos_de_cita.sql` y
+`16_prueba_avisos.sql`). "Confirmar" una cita = que quede `programada` (agendada en la Agenda,
+aceptando una cotización con horario, o programando una `por_programar`). Un **trigger en `citas`**
+cubre todos esos caminos y pone en la cola `avisos` (un aviso pendiente por persona y cita) un
+mensaje **al cliente** (sus contactos del equipo: el responsable y quien pueda pedir citas; sin
+contactos, el teléfono de la ficha) y **a cada técnico** (T1 y T2, con `perfiles.telefono`: cliente,
+contacto en sitio con teléfono, dirección, referencias, mapa, equipo con serie, horario y su papel;
+**nunca precios ni costos**). Reprogramar o cambiar de técnico avisa del cambio; cancelar avisa,
+pero solo a quien ya había recibido un mensaje de esa cita; un técnico recién asignado recibe una
+confirmación, no un "cambio". El **texto se arma al leer** (`texto_aviso`, con los datos de ese
+momento) y al enviarse se guarda copia (`texto_enviado`). `avisos_pendientes()` y
+`marcar_aviso(id, 'enviado' | 'descartado')`, solo admin. **Salida**: hoy, el admin abre la cola en
+la Agenda y pulsa "Enviar por WhatsApp" (enlace `wa.me/52<10 dígitos>?text=…`, un toque por
+destinatario); después, una Edge Function con la API de WhatsApp leerá la misma cola y mandará
+plantillas (fuera de las 24 h). Un técnico sin teléfono en su perfil aparece en la cola "sin número":
+hay que capturarlo en Usuarios. Pendiente: la cola en la pantalla Agenda.
+
 **Datos que faltan capturar** (desde la pantalla Tarifas, no bloquean el código): tarifas
 de diagnóstico por clase × tramo de kW, precio por km, y `distancia_km` de cada cliente
 (se edita en la lista de Clientes).
