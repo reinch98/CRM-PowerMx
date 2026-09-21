@@ -181,6 +181,22 @@ su `<details>` se retiraron del código. Un celular viejo puede conservar en loc
 La prueba del flujo del técnico en un celular real (fotos, firma, parte del ayudante) la
 hizo Caña el 20/09/2026: "todo en orden".
 
+**2a: SQL escrito, sin correr** (`supabase/sql/14_almacen_entregas.sql` y `14_prueba_almacen.sql`).
+Rol `almacenista` (`perfiles.rol` es texto; `movimientos_inventario.tipo` también, sin `check`).
+El almacenista **no lee tablas**: trabaja con funciones security definer (`ordenes_por_surtir`,
+`fijar_surtido`, `crear_entrega`, `cancelar_entrega`, `entregar_sin_firma`); T1 firma con
+`firmar_entrega` (la firma va a `entregas/<id>.png` del bucket `ordenes`). Tablas `orden_surtido`
+(se arma sola con las piezas de la cotización aceptada; copia sku/nombre: sin precios),
+`entregas` y `entrega_lineas`; el técnico de la orden las lee. **El inventario no se mueve hasta
+firmar:** `entrega_tecnico` (físico −, custodia +) más `libera_apartado` por lo entregado de la
+cotización. `existencias` tiene `en_custodia`. Tipos reservados para la fase 3:
+`devolucion_tecnico` (físico +, custodia −) y `consumo_tecnico` (custodia −).
+`cambiar_estado_cotizacion` (copia de la de 10) ahora libera solo lo que aún queda apartado
+(pedido − entregado) y cuenta el material entregado como "trabajo" para no cancelar la cita.
+**Deuda:** `cancelar_cita` (11) todavía no mira el material entregado; se arregla en la fase 3
+junto con la devolución. No poner al almacenista a operar en producción antes de la fase 3.
+Fase 2b (pantallas "Almacén" y "Material" del técnico) sin empezar.
+
 **Datos que faltan capturar** (desde la pantalla Tarifas, no bloquean el código): tarifas
 de diagnóstico por clase × tramo de kW, precio por km, y `distancia_km` de cada cliente
 (se edita en la lista de Clientes).
