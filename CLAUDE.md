@@ -171,6 +171,14 @@ fotos del compañero, y dos técnicos editando en dos celulares sin señal. La p
 midió en el emulador: 0 textos de menos de 17 px, 0 contrastes bajo 4.5, 0 objetivos de
 menos de 48 px.
 
+**1e: SQL escrito, sin correr** (`supabase/sql/13_retirar_orden_libre.sql` y su prueba
+`13_prueba_retirar_orden_libre.sql`). Quita las políticas `tecnico_crea_ordenes` y
+`tecnico_actualiza_sus_citas`: el técnico ya no crea órdenes ni toca citas (la cita pasa a
+`realizada` con `cerrar_orden`, security definer; el botón "Realizada" de la Agenda es solo
+admin). **No correrlo** hasta que los celulares vacíen "Pendientes por subir" de la orden
+libre. Después: quitar `Ordenes.jsx` y su `<details>` de `Trabajos.jsx`, y sacar de
+`local.js`/`App.jsx` lo que solo usaba esa cola (`ordenes_pendientes`).
+
 **Datos que faltan capturar** (desde la pantalla Tarifas, no bloquean el código): tarifas
 de diagnóstico por clase × tramo de kW, precio por km, y `distancia_km` de cada cliente
 (se edita en la lista de Clientes).
