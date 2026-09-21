@@ -216,9 +216,69 @@ pendiente. Probado en emulador con un Supabase falso (0 textos < 17 px, 0 contra
 Falta: probar contra la base real con cuentas de almacenista y técnico, y crear la cuenta del
 almacenista (Authentication → Add user, luego rol "Almacenista" en Usuarios).
 
+**Contactos (SQL 15): escrito, sin correr** (`supabase/sql/15_contactos.sql` y
+`15_prueba_contactos.sql`). Tablas `contactos` (una fila por persona-y-número, de un cliente;
+`de_toda_la_empresa` para administración y similares) y `equipo_contactos` (rol `responsable` |
+`encargado` | `administracion` | `solo_avisos` y permisos: pedir citas, recibir órdenes, recibir
+cotizaciones; **un solo responsable por equipo**, índice único). Teléfonos comparados por sus
+últimos 10 dígitos (`normalizar_telefono`, `telefono_norm`: WhatsApp da 521…). Un mismo número
+puede estar en varios clientes, no dos veces en el mismo. `vincular_contacto` pone permisos por
+rol y, al nombrar un responsable, baja al anterior a encargado; `identificar_telefono` devuelve
+personas, clientes y equipos (con la serie) de un número; vista `contactos_por_equipo`
+(invoker). Solo admin. La migración copia `contacto_nombre`, `telefono`, `telefono_alterno` y
+`email` de cada ficha como contactos de toda la empresa, verificados. `clientes.telefono` sigue
+siendo el de la ficha (el técnico lo usa para llamar). Pendiente: pantalla "Contactos" (admin) y
+que el técnico vea al responsable de su orden.
+
 **Datos que faltan capturar** (desde la pantalla Tarifas, no bloquean el código): tarifas
 de diagnóstico por clase × tramo de kW, precio por km, y `distancia_km` de cada cliente
 (se edita en la lista de Clientes).
+
+## WhatsApp — diseño acordado con Caña el 20/09/2026 (sin construir)
+
+Un agente conectado a WhatsApp para agendar citas, reconocer números de clientes y enlazar todo
+con el CRM. **Es un origen nuevo de citas, delante de la Agenda**: no toca órdenes, inventario
+ni el flujo del técnico, y reutiliza `agendar_cita` (que ya crea cita + orden, avisa empalmes y
+arma la cotización de diagnóstico).
+
+`mensaje entrante → webhook (Edge Function nueva) → identificar contacto → agente de WhatsApp →
+cita "por_programar" (tú confirmas en la Agenda) → confirmación por plantilla → recordatorio el
+día anterior → orden de servicio en PDF al cerrar (fase 4)`
+
+- **Varias personas por equipo:** `contactos` + `equipo_contactos` (SQL 15). Un número puede
+  estar ligado a varios equipos o clientes: el agente pregunta de cuál habla.
+- **El agente nunca pide el número de serie** (el cliente casi nunca lo tiene). Lo resuelve:
+  equipos ligados al número → si hay uno, lo confirma con descripción ("el generador Generac de
+  22 kW de X, ¿verdad?"); si hay varios, lista con marca, capacidad y última visita (sin series).
+  La serie sale del equipo o de su última orden y se incluye en la confirmación.
+- **Número desconocido o sin verificar: no ve datos de nadie.** Pide nombre, empresa y equipo;
+  queda como contacto sin verificar hasta que el admin lo enlaza (requiere conversaciones con
+  `contacto_id` nulo: fase de la bandeja).
+- **Orden de servicio por WhatsApp:** la copia del cliente (fase 4) como documento, con
+  "Enviar al cliente" y **destinatarios editables**: salen marcados el responsable y quienes
+  tengan `recibe_ordenes`, y el admin los ajusta antes de enviar. Requiere plantilla aprobada de
+  Meta con documento (fuera de las 24 h). La tabla de envíos guarda canal, destinatario,
+  `wa_message_id` y estado (entregado / leído).
+- **Cotizar solo preventivos:** el agente de WhatsApp tiene UNA herramienta de escritura,
+  `cotizar_preventivo(equipo)`. El **precio lo calcula la base** (tarifa de preventivo por clase ×
+  capacidad + traslado, como el diagnóstico; con la fase 5, el paquete del equipo con sus
+  piezas): el modelo solo lo transmite. Solo para equipos con clase, capacidad y distancia del
+  cliente; si falta algo, pasa a una persona. Sale en **borrador** (origen `whatsapp`) y el admin
+  lo aprueba y lo envía. **Aceptar por WhatsApp solo crea un aviso al admin**: no mueve dinero ni
+  inventario. El agente interno (admin) sigue solo de lectura.
+- **Seguridad:** el agente de WhatsApp NO es el agente actual (solo admin, hereda una sesión).
+  Lleva otro prompt y solo funciones acotadas al `cliente_id` del **número verificado**, nunca al
+  que diga el texto. El texto de un cliente es dato no confiable (inyección de instrucciones).
+  Sin precios internos, costos ni datos de otros clientes. Sin `service_role`: una cuenta propia
+  con rol `bot` que solo llama funciones concretas. Tope de mensajes por número al día (abuso y
+  saldo de la API). Todo a `auditoria`.
+- **Orden de construcción:** (1) `contactos` y su pantalla — no depende de WhatsApp; (2) bandeja
+  de conversaciones e identificación de números; (3) el agente propone citas `por_programar` y
+  cotiza preventivos en borrador; (4) mensajes salientes por plantilla (confirmación, recordatorio,
+  orden, cotización).
+- **Lo lento no es el código:** la verificación del negocio en Meta, la aprobación de plantillas y
+  un número dedicado que no esté activo en la app normal de WhatsApp tardan días o semanas.
+  Conviene iniciar ese trámite antes que el código.
 
 ## Seguridad — lo más importante
 
