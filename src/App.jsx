@@ -7,6 +7,7 @@ import Agenda from './Agenda'
 import Clientes from './Clientes'
 import Equipos from './Equipos'
 import Trabajos from './Trabajos'
+import Almacen from './Almacen'
 import Inventario from './Inventario'
 import Cotizaciones from './Cotizaciones'
 import Requisiciones from './Requisiciones'
@@ -19,6 +20,7 @@ import Agente from './Agente'
 const PANTALLAS = {
   agenda:       { titulo: 'Agenda',       componente: Agenda,       roles: ['admin', 'tecnico'] },
   ordenes:      { titulo: 'Órdenes',      componente: Trabajos,     roles: ['admin', 'tecnico'] },
+  almacen:      { titulo: 'Almacén',      componente: Almacen,      roles: ['admin', 'almacenista'] },
   clientes:     { titulo: 'Clientes',     componente: Clientes,     roles: ['admin'] },
   equipos:      { titulo: 'Equipos',      componente: Equipos,      roles: ['admin'] },
   inventario:   { titulo: 'Inventario',   componente: Inventario,   roles: ['admin'] },
@@ -30,7 +32,7 @@ const PANTALLAS = {
 }
 
 const ETIQUETA_ROL = {
-  admin: 'Administrador', tecnico: 'Técnico', cliente: 'Cliente', sin_rol: 'Sin permisos'
+  admin: 'Administrador', tecnico: 'Técnico', almacenista: 'Almacén', cliente: 'Cliente', sin_rol: 'Sin permisos'
 }
 
 const CACHE_PERFIL = 'cache_perfil'

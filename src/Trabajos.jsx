@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { usuarioLocal, leerLocal } from './lib/local'
-import { redimensionar, firmaEnBlanco } from './lib/imagen'
+import { redimensionar, firmaEnBlanco, dataUrlABlob } from './lib/imagen'
+import { firmarEntrega } from './lib/almacen'
 import { fotosDeOrden } from './lib/idb'
 import { cierrePendiente, pendienteDe } from './lib/cola'
 import { explicarError } from './lib/errores'
@@ -21,11 +22,102 @@ const ESTADO = { abierta: 'Abierta', cerrada: 'Cerrada' }
 const nombreDe = (nombres, id) => nombres.find(n => n.id === id)?.nombre || 'Técnico'
 const cuando = o => `${o.citas?.fecha || o.fecha}${o.citas?.hora ? ' ' + o.citas.hora.slice(0, 5) : ''}`
 
+// Cuánto ha recibido el técnico de una pieza, con palabra (no solo color).
+const estadoRecibido = l =>
+  Number(l.cantidad_entregada) >= Number(l.cantidad_pedida) ? 'Completo'
+    : Number(l.cantidad_entregada) > 0 ? 'Parcial' : 'Por recibir'
+
+// ---------------------------------------------------------------------------
+// Material de la orden: lo que el almacén tiene que entregar y lo que ya entregó. Sin
+// precios ni costos. Si hay una entrega esperando firma, el responsable (T1) la revisa y firma
+// de recibido: eso necesita señal, porque es lo que descuenta el material del inventario.
+// ---------------------------------------------------------------------------
+function MaterialOrden({ orden, soyT1, abierta, enLinea, nombreT1, onRefrescar }) {
+  const surtido = orden.orden_surtido || []
+  const entregas = (orden.entregas || []).filter(e => e.estado !== 'cancelada')
+  const porFirmar = entregas.filter(e => e.estado === 'pendiente')
+  const hechas = entregas.filter(e => e.estado !== 'pendiente')
+  const [firmando, setFirmando] = useState(null)      // id de la entrega que se está firmando
+  const [ocupado, setOcupado] = useState(false)
+  const [error, setError] = useState('')
+  const refLienzo = useRef(null)
+
+  if (surtido.length === 0 && entregas.length === 0) return null
+
+  async function confirmar(e) {
+    setError('')
+    if (!enLinea) return setError('Sin señal. Para firmar de recibido necesitas conexión: es lo que descuenta el material del inventario.')
+    if (firmaEnBlanco(refLienzo.current)) return setError('Falta tu firma.')
+    setOcupado(true)
+    const r = await firmarEntrega(e.id, dataUrlABlob(refLienzo.current.toDataURL('image/png')))
+    setOcupado(false)
+    if (!r.ok) return setError(r.texto)
+    setFirmando(null)
+    await onRefrescar()
+  }
+
+  return (
+    <section className="tarjeta">
+      <h3>Material</h3>
+
+      {surtido.map(l => (
+        <div key={l.id} className="linea-surtido">
+          <div className="fila" style={{ justifyContent: 'space-between' }}>
+            <strong>{l.sku} — {l.nombre}</strong>
+            <span className="etiqueta">{estadoRecibido(l)}</span>
+          </div>
+          <div className="ayuda">
+            Recibido {l.cantidad_entregada} de {l.cantidad_pedida}{l.unidad ? ` ${l.unidad}` : ''}
+          </div>
+        </div>
+      ))}
+
+      {porFirmar.map(e => (
+        <div key={e.id} className="conjunto">
+          <strong>Entrega ENT-{e.folio} por recibir</strong>
+          <ul>
+            {(e.entrega_lineas || []).map((x, i) => <li key={i}>{x.cantidad} × {x.sku} — {x.nombre}</li>)}
+          </ul>
+          {!soyT1 && (
+            <p className="ayuda">La firma de recibido la hace {nombreT1 || 'el responsable'}, en el almacén.</p>
+          )}
+          {soyT1 && abierta && firmando !== e.id && (
+            <button type="button" className="btn-primario" onClick={() => { setError(''); setFirmando(e.id) }}>
+              Revisar y firmar de recibido
+            </button>
+          )}
+          {soyT1 && abierta && firmando === e.id && (
+            <>
+              <Firma refLienzo={refLienzo}
+                ayuda="Revisa que las piezas coincidan y firma con el dedo. Al firmar, el material queda a tu cargo."
+                etiqueta="Espacio para tu firma de recibido" />
+              {error && <Alerta tipo="error">{error}</Alerta>}
+              <div className="fila" style={{ marginTop: 10 }}>
+                <button type="button" className="btn-primario" disabled={ocupado} onClick={() => confirmar(e)}>
+                  {ocupado ? 'Firmando…' : 'Recibí este material'}
+                </button>
+                <button type="button" disabled={ocupado} onClick={() => setFirmando(null)}>Ahora no</button>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+
+      {hechas.map(e => (
+        <p key={e.id} className="ayuda">
+          <strong>ENT-{e.folio} · {e.estado === 'firmada' ? 'Firmada' : 'Entregada sin firma'}:</strong>{' '}
+          {(e.entrega_lineas || []).map(x => `${x.cantidad} × ${x.sku}`).join(', ')}
+        </p>
+      ))}
+    </section>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Detalle de una orden. Componente de nivel superior (no definido dentro de otro)
 // para que los campos no pierdan el foco al escribir.
 // ---------------------------------------------------------------------------
-function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, onCambio }) {
+function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, onCambio, onRefrescar }) {
   const soyT1 = orden.tecnico_id === yo
   const soyT2 = orden.tecnico2_id === yo
   const abierta = orden.estado === 'abierta'
@@ -216,6 +308,9 @@ function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, on
           {orden.tecnico2_id && <> · Ayudante: {nombreDe(nombres, orden.tecnico2_id)}</>}
         </p>
       </section>
+
+      <MaterialOrden orden={orden} soyT1={soyT1} abierta={abierta} enLinea={enLinea}
+        nombreT1={nombreDe(nombres, orden.tecnico_id)} onRefrescar={onRefrescar} />
 
       {/* ---- orden cerrada: solo lectura ---- */}
       {!abierta && (
@@ -424,7 +519,7 @@ export default function Trabajos() {
       <DetalleOrden
         key={orden.id} orden={orden} yo={yo} esAdmin={esAdmin} nombres={nombres}
         cola={cola} enLinea={enLinea}
-        onVolver={() => setSeleccion(null)} onCambio={() => setCola(leerCola())}
+        onVolver={() => setSeleccion(null)} onCambio={() => setCola(leerCola())} onRefrescar={refrescar}
       />
     )
   }

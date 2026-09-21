@@ -4,7 +4,8 @@ import { Alerta } from './ui'
 
 const ROLES = [
   ['admin', 'Administrador', 'Ve y hace todo: precios, costos, cotizaciones e inventario.'],
-  ['tecnico', 'Técnico', 'Ve sus citas y captura órdenes. No ve costos ni cotizaciones.'],
+  ['tecnico', 'Técnico', 'Ve sus citas y órdenes, escribe su parte y, si es el responsable, recibe material y cierra la orden. No ve precios, costos ni cotizaciones.'],
+  ['almacenista', 'Almacenista', 'Prepara las entregas de material a los técnicos y ve existencias, sin precios ni costos. No ve clientes ni cotizaciones.'],
   ['cliente', 'Cliente', 'Solo su propia ficha, sus equipos y su historial. Requiere elegir el cliente.'],
   ['sin_rol', 'Sin permisos', 'Entra al sistema pero no ve nada. Es el estado inicial de toda cuenta nueva.']
 ]

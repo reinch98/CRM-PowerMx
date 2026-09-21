@@ -5,7 +5,11 @@ import { useRef } from 'react'
 // El componente padre guarda `refLienzo` para leer el dibujo (toDataURL) y saber
 // si está en blanco (firmaEnBlanco).
 // ---------------------------------------------------------------------------
-export default function Firma({ refLienzo }) {
+export default function Firma({
+  refLienzo,
+  ayuda = 'Pídele al cliente que firme aquí con el dedo.',
+  etiqueta = 'Espacio para la firma del cliente'
+}) {
   const dibujando = useRef(false)
 
   function posicion(e) {
@@ -49,13 +53,13 @@ export default function Firma({ refLienzo }) {
 
   return (
     <div>
-      <p className="ayuda">Pídele al cliente que firme aquí con el dedo.</p>
+      <p className="ayuda">{ayuda}</p>
       <canvas
         ref={refLienzo}
         className="firma-lienzo"
         width={600}
         height={240}
-        aria-label="Espacio para la firma del cliente"
+        aria-label={etiqueta}
         onPointerDown={iniciar}
         onPointerMove={mover}
         onPointerUp={terminar}

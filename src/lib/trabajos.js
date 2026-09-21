@@ -26,12 +26,15 @@ const PARTES = 'partes_locales'
 export const COLA = 'cola_trabajos'
 const BUCKET = 'ordenes'
 
-// Lo que la pantalla necesita de cada orden: su cita, el cliente y el equipo, y las
-// partes de los dos técnicos.
+// Lo que la pantalla necesita de cada orden: su cita, el cliente y el equipo, las partes de
+// los dos técnicos y el material (lista de surtido y entregas; sin precios ni costos, esas
+// tablas no los tienen). Se guarda con lo demás, así el material se ve también sin señal.
 const SELECCION =
   '*, citas(fecha, hora, duracion_min, zona, notas, tipo_servicio), ' +
   'clientes(nombre, telefono, direccion, colonia, municipio, maps_url, referencias), ' +
-  'equipos(numero_serie, marca, modelo, tipo, capacidad_kw), orden_partes(*)'
+  'equipos(numero_serie, marca, modelo, tipo, capacidad_kw), orden_partes(*), ' +
+  'orden_surtido(id, producto_id, sku, nombre, unidad, cantidad_pedida, cantidad_entregada), ' +
+  'entregas(id, folio, estado, created_at, entrega_lineas(sku, nombre, unidad, cantidad))'
 
 export const leerTrabajos = () => leerLocal(CACHE, [])
 export const leerNombres = () => leerLocal(NOMBRES, [])

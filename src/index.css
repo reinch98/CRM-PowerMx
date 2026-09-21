@@ -559,3 +559,15 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
 .estado-aceptada, .estado-recibida { color: var(--ok); }
 .estado-rechazada { color: var(--error); }
 .estado-vencida, .estado-pendiente { color: var(--aviso); }
+
+/* Almacén: una pieza de la lista de surtido (pantalla Almacén y "Material" de la orden). */
+.linea-surtido {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  background: var(--blanco);
+  border: 2px solid var(--linea);
+  border-radius: 12px;
+}
+.conjunto ul { margin: 8px 0; padding-left: 22px; }

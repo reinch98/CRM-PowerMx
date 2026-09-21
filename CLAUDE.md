@@ -181,7 +181,12 @@ su `<details>` se retiraron del código. Un celular viejo puede conservar en loc
 La prueba del flujo del técnico en un celular real (fotos, firma, parte del ayudante) la
 hizo Caña el 20/09/2026: "todo en orden".
 
-**2a: SQL escrito, sin correr** (`supabase/sql/14_almacen_entregas.sql` y `14_prueba_almacen.sql`).
+**2a: aplicada y probada en la base el 20/09/2026** (`supabase/sql/14_almacen_entregas.sql` y
+`14_prueba_almacen.sql`; 11 pasos con rollback, todos "ok": aceptar aparta, la entrega pendiente
+no mueve nada, pedir de más se rechaza, el almacén no firma, T1 firma → físico −3 / custodia +3 /
+disponible igual, firmar dos veces no repite, rechazar libera solo lo que quedaba, entrega sin
+firma exige motivo, el almacenista no lee tablas). En la prueba, usar `concat()` y no `||`:
+un valor nulo anulaba todo el resultado.
 Rol `almacenista` (`perfiles.rol` es texto; `movimientos_inventario.tipo` también, sin `check`).
 El almacenista **no lee tablas**: trabaja con funciones security definer (`ordenes_por_surtir`,
 `fijar_surtido`, `crear_entrega`, `cancelar_entrega`, `entregar_sin_firma`); T1 firma con
@@ -195,7 +200,21 @@ cotización. `existencias` tiene `en_custodia`. Tipos reservados para la fase 3:
 (pedido − entregado) y cuenta el material entregado como "trabajo" para no cancelar la cita.
 **Deuda:** `cancelar_cita` (11) todavía no mira el material entregado; se arregla en la fase 3
 junto con la devolución. No poner al almacenista a operar en producción antes de la fase 3.
-Fase 2b (pantallas "Almacén" y "Material" del técnico) sin empezar.
+
+**2b: construida, sin publicar ni probar en celular real** (`src/Almacen.jsx`, `src/lib/almacen.js`,
+`MaterialOrden` en `Trabajos.jsx`). Pantalla **Almacén** (roles `admin` y `almacenista`; el
+almacenista solo ve esa pestaña): una tarjeta por orden abierta con cita programada, piezas con
+pedida / entregada / por firmar / en el estante y estado con palabra, "Preparar entrega" (propone
+lo que hay en el estante), entregas por firmar (cancelar, o "Entregar sin firma" con motivo) y
+"Agregar una pieza a mano" (póliza o extra; busca en `existencias`, sin precios). Necesita señal:
+no hay cola sin conexión para el almacén. En la orden del técnico, tarjeta **Material** (lista de
+surtido y entregas, cacheadas con `cache_mis_trabajos`, así se ve sin señal): el T1 abre "Revisar y
+firmar de recibido", firma en el canvas (`Firma` acepta `ayuda` y `etiqueta`), la imagen sube a
+`entregas/<id>.png` del bucket `ordenes` y luego se llama `firmar_entrega`. T2 solo ve que está
+pendiente. Probado en emulador con un Supabase falso (0 textos < 17 px, 0 contrastes < 4.5,
+0 objetivos < 48 px, 0 px de desborde; las reglas puras de `almacen.js` con 17 casos en Node).
+Falta: probar contra la base real con cuentas de almacenista y técnico, y crear la cuenta del
+almacenista (Authentication → Add user, luego rol "Almacenista" en Usuarios).
 
 **Datos que faltan capturar** (desde la pantalla Tarifas, no bloquean el código): tarifas
 de diagnóstico por clase × tramo de kW, precio por km, y `distancia_km` de cada cliente
@@ -320,7 +339,7 @@ Los técnicos trabajan casi siempre **bajo el sol directo**. Eso manda:
 
 `Agenda` (calendario, por programar, empalmes) · `Trabajos` (pestaña "Órdenes"; móvil,
 funciona sin señal; ver 1d: cola en localStorage, fotos encogidas en IndexedDB, firma en
-canvas) · `Clientes` ·
+canvas) · `Almacen` (admin y almacenista; ver 2b) · `Clientes` ·
 `Equipos` · `Inventario` · `Cotizaciones` · `Requisiciones` · `Tarifas` (ambas solo admin) ·
 `Tecnicos` (pestaña "Usuarios") · `Agente` · `Login`. Las pantallas reciben la
 prop `irA(clave)` de `App.jsx` para saltar a otra pantalla. El portal del cliente es un aviso de "en construcción".
