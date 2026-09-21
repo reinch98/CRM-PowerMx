@@ -571,3 +571,16 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
   border-radius: 12px;
 }
 .conjunto ul { margin: 8px 0; padding-left: 22px; }
+
+/* Avisos de cita: el mensaje tal como saldrá por WhatsApp. */
+.mensaje-aviso {
+  margin: 8px 0;
+  padding: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  color: var(--noche);
+  background: var(--claro);
+  border: 2px solid var(--linea);
+  border-radius: 12px;
+}

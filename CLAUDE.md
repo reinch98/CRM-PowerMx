@@ -216,6 +216,13 @@ pendiente. Probado en emulador con un Supabase falso (0 textos < 17 px, 0 contra
 Falta: probar contra la base real con cuentas de almacenista y técnico, y crear la cuenta del
 almacenista (Authentication → Add user, luego rol "Almacenista" en Usuarios).
 
+**Corrección (SQL 17, 20/09/2026):** `citas_fecha_segun_estado` (de la 09) exigía fecha salvo en
+`por_programar`, así que **cancelar una cita sin fecha tronaba** («violates check constraint»), igual
+que rechazar/vencer una cotización cuya cita aún no tenía fecha. Ahora una cita sin fecha puede ser
+`por_programar` o `cancelada` (`17_citas_canceladas_sin_fecha.sql`, con prueba). Lo detectó Caña en
+producción: las pruebas de 1b/1c solo cancelaron citas CON fecha. Lección: al poner una restricción
+por estado, probar TODAS las transiciones, incluida cancelar desde el estado sin datos.
+
 **Contactos (SQL 15): aplicada y probada el 20/09/2026** (`supabase/sql/15_contactos.sql` y
 `15_prueba_contactos.sql`; 11 pasos con rollback, todos "ok", incluidos otro cliente, mismo número
 en dos clientes y el técnico sin acceso; migró 1 contacto). En la prueba, `concat()` escribe los
@@ -239,8 +246,8 @@ equipo, las personas a cargo con "Ligar a este equipo" (`vincular_contacto`; avi
 responsable actual) y aviso "Sin responsable". Pendiente: que el técnico vea al responsable de su
 orden; ligar contactos desde la pantalla Equipos.
 
-**Avisos de cita (SQL 16): escrito, sin correr** (`supabase/sql/16_avisos_de_cita.sql` y
-`16_prueba_avisos.sql`). "Confirmar" una cita = que quede `programada` (agendada en la Agenda,
+**Avisos de cita (SQL 16): aplicada y probada el 20/09/2026** (`supabase/sql/16_avisos_de_cita.sql` y
+`16_prueba_avisos.sql`; 11 pasos con rollback, todos "ok"). "Confirmar" una cita = que quede `programada` (agendada en la Agenda,
 aceptando una cotización con horario, o programando una `por_programar`). Un **trigger en `citas`**
 cubre todos esos caminos y pone en la cola `avisos` (un aviso pendiente por persona y cita) un
 mensaje **al cliente** (sus contactos del equipo: el responsable y quien pueda pedir citas; sin
@@ -254,7 +261,16 @@ momento) y al enviarse se guarda copia (`texto_enviado`). `avisos_pendientes()` 
 la Agenda y pulsa "Enviar por WhatsApp" (enlace `wa.me/52<10 dígitos>?text=…`, un toque por
 destinatario); después, una Edge Function con la API de WhatsApp leerá la misma cola y mandará
 plantillas (fuera de las 24 h). Un técnico sin teléfono en su perfil aparece en la cola "sin número":
-hay que capturarlo en Usuarios. Pendiente: la cola en la pantalla Agenda.
+hay que capturarlo en Usuarios.
+La cola está en la **Agenda** (`src/AvisosPendientes.jsx`, `src/lib/avisos.js`; solo admin, debajo de
+"Por programar"): tarjetas por cita con un mensaje por persona, "Ver mensaje", **"Enviar por WhatsApp"**
+(abre `wa.me/52<10 dígitos>?text=…` y marca el aviso `enviado`), "Copiar mensaje", "Descartar", "Falta el
+teléfono" si no hay número, y "Avisos de los últimos 3 días" con "Enviar de nuevo" (no vuelve a marcar).
+Se relee cada vez que la Agenda recarga. Probada en emulador con un Supabase falso (0 textos < 17 px,
+0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde; reglas puras con 14 casos en Node). Ojo:
+marcar al pulsar el enlace da por enviado algo que el admin podría no mandar; por eso queda "Enviar de
+nuevo". Un cambio de técnico sin cambio de horario también manda "CAMBIO en el servicio" al cliente y
+al técnico que no cambió (informativo, con el nuevo nombre).
 
 **Datos que faltan capturar** (desde la pantalla Tarifas, no bloquean el código): tarifas
 de diagnóstico por clase × tramo de kW, precio por km, y `distancia_km` de cada cliente

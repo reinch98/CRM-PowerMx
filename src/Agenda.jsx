@@ -5,6 +5,7 @@ import { hoyLocal } from './lib/fechas'
 import { explicarError } from './lib/errores'
 import { partidasDeDiagnostico, importe } from './lib/tarifas'
 import { Alerta } from './ui'
+import AvisosPendientes from './AvisosPendientes'
 
 const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -308,6 +309,7 @@ export default function Agenda({ irA }) {
   const [filtroTecnico, setFiltroTecnico] = useState('')
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState(null)   // { texto, cotizacion } tras agendar
+  const [versionAvisos, setVersionAvisos] = useState(0)   // sube con cada recarga: la cola de avisos se vuelve a leer
 
   const yo = usuarioLocal()?.id
   const desde = iso(anio, mes, 1)
@@ -350,6 +352,7 @@ export default function Agenda({ irA }) {
     setMantenimientos(mt.data || [])
     setCotizaciones(co.data || [])
     setTarifas(ta.data || [])
+    setVersionAvisos(v => v + 1)
   }
 
   const nombreTecnico = id => tecnicos.find(t => t.id === id)?.nombre
@@ -519,6 +522,8 @@ export default function Agenda({ irA }) {
           {porProgramar.map(tarjetaCita)}
         </section>
       )}
+
+      {admin && <AvisosPendientes recarga={versionAvisos} />}
 
       {panel && (
         <PanelCita
