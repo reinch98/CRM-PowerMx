@@ -216,8 +216,10 @@ pendiente. Probado en emulador con un Supabase falso (0 textos < 17 px, 0 contra
 Falta: probar contra la base real con cuentas de almacenista y técnico, y crear la cuenta del
 almacenista (Authentication → Add user, luego rol "Almacenista" en Usuarios).
 
-**Contactos (SQL 15): escrito, sin correr** (`supabase/sql/15_contactos.sql` y
-`15_prueba_contactos.sql`). Tablas `contactos` (una fila por persona-y-número, de un cliente;
+**Contactos (SQL 15): aplicada y probada el 20/09/2026** (`supabase/sql/15_contactos.sql` y
+`15_prueba_contactos.sql`; 11 pasos con rollback, todos "ok", incluidos otro cliente, mismo número
+en dos clientes y el técnico sin acceso; migró 1 contacto). En la prueba, `concat()` escribe los
+booleanos como `t`/`f`, y la tabla `clientes` exige `telefono` (al crear un cliente de prueba). Tablas `contactos` (una fila por persona-y-número, de un cliente;
 `de_toda_la_empresa` para administración y similares) y `equipo_contactos` (rol `responsable` |
 `encargado` | `administracion` | `solo_avisos` y permisos: pedir citas, recibir órdenes, recibir
 cotizaciones; **un solo responsable por equipo**, índice único). Teléfonos comparados por sus
@@ -227,8 +229,15 @@ rol y, al nombrar un responsable, baja al anterior a encargado; `identificar_tel
 personas, clientes y equipos (con la serie) de un número; vista `contactos_por_equipo`
 (invoker). Solo admin. La migración copia `contacto_nombre`, `telefono`, `telefono_alterno` y
 `email` de cada ficha como contactos de toda la empresa, verificados. `clientes.telefono` sigue
-siendo el de la ficha (el técnico lo usa para llamar). Pendiente: pantalla "Contactos" (admin) y
-que el técnico vea al responsable de su orden.
+siendo el de la ficha (el técnico lo usa para llamar).
+Pantalla **Contactos** (`src/Contactos.jsx`, `src/lib/contactos.js`, solo admin), construida y probada
+en emulador con un Supabase falso (0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de
+desborde; reglas puras con 20 casos en Node): "Buscar por teléfono" (usa `identificar_telefono`,
+sirve para comprobar que un número se reconoce en cualquier formato), personas por cliente (alta
+plegable, editar, marcar verificado, quitar = `activo = false`, que libera el número) y, por
+equipo, las personas a cargo con "Ligar a este equipo" (`vincular_contacto`; avisa si bajará al
+responsable actual) y aviso "Sin responsable". Pendiente: que el técnico vea al responsable de su
+orden; ligar contactos desde la pantalla Equipos.
 
 **Datos que faltan capturar** (desde la pantalla Tarifas, no bloquean el código): tarifas
 de diagnóstico por clase × tramo de kW, precio por km, y `distancia_km` de cada cliente

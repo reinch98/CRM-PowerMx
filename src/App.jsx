@@ -5,6 +5,7 @@ import { Logo, Alerta } from './ui'
 import Login from './Login'
 import Agenda from './Agenda'
 import Clientes from './Clientes'
+import Contactos from './Contactos'
 import Equipos from './Equipos'
 import Trabajos from './Trabajos'
 import Almacen from './Almacen'
@@ -22,6 +23,7 @@ const PANTALLAS = {
   ordenes:      { titulo: 'Órdenes',      componente: Trabajos,     roles: ['admin', 'tecnico'] },
   almacen:      { titulo: 'Almacén',      componente: Almacen,      roles: ['admin', 'almacenista'] },
   clientes:     { titulo: 'Clientes',     componente: Clientes,     roles: ['admin'] },
+  contactos:    { titulo: 'Contactos',    componente: Contactos,    roles: ['admin'] },
   equipos:      { titulo: 'Equipos',      componente: Equipos,      roles: ['admin'] },
   inventario:   { titulo: 'Inventario',   componente: Inventario,   roles: ['admin'] },
   cotizaciones: { titulo: 'Cotizaciones', componente: Cotizaciones, roles: ['admin'] },
