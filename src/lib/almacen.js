@@ -91,6 +91,30 @@ export const cancelarEntrega = entrega => llamar('cancelar_entrega', { p_entrega
 export const entregarSinFirma = (entrega, motivo) =>
   llamar('entregar_sin_firma', { p_entrega: entrega, p_motivo: motivo })
 
+// ---- devoluciones y adicionales (18_uso_y_devoluciones.sql) ----
+
+// Órdenes cerradas o canceladas con material que el técnico aún debe devolver.
+export async function cargarDevoluciones() {
+  const r = await llamar('devoluciones_pendientes')
+  return r.ok ? { ok: true, devoluciones: r.data || [] } : r
+}
+
+export const recibirDevolucion = (orden, lineas, observaciones) =>
+  llamar('recibir_devolucion', { p_orden: orden, p_lineas: lineas, p_observaciones: observaciones || null })
+
+// Solo admin (la base lo exige): lo que nunca volvió se da por consumido, con motivo.
+export const resolverDiferencia = (orden, producto, motivo) =>
+  llamar('resolver_diferencia', { p_orden: orden, p_producto: producto, p_motivo: motivo })
+
+// Lo que el técnico usó y no le entregaron.
+export async function cargarAdicionales() {
+  const r = await llamar('adicionales_por_conciliar')
+  return r.ok ? { ok: true, adicionales: r.data || [] } : r
+}
+
+export const conciliarAdicional = (orden, nota) =>
+  llamar('conciliar_adicional', { p_orden: orden, p_nota: nota || null })
+
 // T1 firma de recibido. La imagen se sube primero; si la función falla, la firma queda
 // sin uso en el bucket (inofensivo) y se puede reintentar: el mismo nombre se reemplaza.
 export async function firmarEntrega(entrega, firmaPng) {

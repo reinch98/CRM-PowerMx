@@ -33,7 +33,8 @@ const SELECCION =
   '*, citas(fecha, hora, duracion_min, zona, notas, tipo_servicio), ' +
   'clientes(nombre, telefono, direccion, colonia, municipio, maps_url, referencias), ' +
   'equipos(numero_serie, marca, modelo, tipo, capacidad_kw), orden_partes(*), ' +
-  'orden_surtido(id, producto_id, sku, nombre, unidad, cantidad_pedida, cantidad_entregada), ' +
+  'orden_surtido(id, producto_id, sku, nombre, unidad, cantidad_pedida, cantidad_entregada, ' +
+  'cantidad_usada, cantidad_devuelta, cantidad_diferencia), ' +
   'entregas(id, folio, estado, created_at, entrega_lineas(sku, nombre, unidad, cantidad))'
 
 export const leerTrabajos = () => leerLocal(CACHE, [])
@@ -143,7 +144,7 @@ export async function descartarPendiente(clave) {
 function fallo(error) {
   const m = String(error?.message || error || '')
   // Los mensajes de nuestras funciones ya vienen en español y dicen exactamente qué pasó.
-  if (/^(Solo el|La orden|Anota|Falta)/.test(m)) return { ok: false, motivo: m, temporal: false }
+  if (/^(Solo el|La orden|Anota|Falta|Esa pieza|Declaraste|Las cantidades|El material)/.test(m)) return { ok: false, motivo: m, temporal: false }
   // RLS de orden_partes: la orden ya no está abierta o ya no es suya.
   if (/row-level security/i.test(m)) {
     return { ok: false, motivo: 'La orden ya no está abierta o ya no eres parte de ella. Avisa al administrador.', temporal: false }
@@ -232,7 +233,10 @@ async function subirCierre(item) {
       p_recomendaciones: p.recomendaciones || null,
       p_seguimiento: !!p.seguimiento,
       p_fecha_seguimiento: p.fecha_seguimiento || null,
-      p_refacciones: p.refacciones?.length ? p.refacciones : null
+      p_refacciones: p.refacciones?.length ? p.refacciones : null,
+      // Lo usado de lo entregado. Un cierre que salió del celular antes de esta versión no trae
+      // `uso`: se manda null (todo queda pendiente de devolución, que es lo seguro).
+      p_uso: p.uso?.length ? p.uso : null
     })
     if (error) return fallo(error)
 

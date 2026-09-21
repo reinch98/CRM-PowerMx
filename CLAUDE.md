@@ -216,6 +216,56 @@ pendiente. Probado en emulador con un Supabase falso (0 textos < 17 px, 0 contra
 Falta: probar contra la base real con cuentas de almacenista y técnico, y crear la cuenta del
 almacenista (Authentication → Add user, luego rol "Almacenista" en Usuarios).
 
+**3a: uso de material, cierre y devoluciones — aplicada y probada el 20/09/2026** (`supabase/sql/18_uso_y_devoluciones.sql`
+y `18_prueba_uso_y_devoluciones.sql`; 10 pasos con rollback, todos "ok"). En plpgsql, **no llamar `s` al
+alias de una tabla si la función tiene una variable `s`**: la primera versión de `recibir_devolucion` tronó
+con «column reference "s.orden_id" is ambiguous» y solo la prueba lo encontró (alias `os`). Al cerrar, T1 declara cuánto **usó** de lo recibido (`p_uso`
+= `[{producto_id, usadas}]`): sale del inventario como `consumo_tecnico` (custodia −). Lo que NO usó
+queda **pendiente de devolución** = `entregada − usada − devuelta − diferencia` (columnas nuevas de
+`orden_surtido`; no hay tabla aparte). Aparecen las órdenes **cerradas o canceladas** con pendiente:
+así una cita cancelada con material entregado ya no es un hueco (se cierra la deuda de
+`cancelar_cita`: no se bloquea, el material vuelve por aquí). `recibir_devolucion` (almacén/admin:
+`devolucion_tecnico`, físico +, custodia −; si se devuelve menos de lo pendiente exige una
+**observación**; queda en la tabla `devoluciones`), `resolver_diferencia` (**solo admin**: da por
+consumido lo que nunca volvió, con motivo escrito) y `devoluciones_pendientes()` (con `dias` para la
+alerta por antigüedad). Lo que T1 usó y NO le entregaron (`p_refacciones`) queda como **adicional por
+conciliar** sin descuento automático (`adicionales_por_conciliar`, `conciliar_adicional`). `cerrar_orden`
+gana `p_uso`; se BORRA la firma vieja para que PostgREST no vea dos funciones; los cierres viejos
+en cola (sin `p_uso`) siguen sirviendo. Un cierre repetido no repite el consumo.
+
+**3b: pantallas — construida, sin publicar ni probar en celular real** (`src/lib/material.js`,
+`src/lib/almacen.js`, `Trabajos.jsx`, `Almacen.jsx`). **Técnico (T1) al cerrar:** sección "Material que
+usé": una casilla "La usé" si recibió 1 pieza, un contador "Usadas ___ de N" si recibió varias, siempre
+vacío al empezar (sin capturar = 0: lo seguro es devolver todo); avisa "Al cerrar, le debes al almacén:
+…"; el cierre manda `p_uso` (recortado a lo recibido, nunca negativo) y sigue funcionando sin señal
+porque el material viene en `cache_mis_trabajos`. La lista manual pasó a "Material usado que no me
+entregaron" (adicional por conciliar). En una orden cerrada, "Material" muestra Usadas / Por devolver y
+"Te falta devolver: …". **Almacén** ahora tiene pestañas con conteo: *Por entregar*, *Devoluciones*
+(las más antiguas primero; antigüedad en palabra: Reciente / Por vencer desde 2 días / Atrasada desde 5;
+propone recibir todo lo pendiente; la observación es obligatoria si se recibe menos; historial DEV-n;
+solo el **admin** ve "Dar por consumido lo que no volvió", con motivo) y *Adicionales* (conciliar con nota).
+Probado en emulador con un Supabase falso con los tres roles (0 textos < 17 px, 0 contrastes < 4.5, 0
+objetivos < 48 px, 0 px de desborde; reglas puras con 25 casos en Node).
+
+**Solicitud de material del técnico — acordada con Caña el 20/09/2026, SIN CONSTRUIR.** El técnico
+puede **pedir una pieza que necesita** (típicamente "para la siguiente visita") **sin ver costos ni
+precios**: solo indica qué pieza y cuántas, con una nota. Ideas para cuando se construya:
+- Es una **solicitud**, no una requisición: la requisición (`requisiciones`, solo admin, ligada a una
+  cotización) sigue siendo de compras. La solicitud del técnico es una tabla propia
+  (`solicitudes_material`: `tecnico_id`, `orden_id` / `equipo_id` / `cliente_id`, `producto_id` o texto libre
+  si la pieza no está en el catálogo, `cantidad`, `nota`, estado `pendiente` → `atendida` | `descartada`).
+  RLS: el técnico crea y lee **las suyas** (y las de su compañero de orden), sin columnas de precio ni
+  costo; admin y almacén las leen todas. Nunca se le devuelven precios, como en el resto del portal.
+- Se pide **desde la orden** (o desde "Mis trabajos"), con el mismo buscador sin precios que el almacén
+  (`existencias`), y **debe funcionar sin señal** (entra a la cola de `trabajos.js`, un elemento por asunto).
+  Si la pieza pedida sí hay en el estante, el almacén la puede **apartar para la próxima cita**; si no,
+  el admin la convierte en **requisición** (proveedor y costo los ve solo el admin).
+- Se conecta con **"Requiere seguimiento"** al cerrar (que ya pide fecha de seguimiento) y con la
+  Fase 5 (paquetes de mantenimiento): una pieza que se pide seguido debería terminar en el paquete
+  del equipo. El técnico ve solo el **estado** de lo que pidió ("Pedida", "Ya está en almacén",
+  "Descartada"), nunca importes.
+- Al llegar una solicitud, aviso al admin (y, más adelante, por WhatsApp con la misma cola de avisos).
+
 **Corrección (SQL 17, 20/09/2026):** `citas_fecha_segun_estado` (de la 09) exigía fecha salvo en
 `por_programar`, así que **cancelar una cita sin fecha tronaba** («violates check constraint»), igual
 que rechazar/vencer una cotización cuya cita aún no tenía fecha. Ahora una cita sin fecha puede ser
@@ -569,6 +619,33 @@ Supabase); lint en cero.
 6. **Integraciones:** Google Calendar y correo; luego Facturama (CFDI 4.0).
 7. **Calidad:** pruebas mínimas de lo que dinero e inventario tocan (totales de
    cotización, disponible, cola offline); reescribir el README.
+
+**Envío de refacciones en línea** (al final, junto con Mercado Pago; anotado 20/09/2026)
+- Un solo precio público por refacción, igual en mostrador, sitio y cotizaciones.
+  Lo que cuesta vender en línea (comisión de MP, empaque, paquetería) se cubre
+  con el cargo de envío. Recoger en tienda: sin cargo.
+- **El cargo no es un porcentaje sobre el pedido:** la paquetería cobra por peso,
+  volumen y zona, no por el valor (una pieza cara y ligera pagaría de más; un aceite
+  o una batería pesados no cubrirían su envío). Dos partes:
+  - **Paquetería:** por zona y rango de peso, con mínimo y, si se quiere, envío
+    gratis a partir de cierto monto. Pide `peso_kg` por producto (puede ir en
+    `atributos jsonb`).
+  - **Comisión de MP:** un porcentaje pequeño sobre el total, **por definir**.
+  Tabla propia `tarifas_envio` (zona, rango de peso, monto), solo admin escribe.
+  No mezclarla con `tarifas_servicio` (traslado de técnicos). Alternativa simple si
+  no se captura el peso: tabla de zona × rango de monto, sin porcentaje.
+- **El sitio no lee la tabla directo:** sale por la misma función pública del catálogo
+  (columnas seguras, sin acceso `anon` a la tabla).
+- **El Worker de Mercado Pago recalcula todo:** el navegador solo manda SKUs y
+  cantidades; el Worker toma precio, disponible (nunca el físico) y tarifa de envío
+  del CRM y calcula el cobro. Hoy `carrito.js` arma el pedido con precios del
+  navegador: no confiar en ellos.
+- Definir antes: si el envío se reembolsa en devoluciones (verificar en la cuenta de MP
+  si devuelve su comisión al reembolsar; normalmente no), y que el CFDI lo lleve
+  como concepto aparte (Facturama).
+- Depende de activar Mercado Pago: `WORKER_URL` vacío en `carrito.js`. Las
+  credenciales de MP ya las tiene Caña.
+- Mientras tanto, refacciones se cotizan por WhatsApp y el envío se suma a mano.
 
 ## Pendientes de datos
 

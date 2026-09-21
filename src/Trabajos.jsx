@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { usuarioLocal, leerLocal } from './lib/local'
 import { redimensionar, firmaEnBlanco, dataUrlABlob } from './lib/imagen'
 import { firmarEntrega } from './lib/almacen'
+import { conMaterial, usoParaCierre, porDevolver, debeDevolver, pendienteDeLinea } from './lib/material'
 import { fotosDeOrden } from './lib/idb'
 import { cierrePendiente, pendienteDe } from './lib/cola'
 import { explicarError } from './lib/errores'
@@ -60,6 +61,12 @@ function MaterialOrden({ orden, soyT1, abierta, enLinea, nombreT1, onRefrescar }
     <section className="tarjeta">
       <h3>Material</h3>
 
+      {!abierta && debeDevolver(surtido).length > 0 && (
+        <Alerta tipo="aviso" palabra="Devuelve al almacén">
+          Te falta devolver: {debeDevolver(surtido).map(l => `${pendienteDeLinea(l)} × ${l.sku}`).join(', ')}.
+        </Alerta>
+      )}
+
       {surtido.map(l => (
         <div key={l.id} className="linea-surtido">
           <div className="fila" style={{ justifyContent: 'space-between' }}>
@@ -68,6 +75,9 @@ function MaterialOrden({ orden, soyT1, abierta, enLinea, nombreT1, onRefrescar }
           </div>
           <div className="ayuda">
             Recibido {l.cantidad_entregada} de {l.cantidad_pedida}{l.unidad ? ` ${l.unidad}` : ''}
+            {!abierta && Number(l.cantidad_entregada) > 0 && (
+              <> · Usadas {Number(l.cantidad_usada) || 0} · Por devolver {pendienteDeLinea(l)}</>
+            )}
           </div>
         </div>
       ))}
@@ -142,6 +152,7 @@ function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, on
     horas: '', observaciones: '', recomendaciones: '', seguimiento: false, fecha_seguimiento: '', sin_firma: false
   })
   const [refacciones, setRefacciones] = useState([])
+  const [uso, setUso] = useState({})            // producto_id → cuántas piezas usó (sin capturar = 0)
   const refLienzo = useRef(null)
   const temporizador = useRef(null)
 
@@ -237,6 +248,9 @@ function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, on
       recomendaciones: c.recomendaciones,
       seguimiento: c.seguimiento,
       fecha_seguimiento: c.fecha_seguimiento,
+      // Lo que usó de lo que le entregaron; lo demás se devuelve al almacén.
+      uso: usoParaCierre(orden.orden_surtido, uso),
+      // Lo que usó y NO le entregaron: queda como adicional por conciliar.
       refacciones: refacciones.filter(r => r.descripcion.trim())
     })
     onCambio()
@@ -414,9 +428,52 @@ function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, on
             )}
           </section>
 
+          {conMaterial(orden.orden_surtido).length > 0 && (
+            <section className="tarjeta">
+              <h3>Material que usé</h3>
+              <p className="ayuda">
+                Marca lo que gastaste en este servicio. Lo que no uses lo devuelves al almacén.
+              </p>
+              {conMaterial(orden.orden_surtido).map(l => {
+                const recibidas = Number(l.cantidad_entregada)
+                const usadas = uso[l.producto_id] ?? ''
+                return (
+                  <div key={l.id} className="linea-surtido">
+                    <strong>{l.sku} — {l.nombre}</strong>
+                    <div className="ayuda">Recibí {recibidas}{l.unidad ? ` ${l.unidad}` : ''}</div>
+                    {recibidas === 1 ? (
+                      <label className="casilla">
+                        <input type="checkbox" checked={Number(usadas) === 1}
+                          onChange={e => setUso({ ...uso, [l.producto_id]: e.target.checked ? 1 : 0 })} />
+                        La usé
+                      </label>
+                    ) : (
+                      <label className="fila">
+                        <span>Usadas</span>
+                        <input type="number" inputMode="decimal" min="0" max={recibidas} step="any" style={{ width: 104 }}
+                          aria-label={`Piezas usadas de ${l.sku}`} placeholder="0"
+                          value={usadas} onChange={e => setUso({ ...uso, [l.producto_id]: e.target.value })} />
+                        <span>de {recibidas}</span>
+                      </label>
+                    )}
+                  </div>
+                )
+              })}
+              {porDevolver(orden.orden_surtido, uso).length > 0 && (
+                <Alerta tipo="info" palabra="A devolver">
+                  Al cerrar, le debes al almacén:{' '}
+                  {porDevolver(orden.orden_surtido, uso).map(l => `${l.aDevolver} × ${l.sku}`).join(', ')}.
+                </Alerta>
+              )}
+            </section>
+          )}
+
           <section className="tarjeta">
-            <h3>Refacciones usadas</h3>
-            <p className="ayuda">Captura a mano por ahora. Cuando el almacén las entregue, aparecerán aquí solas.</p>
+            <h3>Material usado que no me entregaron</h3>
+            <p className="ayuda">
+              Solo lo que gastaste y NO venía en lo que te dio el almacén. Queda como adicional para
+              revisarlo con el almacén; no descuenta inventario solo.
+            </p>
             {refacciones.map((r, i) => (
               <div key={i} className="refaccion">
                 <input aria-label={`Descripción de la refacción ${i + 1}`} placeholder="Descripción"
