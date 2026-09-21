@@ -11,7 +11,6 @@ import {
 } from './lib/trabajos'
 import { Alerta } from './ui'
 import Firma from './Firma'
-import Ordenes from './Ordenes'
 
 const NOMBRE_TIPO = {
   preventivo: 'Preventivo', correctivo: 'Correctivo', instalacion: 'Instalación',
@@ -496,15 +495,6 @@ export default function Trabajos() {
           {cerradas.map(itemOrden)}
         </>
       )}
-
-      {/* Camino viejo, temporal: para una orden que no salió de una cita. Se retira en la fase 1e.
-          Va montado aunque esté cerrado para que siga subiendo lo que ya estaba en la cola. */}
-      <details style={{ marginTop: 28 }}>
-        <summary style={{ fontWeight: 700, minHeight: 48, display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-          Orden sin cita (temporal)
-        </summary>
-        <Ordenes />
-      </details>
     </div>
   )
 }

@@ -156,9 +156,7 @@ volver la señal), la parte del compañero de **solo lectura**, y —solo para T
 (horómetro, observaciones, recomendaciones, seguimiento, refacciones manuales, firma o
 "no pudo firmar"). `cerrar_orden` (SQL, security definer) junta las partes (la de T1
 primero) y las fotos, guarda firma y datos, cierra la orden y marca la cita `realizada`;
-es idempotente (un reintento devuelve `sin_cambio`). La orden libre de antes (`Ordenes.jsx`)
-va dentro de Trabajos en un `<details>` "Orden sin cita (temporal)" y **sigue montada** para
-que su cola vieja siga subiendo; se retira en la 1e.
+es idempotente (un reintento devuelve `sin_cambio`). La orden libre de antes se retiró en la 1e.
 Cola sin señal (`cola_trabajos`, reglas puras y probadas en `cola.js`): un elemento por
 asunto (`parte:<orden>`, `cierre:<orden>`); guardar de nuevo REEMPLAZA (no apila); el
 contador `n` evita perder lo que se escribe mientras sube; las partes suben antes que los
@@ -171,13 +169,17 @@ fotos del compañero, y dos técnicos editando en dos celulares sin señal. La p
 midió en el emulador: 0 textos de menos de 17 px, 0 contrastes bajo 4.5, 0 objetivos de
 menos de 48 px.
 
-**1e: SQL escrito, sin correr** (`supabase/sql/13_retirar_orden_libre.sql` y su prueba
-`13_prueba_retirar_orden_libre.sql`). Quita las políticas `tecnico_crea_ordenes` y
+**1e: aplicada y probada el 20/09/2026** (`supabase/sql/13_retirar_orden_libre.sql` y su prueba
+`13_prueba_retirar_orden_libre.sql`). Quitó las políticas `tecnico_crea_ordenes` y
 `tecnico_actualiza_sus_citas`: el técnico ya no crea órdenes ni toca citas (la cita pasa a
 `realizada` con `cerrar_orden`, security definer; el botón "Realizada" de la Agenda es solo
-admin). **No correrlo** hasta que los celulares vacíen "Pendientes por subir" de la orden
-libre. Después: quitar `Ordenes.jsx` y su `<details>` de `Trabajos.jsx`, y sacar de
-`local.js`/`App.jsx` lo que solo usaba esa cola (`ordenes_pendientes`).
+admin). Prueba con rollback como técnico real: insertar orden rechazado, su cita intacta, la
+sigue viendo. Las únicas políticas de escritura que quedan: `admin_citas`, `admin_ordenes`,
+`admin_orden_partes` y las dos de T1/T2 sobre `orden_partes`. `Ordenes.jsx` (la orden libre) y
+su `<details>` se retiraron del código. Un celular viejo puede conservar en localStorage
+`ordenes_pendientes` y `cache_equipos`: ya nada los lee.
+La prueba del flujo del técnico en un celular real (fotos, firma, parte del ayudante) la
+hizo Caña el 20/09/2026: "todo en orden".
 
 **Datos que faltan capturar** (desde la pantalla Tarifas, no bloquean el código): tarifas
 de diagnóstico por clase × tramo de kW, precio por km, y `distancia_km` de cada cliente
@@ -192,8 +194,9 @@ de diagnóstico por clase × tramo de kW, precio por km, y `distancia_km` de cad
 - Roles en `perfiles`: `admin`, `tecnico`, `cliente`, `sin_rol`. Toda cuenta nueva
   entra como `sin_rol` (trigger) y el admin la promueve. Funciones SQL de apoyo:
   `mi_rol()`, `es_admin()`, `mi_cliente()`.
-- RLS por rol en todas las tablas. El técnico lee clientes y equipos, ve y actualiza
-  sus citas, crea y lee sus órdenes. **No** ve `productos`, `cotizaciones` ni
+- RLS por rol en todas las tablas. El técnico lee clientes y equipos, **ve** sus citas
+  y órdenes (como T1 o T2) y escribe solo su parte en `orden_partes`; no crea órdenes ni
+  actualiza citas (13). **No** ve `productos`, `cotizaciones` ni
   `datos_fiscales`. El cliente solo ve lo suyo.
 - El técnico lee el catálogo por la vista `catalogo`, que no trae `costo`.
 - Todas las vistas tienen revocado `anon` y solo `select` para `authenticated`
@@ -293,21 +296,20 @@ Los técnicos trabajan casi siempre **bajo el sol directo**. Eso manda:
   `VITE_SUPABASE_URL=http://127.0.0.1:9 VITE_SUPABASE_ANON_KEY=x npx vite --port 5174`
   (un servidor inexistente, así la app entra por el modo sin señal) y sembrar en el
   navegador `sb-prueba-auth-token` (sesión vencida con `user.id`), `cache_perfil`
-  (con el `rol` a probar), `cache_equipos` y `ordenes_pendientes`. Para ver anchos de
+  (con el `rol` a probar), `cache_mis_trabajos` y `cola_trabajos`. Para ver anchos de
   celular usar `resize_window` con el preajuste `mobile`; el panel de escritorio del
   navegador integrado mide 375 px, así que no sirve para anchos grandes.
 
 ## Pantallas
 
 `Agenda` (calendario, por programar, empalmes) · `Trabajos` (pestaña "Órdenes"; móvil,
-funciona sin señal; ver 1d) con `Ordenes` (orden libre, temporal: cola en localStorage,
-fotos encogidas en IndexedDB, firma en canvas, el `id` lo genera el celular y el código
-`23505` significa "ya existía") dentro · `Clientes` ·
+funciona sin señal; ver 1d: cola en localStorage, fotos encogidas en IndexedDB, firma en
+canvas) · `Clientes` ·
 `Equipos` · `Inventario` · `Cotizaciones` · `Requisiciones` · `Tarifas` (ambas solo admin) ·
 `Tecnicos` (pestaña "Usuarios") · `Agente` · `Login`. Las pantallas reciben la
 prop `irA(clave)` de `App.jsx` para saltar a otra pantalla. El portal del cliente es un aviso de "en construcción".
 
-## Sin señal (Órdenes)
+## Sin señal (Trabajos)
 
 - **Service worker** (`sw/plantilla.js` → `dist/sw.js`): guarda la app al instalarse.
   La página de inicio va primero a la red y a los 4 s cae a la copia; los archivos
@@ -345,7 +347,7 @@ prop `irA(clave)` de `App.jsx` para saltar a otra pantalla. El portal del client
   renombrar solo la mayúscula: `git mv` en dos pasos, pasando por un nombre temporal.
 - Correr `npm run lint` y `npm run build` antes de cada push. El lint está en cero:
   si algo nuevo lo rompe, se arregla, no se ignora.
-- En `Ordenes` (offline) no usar nada que pida red para datos de la orden:
+- En `Trabajos` (offline) no usar nada que pida red para datos de la orden:
   `getSession()` sí, `getUser()` no.
 - Los scripts SQL van numerados en `supabase/sql/` y deben poder repetirse sin
   tronar (`if not exists`, `drop policy if exists`).
@@ -380,10 +382,8 @@ Supabase); lint en cero.
      (`productos_costos`) y dar al técnico lectura de `productos`. Así todas las
      vistas quedan en invoker, sin `mi_rol()` en cada una y sin el aviso del
      asesor. Toca Inventario, Cotizaciones y el agente: hacerlo con calma.
-   - RLS: `with check` en `tecnico_actualiza_sus_citas` (que no reasigne la cita);
-     en `tecnico_crea_ordenes` exigir `tecnico_id = auth.uid()` **solo después** de
-     vaciar la cola offline de los celulares, o las órdenes con `tecnico_id` nulo
-     se quedarían atoradas; restringir escritura en `catalogos` y `auditoria`.
+   - ~~RLS de citas y órdenes del técnico.~~ Hecho con la 13 (1e): se quitaron las
+     políticas de escritura. Falta restringir escritura en `catalogos` y `auditoria`.
    - Probar las pantallas con una cuenta de técnico (Agenda, Órdenes) y, cuando
      exista el portal, con una de cliente. El agente es solo de admin.
 2. **Confiabilidad del campo**
