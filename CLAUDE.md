@@ -324,6 +324,33 @@ función, y el admin ya tiene todos los datos en pantalla): no cambia nada del f
   esperados, "Enviar" subió la copia fechada a la carpeta de la semana correcta y registró el
   envío, y la marca "enviar al cerrar" se guardó, se resaltó al cerrar y se apagó sola al enviar.
 
+**Tarifas de catálogo con SKU propio (SQL 21) — aplicada y probada el 21/09/2026, pedido de
+Caña** (`supabase/sql/21_tarifas_catalogo.sql` y `21_prueba_tarifas_catalogo.sql`; 6 pasos con
+rollback, todos "ok"). `tarifas_servicio` ganó conceptos nuevos —`correctivo`, `preventivo`,
+`instalacion_gas`, `instalacion_electrica`, `otro`— que, a diferencia de diagnóstico y traslado,
+**no dependen de una fórmula**: cada uno tiene su propio `sku` (único) y se busca y se agrega a
+una cotización **igual que un producto**, en el mismo cuadro de Cotizaciones. Clase y tramo de
+kW siguen siendo opcionales para estos (una instalación no siempre depende de la clase del
+equipo); `otro` exige un `nombre` propio porque no tiene etiqueta por defecto.
+**Sigue siendo una partida LIBRE** (`producto_id` null), igual que el diagnóstico y el traslado:
+no mueve inventario ni genera requisiciones, así que `cambiar_estado_cotizacion` no se tocó —esa
+función ya solo actúa sobre partidas con `producto_id`. La restricción vieja del `concepto` no
+tenía nombre explícito: el script la busca por su definición (`pg_get_constraintdef` sobre
+`pg_constraint`) en vez de adivinar cómo la nombró Postgres, y la reemplaza por una con nombre
+fijo para poder repetirse.
+`src/lib/tarifas.js`: `esConceptoCatalogo`, `nombreTarifaCatalogo` (arma el nombre a mostrar:
+usa el capturado, o concepto + clase + tramo), `tarifasDeCatalogo` (las que se pueden buscar:
+activas, con sku, que no sean diagnóstico/traslado), `sugerirSkuTarifa` (propone un SKU tipo
+`SRV-COR-GLP`; el admin lo puede editar, y desde que lo toca ya no se le pisa). 23 casos
+probados en Node (antes 24 en total contando los ya existentes de diagnóstico/traslado).
+`Tarifas.jsx`: sección nueva "Servicios (por SKU)" antes de Diagnóstico y Traslado, con su
+propia tabla y su alta (SKU, concepto, clase opcional, nombre opcional, precio). `Cotizaciones.jsx`:
+el buscador de partidas ahora junta productos y servicios de catálogo en una sola lista,
+marcando "Servicio" en los resultados; al agregarlos arman la partida sin `producto_id`. Probado
+en emulador con un Supabase falso (0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px,
+0 px de desborde): un producto y un servicio conviven en la misma cotización, y solo el producto
+dispara el aviso de "sin existencia suficiente".
+
 **Corrección (SQL 17, 20/09/2026):** `citas_fecha_segun_estado` (de la 09) exigía fecha salvo en
 `por_programar`, así que **cancelar una cita sin fecha tronaba** («violates check constraint»), igual
 que rechazar/vencer una cotización cuya cita aún no tenía fecha. Ahora una cita sin fecha puede ser

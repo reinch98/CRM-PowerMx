@@ -1,11 +1,17 @@
 // ---------------------------------------------------------------------------
-// Precio del diagnóstico y del traslado. Funciones puras: reciben las tarifas ya
-// cargadas y devuelven qué partidas armar y qué avisar. Las tarifas viven en la
-// tabla `tarifas_servicio` (solo admin) y aquí solo se COPIAN a la cotización.
+// Precio del diagnóstico, del traslado y de los servicios de catálogo. Funciones
+// puras: reciben las tarifas ya cargadas y devuelven qué partidas armar y qué
+// avisar. Las tarifas viven en la tabla `tarifas_servicio` (solo admin) y aquí
+// solo se COPIAN a la cotización.
 //
-//   diagnóstico: depende de la CLASE del equipo y de su capacidad.
+//   diagnóstico: depende de la CLASE del equipo y de su capacidad. Se carga con el
+//                botón "Cargar diagnóstico y traslado".
 //   traslado:    precio fijo por km, solo ida. Aplica desde los 40 km y, una vez
 //                rebasados, se cobran TODOS los km (no solo los que pasan de 40).
+//   catálogo:    correctivo, preventivo, instalación de gas o eléctrica, u otro. A
+//                diferencia de los dos anteriores, cada uno tiene su propio SKU y se
+//                busca y se agrega a la cotización igual que un producto (21_tarifas_catalogo.sql).
+//                Sigue siendo una partida LIBRE (sin producto_id): no mueve inventario.
 // ---------------------------------------------------------------------------
 
 const KM_DESDE_POR_DEFECTO = 40
@@ -119,3 +125,55 @@ export function partidasDeDiagnostico({ tarifas, equipo, cliente }) {
 
 // Importe de una línea, redondeado a centavos.
 export const importe = (cantidad, precio) => redondear(Number(cantidad || 0) * Number(precio || 0))
+
+// ---------------------------------------------------------------------------
+// Tarifas de catálogo: correctivo, preventivo, instalación de gas o eléctrica, u
+// otro. Cada una tiene su propio SKU (21_tarifas_catalogo.sql) y se agrega a una
+// cotización buscándola, igual que un producto — nunca con una fórmula.
+// ---------------------------------------------------------------------------
+
+export const CONCEPTOS_CATALOGO = [
+  ['correctivo', 'Servicio correctivo'],
+  ['preventivo', 'Mantenimiento preventivo'],
+  ['instalacion_gas', 'Instalación de gas'],
+  ['instalacion_electrica', 'Instalación eléctrica'],
+  ['otro', 'Otro servicio']
+]
+const NOMBRE_CONCEPTO_CATALOGO = Object.fromEntries(CONCEPTOS_CATALOGO)
+const CONCEPTOS_FORMULA = ['diagnostico', 'traslado']
+
+export const esConceptoCatalogo = concepto => !CONCEPTOS_FORMULA.includes(concepto)
+
+// Cómo se ve una tarifa de catálogo: su nombre (si lo capturaron a mano, como en
+// "otro"), o el concepto más la clase y el tramo si aplican
+// ("Servicio correctivo — Gas LP / natural, 8–26 kW").
+export function nombreTarifaCatalogo(t) {
+  if (t.nombre) return t.nombre
+  const base = NOMBRE_CONCEPTO_CATALOGO[t.concepto] || t.concepto
+  const partes = []
+  if (t.clase) partes.push(NOMBRE_CLASE[t.clase] || t.clase)
+  if (t.kw_desde != null || t.kw_hasta != null) partes.push(`${t.kw_desde ?? '…'}–${t.kw_hasta ?? '…'} kW`)
+  return partes.length ? `${base} — ${partes.join(', ')}` : base
+}
+
+// Las tarifas que se pueden buscar y agregar por SKU: todas menos diagnóstico y
+// traslado, que se cargan aparte porque dependen de una fórmula.
+export function tarifasDeCatalogo(tarifas) {
+  return (tarifas || [])
+    .filter(t => t.activo && t.sku && esConceptoCatalogo(t.concepto))
+    .map(t => ({ id: t.id, sku: t.sku, nombre: nombreTarifaCatalogo(t), precio: Number(t.precio) }))
+}
+
+const ABREV_CONCEPTO = {
+  correctivo: 'COR', preventivo: 'PRE', instalacion_gas: 'INSGAS',
+  instalacion_electrica: 'INSELEC', otro: 'SERV'
+}
+const ABREV_CLASE = { gasolina: 'GAS', gas_lp: 'GLP', diesel: 'DIE', solar: 'SOL', bateria: 'BAT' }
+
+// Propone un SKU a partir del concepto y, si la hay, la clase. Es solo una sugerencia
+// editable: si dos tramos de la misma clase comparten concepto, hay que diferenciarla
+// a mano (la base exige que el SKU sea único).
+export function sugerirSkuTarifa(concepto, clase) {
+  const base = ABREV_CONCEPTO[concepto] || 'SERV'
+  return clase ? `SRV-${base}-${ABREV_CLASE[clase] || clase.toUpperCase()}` : `SRV-${base}`
+}

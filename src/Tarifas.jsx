@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
-import { CLASES } from './lib/tarifas'
+import { CLASES, CONCEPTOS_CATALOGO, esConceptoCatalogo, nombreTarifaCatalogo, sugerirSkuTarifa } from './lib/tarifas'
 import { Alerta } from './ui'
 
 // Tarifas de servicio (solo admin; el técnico nunca ve precios). Se COPIAN a la
@@ -9,12 +9,18 @@ import { Alerta } from './ui'
 //   diagnóstico: por clase de equipo y tramo de capacidad (kW; kWh en baterías).
 //   traslado:    precio por km, solo ida, desde los km indicados; una vez rebasados
 //                se cobran todos los km.
+//   catálogo:    correctivo, preventivo, instalación de gas o eléctrica, u otro. Cada
+//                una tiene su propio SKU: se busca y se agrega a una cotización igual
+//                que un producto, sin depender de una fórmula. Clase y tramo son
+//                opcionales aquí (una instalación no siempre depende de la clase).
 
 const NOMBRE_CLASE = Object.fromEntries(CLASES)
+const NOMBRE_CONCEPTO_CATALOGO = Object.fromEntries(CONCEPTOS_CATALOGO)
 
 const vacia = {
   concepto: 'diagnostico', clase: 'gasolina',
-  kw_desde: '', kw_hasta: '', km_desde: '40', precio: '', notas: ''
+  kw_desde: '', kw_hasta: '', km_desde: '40', precio: '', notas: '',
+  sku: '', nombre: ''
 }
 
 const aNumero = v => (v === '' || v == null ? null : Number(v))
@@ -22,6 +28,7 @@ const aNumero = v => (v === '' || v == null ? null : Number(v))
 export default function Tarifas() {
   const [filas, setFilas] = useState([])
   const [nueva, setNueva] = useState(vacia)
+  const [skuTocado, setSkuTocado] = useState(false)   // si el admin ya editó el SKU a mano, no se le pisa
   const [edicion, setEdicion] = useState({})    // { [id]: { campo: valor } }
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
@@ -38,11 +45,22 @@ export default function Tarifas() {
 
   const diagnostico = useMemo(() => filas.filter(f => f.concepto === 'diagnostico'), [filas])
   const traslado = useMemo(() => filas.filter(f => f.concepto === 'traslado'), [filas])
+  const catalogo = useMemo(() => filas.filter(f => esConceptoCatalogo(f.concepto)), [filas])
+
+  function textoDeError(error) {
+    return error.code === '23505' ? 'Ese SKU ya existe. Usa otro.' : error.message
+  }
 
   function validar(f) {
     if (f.precio === '' || f.precio == null || Number(f.precio) < 0) return 'Falta el precio'
     if (f.concepto === 'diagnostico') {
       if (!f.clase) return 'Elige la clase del equipo'
+      const d = aNumero(f.kw_desde), h = aNumero(f.kw_hasta)
+      if (d != null && h != null && d > h) return 'El tramo está al revés: "desde" es mayor que "hasta"'
+    }
+    if (esConceptoCatalogo(f.concepto)) {
+      if (!f.sku?.trim()) return 'Falta el SKU: es lo que se busca para agregarla a una cotización'
+      if (f.concepto === 'otro' && !f.nombre?.trim()) return 'Escribe el nombre del servicio: "otro" no tiene uno por defecto'
       const d = aNumero(f.kw_desde), h = aNumero(f.kw_hasta)
       if (d != null && h != null && d > h) return 'El tramo está al revés: "desde" es mayor que "hasta"'
     }
@@ -55,17 +73,21 @@ export default function Tarifas() {
     const motivo = validar(nueva)
     if (motivo) return setError(motivo)
     const esDiag = nueva.concepto === 'diagnostico'
+    const esCatalogo = esConceptoCatalogo(nueva.concepto)
     const { error } = await supabase.from('tarifas_servicio').insert([{
       concepto: nueva.concepto,
-      clase: esDiag ? nueva.clase : null,
-      kw_desde: esDiag ? aNumero(nueva.kw_desde) : null,
-      kw_hasta: esDiag ? aNumero(nueva.kw_hasta) : null,
-      km_desde: esDiag ? null : aNumero(nueva.km_desde),
+      clase: (esDiag || esCatalogo) ? (nueva.clase || null) : null,
+      kw_desde: (esDiag || esCatalogo) ? aNumero(nueva.kw_desde) : null,
+      kw_hasta: (esDiag || esCatalogo) ? aNumero(nueva.kw_hasta) : null,
+      km_desde: nueva.concepto === 'traslado' ? aNumero(nueva.km_desde) : null,
+      sku: esCatalogo ? nueva.sku.trim() : null,
+      nombre: esCatalogo ? (nueva.nombre.trim() || null) : null,
       precio: Number(nueva.precio),
       notas: nueva.notas || null
     }])
-    if (error) return setError(error.message)
+    if (error) return setError(textoDeError(error))
     setNueva({ ...vacia, concepto: nueva.concepto })
+    setSkuTocado(false)
     setMensaje('Tarifa agregada.')
     cargar()
   }
@@ -89,7 +111,7 @@ export default function Tarifas() {
       payload[c] = ['kw_desde', 'kw_hasta', 'km_desde', 'precio'].includes(c) ? aNumero(cambios[c]) : cambios[c]
     }
     const { error } = await supabase.from('tarifas_servicio').update(payload).eq('id', f.id)
-    if (error) return setError(error.message)
+    if (error) return setError(textoDeError(error))
     const { [f.id]: _, ...resto } = edicion
     setEdicion(resto)
     setMensaje('Tarifa actualizada.')
@@ -99,7 +121,7 @@ export default function Tarifas() {
   async function quitar(f) {
     if (!confirm('¿Quitar esta tarifa? Las cotizaciones ya hechas no cambian: llevan su precio copiado.')) return
     const { error } = await supabase.from('tarifas_servicio').delete().eq('id', f.id)
-    if (error) return setError(error.message)
+    if (error) return setError(textoDeError(error))
     cargar()
   }
 
@@ -122,6 +144,22 @@ export default function Tarifas() {
   }, [diagnostico])
 
   const esDiag = nueva.concepto === 'diagnostico'
+  const esTraslado = nueva.concepto === 'traslado'
+  const esCatalogo = esConceptoCatalogo(nueva.concepto)
+
+  // Al elegir un concepto de catálogo, o cambiarle la clase, se sugiere el SKU; el
+  // admin lo puede editar libremente, y desde ahí ya no se le pisa (skuTocado).
+  function cambiarConcepto(concepto) {
+    const catalogoNuevo = esConceptoCatalogo(concepto)
+    const clase = catalogoNuevo ? '' : 'gasolina'   // diagnóstico exige clase; traslado la ignora
+    setNueva({ ...nueva, concepto, clase, sku: catalogoNuevo ? sugerirSkuTarifa(concepto, clase) : nueva.sku })
+    setSkuTocado(false)
+  }
+  function cambiarClaseNueva(clase) {
+    const cambios = { ...nueva, clase }
+    if (esConceptoCatalogo(nueva.concepto) && !skuTocado) cambios.sku = sugerirSkuTarifa(nueva.concepto, clase)
+    setNueva(cambios)
+  }
 
   // Función y NO componente: un componente definido aquí adentro se recrearía en cada
   // tecla y el campo perdería el foco mientras se escribe.
@@ -156,12 +194,44 @@ export default function Tarifas() {
     )
   }
 
+  function filaCatalogo(f) {
+    return (
+      <tr key={f.id} style={f.activo ? undefined : { opacity: 0.6 }}>
+        <td><input aria-label="SKU" style={{ width: 150 }}
+          value={valor(f, 'sku')} onChange={e => editar(f.id, 'sku', e.target.value)} /></td>
+        <td>{NOMBRE_CONCEPTO_CATALOGO[f.concepto] || f.concepto}</td>
+        <td>
+          <select aria-label="Clase (opcional)" value={valor(f, 'clase')} onChange={e => editar(f.id, 'clase', e.target.value)}>
+            <option value="">Cualquiera</option>
+            {CLASES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+          </select>
+        </td>
+        <td>
+          <input aria-label={`Nombre para mostrar de ${f.sku}`} style={{ width: 170 }}
+            placeholder={nombreTarifaCatalogo(f)}
+            value={valor(f, 'nombre')} onChange={e => editar(f.id, 'nombre', e.target.value)} />
+        </td>
+        <td><input type="number" step="any" min="0" style={{ width: 110 }} aria-label="Precio"
+          value={valor(f, 'precio')} onChange={e => editar(f.id, 'precio', e.target.value)} /></td>
+        <td align="center">
+          <input type="checkbox" aria-label="Activa" checked={!!valor(f, 'activo')}
+            onChange={e => editar(f.id, 'activo', e.target.checked)} />
+          {' '}{valor(f, 'activo') ? 'Sí' : 'No'}
+        </td>
+        <td>
+          {edicion[f.id] && <button onClick={() => guardarFila(f)}>Guardar</button>}
+          {' '}<button className="btn-peligro" onClick={() => quitar(f)}>Quitar</button>
+        </td>
+      </tr>
+    )
+  }
+
   return (
     <div className="pagina">
       <h2>Tarifas de servicio</h2>
       <p className="ayuda" style={{ maxWidth: 680 }}>
-        Precios del diagnóstico y del traslado. Al cotizar se copian a la partida: cambiar una
-        tarifa aquí no altera las cotizaciones que ya hiciste.
+        Precios del diagnóstico, del traslado y de los servicios de catálogo. Al cotizar se copian
+        a la partida: cambiar una tarifa aquí no altera las cotizaciones que ya hiciste.
       </p>
 
       {error && <Alerta tipo="error">{error}</Alerta>}
@@ -169,12 +239,34 @@ export default function Tarifas() {
       {empalmes.map((a, i) => <Alerta key={i} tipo="aviso" palabra="Ojo">{a}</Alerta>)}
 
       <section className="tarjeta">
+        <h3>Servicios (por SKU)</h3>
+        <p className="ayuda">
+          Correctivo, preventivo, instalación de gas o eléctrica, u otro. Cada una se busca y se
+          agrega a una cotización por su SKU, igual que un producto: no mueve inventario. La clase
+          y el tramo de kW son opcionales.
+        </p>
+        <div className="tabla-scroll">
+          <table>
+            <thead>
+              <tr><th>SKU</th><th>Concepto</th><th>Clase</th><th>Nombre (opcional)</th><th>Precio</th><th>Activa</th><th></th></tr>
+            </thead>
+            <tbody>
+              {catalogo.map(filaCatalogo)}
+              {catalogo.length === 0 && (
+                <tr><td colSpan={7} className="ayuda">Todavía no hay servicios de catálogo.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="tarjeta">
         <h3>Diagnóstico</h3>
         <p className="ayuda">
           Por clase de equipo y tramo de capacidad. El tramo incluye sus dos extremos. En baterías
           la capacidad se mide en kWh.
         </p>
-        <div style={{ overflowX: 'auto' }}>
+        <div className="tabla-scroll">
           <table>
             <thead>
               <tr><th>Clase</th><th>Desde (kW)</th><th>Hasta (kW)</th><th>Precio</th><th>Activa</th><th></th></tr>
@@ -195,7 +287,7 @@ export default function Tarifas() {
           Precio por kilómetro, solo ida. Desde los km indicados se cobran <strong>todos</strong> los km
           (a 55 km y con desde = 40, se cobran 55).
         </p>
-        <div style={{ overflowX: 'auto' }}>
+        <div className="tabla-scroll">
           <table>
             <thead>
               <tr><th>Desde (km)</th><th>Precio por km</th><th>Activa</th><th></th></tr>
@@ -215,34 +307,56 @@ export default function Tarifas() {
         <form onSubmit={agregar} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, maxWidth: 520 }}>
           <label className="campo">
             <span>Concepto</span>
-            <select value={nueva.concepto} onChange={e => setNueva({ ...nueva, concepto: e.target.value })}>
+            <select value={nueva.concepto} onChange={e => cambiarConcepto(e.target.value)}>
               <option value="diagnostico">Diagnóstico</option>
               <option value="traslado">Traslado (por km)</option>
+              {CONCEPTOS_CATALOGO.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
             </select>
           </label>
 
-          {esDiag ? (
+          {esCatalogo && (
+            <label className="campo">
+              <span>SKU</span>
+              <input value={nueva.sku}
+                onChange={e => { setSkuTocado(true); setNueva({ ...nueva, sku: e.target.value }) }} />
+              <span className="ayuda">Se sugiere solo; puedes cambiarlo, pero debe ser único.</span>
+            </label>
+          )}
+
+          {(esDiag || esCatalogo) && (
             <>
               <label className="campo">
-                <span>Clase de equipo</span>
-                <select value={nueva.clase} onChange={e => setNueva({ ...nueva, clase: e.target.value })}>
+                <span>Clase de equipo{esCatalogo && ' (opcional)'}</span>
+                <select value={nueva.clase} onChange={e => cambiarClaseNueva(e.target.value)}>
+                  {esCatalogo && <option value="">Cualquiera</option>}
                   {CLASES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
                 </select>
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              <div className="rejilla-2">
                 <label className="campo">
-                  <span>Desde (kW)</span>
+                  <span>Desde (kW){esCatalogo && ' (opcional)'}</span>
                   <input type="number" step="any" min="0" value={nueva.kw_desde}
                     onChange={e => setNueva({ ...nueva, kw_desde: e.target.value })} />
                 </label>
                 <label className="campo">
-                  <span>Hasta (kW)</span>
+                  <span>Hasta (kW){esCatalogo && ' (opcional)'}</span>
                   <input type="number" step="any" min="0" value={nueva.kw_hasta}
                     onChange={e => setNueva({ ...nueva, kw_hasta: e.target.value })} />
                 </label>
               </div>
             </>
-          ) : (
+          )}
+
+          {esCatalogo && (
+            <label className="campo">
+              <span>Nombre para mostrar{nueva.concepto === 'otro' ? '' : ' (opcional)'}</span>
+              <input value={nueva.nombre} placeholder={nombreTarifaCatalogo({ ...nueva, kw_desde: aNumero(nueva.kw_desde), kw_hasta: aNumero(nueva.kw_hasta) })}
+                onChange={e => setNueva({ ...nueva, nombre: e.target.value })} />
+              {nueva.concepto === 'otro' && <span className="ayuda">"Otro" no tiene un nombre por defecto: escríbelo.</span>}
+            </label>
+          )}
+
+          {esTraslado && (
             <label className="campo">
               <span>A partir de (km)</span>
               <input type="number" step="any" min="0" value={nueva.km_desde}
@@ -251,7 +365,7 @@ export default function Tarifas() {
           )}
 
           <label className="campo">
-            <span>{esDiag ? 'Precio del diagnóstico' : 'Precio por km'}</span>
+            <span>Precio{esTraslado ? ' por km' : ''}</span>
             <input type="number" step="any" min="0" value={nueva.precio}
               onChange={e => setNueva({ ...nueva, precio: e.target.value })} />
           </label>

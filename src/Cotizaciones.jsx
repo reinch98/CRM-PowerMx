@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { hoyLocal, sumarDias } from './lib/fechas'
-import { partidasDeDiagnostico } from './lib/tarifas'
+import { partidasDeDiagnostico, tarifasDeCatalogo } from './lib/tarifas'
 import { Alerta } from './ui'
 
 const IVA = 0.16
@@ -131,31 +131,41 @@ export default function Cotizaciones({ irA }) {
 
   const equiposDelCliente = equipos.filter(e => e.cliente_id === form.cliente_id)
 
+  // Servicios de catálogo (correctivo, preventivo, instalaciones…): cada uno tiene su
+  // propio SKU y se busca igual que un producto, en el mismo cuadro.
+  const serviciosCatalogo = useMemo(() => tarifasDeCatalogo(tarifas), [tarifas])
+
   const encontrados = useMemo(() => {
     const t = buscar.trim().toLowerCase()
     if (!t) return []
-    return productos.filter(p =>
-      p.sku.toLowerCase().includes(t) || (p.nombre || '').toLowerCase().includes(t)
-    ).slice(0, 8)
-  }, [buscar, productos])
+    const prods = productos
+      .filter(p => p.sku.toLowerCase().includes(t) || (p.nombre || '').toLowerCase().includes(t))
+      .map(p => ({ tipo: 'producto', id: p.id, sku: p.sku, nombre: p.nombre, precio: p.precio, unidad: p.unidad }))
+    const servs = serviciosCatalogo
+      .filter(s => s.sku.toLowerCase().includes(t) || s.nombre.toLowerCase().includes(t))
+      .map(s => ({ tipo: 'servicio', id: s.id, sku: s.sku, nombre: s.nombre, precio: s.precio }))
+    return [...prods, ...servs].slice(0, 8)
+  }, [buscar, productos, serviciosCatalogo])
 
   // -------------------------------------------------------------------------
-  // Partidas. Se copia descripción y precio del catálogo EN ESTE MOMENTO: si
-  // mañana sube el precio, esta cotización no cambia.
+  // Partidas. Se copia descripción y precio EN ESTE MOMENTO: si mañana sube el
+  // precio, esta cotización no cambia. Un servicio de catálogo nunca lleva
+  // producto_id: es una partida libre, igual que el diagnóstico y el traslado, así
+  // que no mueve inventario ni genera requisiciones.
   // -------------------------------------------------------------------------
-  function agregarProducto(p) {
-    if (p.precio == null) {
-      setError(`${p.sku} no tiene precio capturado. Ponlo en Inventario o agrégalo como partida libre.`)
+  function agregarResultado(item) {
+    if (item.tipo === 'producto' && item.precio == null) {
+      setError(`${item.sku} no tiene precio capturado. Ponlo en Inventario o agrégalo como partida libre.`)
       return
     }
     setError('')
     setPartidas([...partidas, {
-      producto_id: p.id,
-      sku: p.sku,
-      descripcion: p.nombre,
-      unidad: p.unidad || 'pieza',
+      producto_id: item.tipo === 'producto' ? item.id : null,
+      sku: item.sku,
+      descripcion: item.nombre,
+      unidad: item.tipo === 'producto' ? (item.unidad || 'pieza') : 'servicio',
       cantidad: 1,
-      precio_unitario: p.precio
+      precio_unitario: item.precio
     }])
     setBuscar('')
   }
@@ -588,11 +598,14 @@ export default function Cotizaciones({ irA }) {
             {encontrados.length > 0 && (
               <div className="buscador-lista">
                 {encontrados.map(p => (
-                  <button key={p.id} type="button" onClick={() => agregarProducto(p)}>
+                  <button key={`${p.tipo}-${p.id}`} type="button" onClick={() => agregarResultado(p)}>
                     <strong>{p.sku}</strong> — {p.nombre}
                     <span className="ayuda">
-                      {p.precio == null ? 'sin precio' : pesos(p.precio)}
-                      {' · disponible '}{dispoPorId[p.id] ?? 0}
+                      {p.tipo === 'servicio' ? (
+                        <><span className="etiqueta">Servicio</span> {pesos(p.precio)}</>
+                      ) : (
+                        <>{p.precio == null ? 'sin precio' : pesos(p.precio)}{' · disponible '}{dispoPorId[p.id] ?? 0}</>
+                      )}
                     </span>
                   </button>
                 ))}
