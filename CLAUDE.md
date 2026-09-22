@@ -9,6 +9,9 @@ español, concisas, con el paso siguiente claro.
 
 - React + Vite, JSX sin TypeScript. Sin router: `App.jsx` tiene un mapa `PANTALLAS`
   con los roles que ve cada pantalla.
+- `jspdf` (fase 4): arma el PDF de la orden en el navegador del admin. Se carga con `import()`
+  dentro de `lib/documentos.js`, nunca al arrancar la app (ver "Diseño"/Fase 4 en el flujo de
+  servicio: arrastra `html2canvas` y `dompurify`, que aquí no se usan).
 - Supabase, proyecto `crm-generadores`: Postgres, Auth, Storage (bucket `ordenes`),
   Edge Functions. Proyecto nuevo, con el sistema nuevo de llaves.
 - Despliegue: Cloudflare Workers con static assets (`wrangler.jsonc`), en
@@ -277,6 +280,49 @@ coordinación y **no mueve inventario por sí sola**.
 - Simplificado a propósito frente a la idea original: no hay apartado automático de inventario (lo
   decide una persona a mano, con las pantallas que ya existen) ni aviso por WhatsApp todavía. Sigue
   pendiente conectar con "Requiere seguimiento" y con la Fase 5 (paquetes de mantenimiento).
+
+**Fase 4: PDF de la orden y su envío — construida y con el SQL aplicado y probado el 21/09/2026**
+(`supabase/sql/20_pdf_orden.sql` y `20_prueba_pdf_orden.sql`; 5 pasos con rollback, todos "ok". En
+la prueba: cuando el técnico no tiene NINGUNA política de `update` sobre una tabla —como
+`ordenes_servicio` desde la 1e—, RLS no lanza una excepción, solo hace que el `update` no toque
+ninguna fila; hay que revisar `row_count`, no solo esperar un error, a diferencia de un intento
+que sí ve la fila pero falla el `with check`. `src/lib/documentos.js`,
+`DocumentoOrden` en `Trabajos.jsx`, solo admin, cuando la orden está `cerrada`). El PDF se arma
+**en el navegador del admin** con `jsPDF` (dependencia nueva; no hay CLI de Supabase para una
+función, y el admin ya tiene todos los datos en pantalla): no cambia nada del flujo del técnico.
+- **Dos copias**, en el bucket `ordenes` que ya existía: **cliente** (solo el trabajo realizado;
+  las piezas se ven en la cotización, como se acordó) e **interna**, al expediente
+  (`expedientes/<cliente_id>/OS-<folio>-<tipo>.pdf`; agrega el material usado, sin costos —
+  `orden_surtido` nunca los tuvo). `ordenes_pdf` lleva un registro por tipo y orden (upsert: al
+  regenerar, se reemplaza, no se duplica).
+- **"Enviar al cliente" es manual** (sin la API de WhatsApp todavía): junta los contactos con
+  `recibe_ordenes` del equipo (o de toda la empresa si no hay equipo), el admin ajusta a quién,
+  y al confirmar sube una copia fechada a `enviados/<AAAA>-S<ss>/OS-<folio>-<marca de
+  tiempo>.pdf` (semana ISO 8601 en hora del dispositivo, `semanaLocal()` de `fechas.js`, 8 casos
+  probados en Node incluidos los cambios de año) y registra la fila en `envios_orden`
+  (destinatarios, quién, cuándo). Por cada destinatario hay un enlace **"Abrir WhatsApp"**
+  (reutiliza `enlaceWhatsApp` de `lib/avisos.js`) para encontrar el chat rápido; el PDF se
+  descarga aparte y se adjunta a mano — wa.me no permite mandar un archivo por enlace.
+- **"Enviar al cliente en cuanto se cierre"** (pedido de Caña el 21/09/2026): el admin marca una
+  orden desde que existe, **abierta o cerrada** (`ordenes_servicio.enviar_al_cerrar`, admin ya
+  tenía permiso de sobra en esa tabla). No es un envío automático de verdad — el PDF lo sigue
+  generando el admin — pero al cerrarse la orden resalta con un aviso, el panel "Enviar al
+  cliente" se abre solo (con los destinatarios ya cargados) y la lista de "Mis trabajos" muestra
+  "Por enviar" en esa orden. La marca se apaga sola al registrar el envío
+  (`registrarEnvio` en `documentos.js`).
+- **`jsPDF` se carga con `import()` dentro de `construirPdfOrden`, no en el arranque**: arrastra
+  `html2canvas` y `dompurify` (que aquí no se usan) y suma cerca de 970 kB sin comprimir. Cargado
+  aparte, un técnico que nunca ve esta pantalla no lo descarga al abrir la app — aunque el
+  service worker sí lo precachea en segundo plano en todos los celulares al instalar/actualizar
+  (`vite.config.js` mete TODO el bundle a la lista, sin distinguir), así que no es gratis del
+  todo. Sigue pendiente el ítem 3 de la Ruta de mejora (dividir el bundle por pantalla).
+- **No probado con datos reales:** la firma no se pudo insertar de verdad en el emulador (el
+  Supabase falso no tiene un archivo de firma real que descargar), así que solo se comprobó la
+  rama "El cliente no firmó esta orden." Falta ver un PDF real, con firma, abierto en un celular.
+- Probado en emulador con un Supabase falso (0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos <
+  48 px, 0 px de desborde): se generaron las dos copias, la ruta y el `upsert` fueron los
+  esperados, "Enviar" subió la copia fechada a la carpeta de la semana correcta y registró el
+  envío, y la marca "enviar al cerrar" se guardó, se resaltó al cerrar y se apagó sola al enviar.
 
 **Corrección (SQL 17, 20/09/2026):** `citas_fecha_segun_estado` (de la 09) exigía fecha salvo en
 `por_programar`, así que **cancelar una cita sin fecha tronaba** («violates check constraint»), igual

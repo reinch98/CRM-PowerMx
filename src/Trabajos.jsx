@@ -7,13 +7,18 @@ import {
   etiquetaEstado, nombrePieza, problemaDeSolicitud,
   crearSolicitud, cargarSolicitudesDeOrden, cancelarSolicitud
 } from './lib/solicitudes'
+import {
+  construirPdfOrden, guardarPdfExpediente, cargarPdfDeOrden, cargarEnviosDeOrden,
+  cargarDestinatariosOrden, registrarEnvio, urlDePdf
+} from './lib/documentos'
+import { enlaceWhatsApp } from './lib/avisos'
 import { fotosDeOrden } from './lib/idb'
 import { cierrePendiente, pendienteDe } from './lib/cola'
 import { explicarError } from './lib/errores'
 import {
   cargarTrabajos, leerTrabajos, leerNombres, leerCola, parteLocal, guardarParteLocal,
   agregarFotoLocal, quitarFotoLocal, pedirCierre, descartarPendiente,
-  sincronizarTrabajos, urlsFirmadas
+  sincronizarTrabajos, urlsFirmadas, marcarEnviarAlCerrar
 } from './lib/trabajos'
 import { Alerta } from './ui'
 import Firma from './Firma'
@@ -265,6 +270,154 @@ function SolicitarMaterial({ ordenId, tecnicoId }) {
 }
 
 // ---------------------------------------------------------------------------
+// PDF de la orden ya cerrada, y su envío (fase 4). Solo admin. El PDF se arma en este mismo
+// celular/computadora (jsPDF); "Enviar al cliente" registra a quién y cuándo, guarda una copia
+// fechada, y descarga el archivo para que el admin lo comparta a mano (todavía sin la API de
+// WhatsApp: ver CLAUDE.md).
+// ---------------------------------------------------------------------------
+function DocumentoOrden({ orden, nombreT1, nombreT2 }) {
+  const [pdfs, setPdfs] = useState(null)             // { cliente: {...}, interno: {...} }
+  const [envios, setEnvios] = useState(null)
+  const [destinatarios, setDestinatarios] = useState(null)   // null = aún no se abrió
+  const [elegidos, setElegidos] = useState({})
+  const [ocupado, setOcupado] = useState('')         // '' | 'cliente' | 'interno' | 'enviar'
+  const [error, setError] = useState('')
+  const [mensaje, setMensaje] = useState('')
+
+  async function cargar() {
+    const [p, e] = await Promise.all([cargarPdfDeOrden(orden.id), cargarEnviosDeOrden(orden.id)])
+    if (p.ok) setPdfs(Object.fromEntries(p.pdfs.map(x => [x.tipo, x])))
+    if (e.ok) setEnvios(e.envios)
+  }
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    cargar()
+    // Si se marcó "enviar al cerrar", el panel ya nace abierto (más abajo): se cargan los
+    // destinatarios de una vez, sin esperar un toque que el admin no tiene por qué dar.
+    if (orden.enviar_al_cerrar) abrirDestinatarios()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orden.id])
+
+  async function abrirDestinatarios() {
+    if (destinatarios) return
+    const r = await cargarDestinatariosOrden(orden)
+    if (!r.ok) return setError(r.texto)
+    setDestinatarios(r.contactos)
+    setElegidos(Object.fromEntries(r.contactos.map(c => [c.contacto_id, true])))   // todos ya cumplen "recibe órdenes"
+  }
+
+  async function generar(tipo) {
+    setError(''); setMensaje(''); setOcupado(tipo)
+    const blob = await construirPdfOrden(orden, nombreT1, nombreT2, tipo)
+    const r = await guardarPdfExpediente(orden, tipo, blob)
+    setOcupado('')
+    if (!r.ok) return setError(r.texto)
+    setMensaje(`Copia ${tipo === 'interno' ? 'interna' : 'del cliente'} generada.`)
+    cargar()
+  }
+
+  async function verPdf(tipo) {
+    const info = pdfs?.[tipo]
+    if (!info) return
+    setError('')
+    const r = await urlDePdf(info.ruta)
+    if (!r.ok) return setError(r.texto)
+    window.open(r.url, '_blank', 'noopener')
+  }
+
+  async function enviar() {
+    setError(''); setMensaje('')
+    const lista = (destinatarios || []).filter(c => elegidos[c.contacto_id])
+    if (lista.length === 0) return setError('Elige al menos un destinatario.')
+    setOcupado('enviar')
+    const blob = await construirPdfOrden(orden, nombreT1, nombreT2, 'cliente')
+    await guardarPdfExpediente(orden, 'cliente', blob)          // deja también actualizado el expediente
+    const r = await registrarEnvio(orden, blob, lista)
+    if (!r.ok) { setOcupado(''); return setError(r.texto) }
+    const u = await urlDePdf(r.ruta)
+    setOcupado('')
+    setMensaje('Envío registrado. Se abrió el PDF: descárgalo y adjúntalo en el chat de WhatsApp de cada destinatario.')
+    if (u.ok) window.open(u.url, '_blank', 'noopener')
+    cargar()
+  }
+
+  const mensajeWhatsApp = `Hola, le comparto la orden de servicio OS-${orden.folio} de PowerMx.`
+
+  return (
+    <section className="tarjeta">
+      <h3>Documento de la orden</h3>
+      <p className="ayuda">
+        Genera el PDF para el expediente. Cuando quieras mandárselo al cliente, regístralo aquí:
+        se guarda una copia fechada y tú lo compartes (todavía no hay envío automático).
+      </p>
+
+      {orden.enviar_al_cerrar && (
+        <Alerta tipo="aviso" palabra="Marcada para enviar">
+          Se marcó para mandarla al cliente en cuanto se cerrara. Ya está cerrada: complétalo abajo.
+        </Alerta>
+      )}
+
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {mensaje && <Alerta tipo="ok" palabra="Listo">{mensaje}</Alerta>}
+
+      <div className="fila">
+        <button type="button" onClick={() => generar('cliente')} disabled={!!ocupado}>
+          {ocupado === 'cliente' ? 'Generando…' : pdfs?.cliente ? 'Regenerar copia del cliente' : 'Generar copia del cliente'}
+        </button>
+        {pdfs?.cliente && <button type="button" onClick={() => verPdf('cliente')}>Ver</button>}
+      </div>
+      <div className="fila" style={{ marginTop: 8 }}>
+        <button type="button" onClick={() => generar('interno')} disabled={!!ocupado}>
+          {ocupado === 'interno' ? 'Generando…' : pdfs?.interno ? 'Regenerar copia interna' : 'Generar copia interna'}
+        </button>
+        {pdfs?.interno && <button type="button" onClick={() => verPdf('interno')}>Ver</button>}
+      </div>
+
+      <details style={{ marginTop: 12 }} open={!!orden.enviar_al_cerrar}
+        onToggle={e => { if (e.currentTarget.open) abrirDestinatarios() }}>
+        <summary className="resumen">Enviar al cliente</summary>
+        {destinatarios === null && <p className="ayuda">Cargando destinatarios…</p>}
+        {destinatarios && destinatarios.length === 0 && (
+          <Alerta tipo="aviso" palabra="Sin destinatarios">
+            Nadie en Contactos tiene "Recibe órdenes" para este equipo. Agrégalo en Contactos.
+          </Alerta>
+        )}
+        {(destinatarios || []).map(c => {
+          const enlace = enlaceWhatsApp(c.telefono, mensajeWhatsApp)
+          return (
+            <div key={c.contacto_id} className="fila" style={{ justifyContent: 'space-between' }}>
+              <label className="casilla">
+                <input type="checkbox" checked={!!elegidos[c.contacto_id]}
+                  onChange={e => setElegidos({ ...elegidos, [c.contacto_id]: e.target.checked })} />
+                {c.nombre}{c.telefono ? ` · ${c.telefono}` : ' · sin teléfono'}
+              </label>
+              {enlace && <a className="btn" href={enlace} target="_blank" rel="noreferrer">Abrir WhatsApp</a>}
+            </div>
+          )
+        })}
+        {destinatarios && destinatarios.length > 0 && (
+          <button type="button" className="btn-primario" onClick={enviar} disabled={!!ocupado} style={{ marginTop: 8 }}>
+            {ocupado === 'enviar' ? 'Enviando…' : 'Registrar envío y descargar PDF'}
+          </button>
+        )}
+      </details>
+
+      {envios && envios.length > 0 && (
+        <>
+          <h4 style={{ marginTop: 12 }}>Envíos anteriores</h4>
+          {envios.map(e => (
+            <p key={e.id} className="ayuda">
+              {new Date(e.enviado_en).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}
+              {' · '}{(e.destinatarios || []).map(d => d.nombre).join(', ') || 'sin destinatarios'}
+            </p>
+          ))}
+        </>
+      )}
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Detalle de una orden. Componente de nivel superior (no definido dentro de otro)
 // para que los campos no pierdan el foco al escribir.
 // ---------------------------------------------------------------------------
@@ -294,8 +447,16 @@ function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, on
   })
   const [refacciones, setRefacciones] = useState([])
   const [uso, setUso] = useState({})            // producto_id → cuántas piezas usó (sin capturar = 0)
+  const [errorEnvio, setErrorEnvio] = useState('')
   const refLienzo = useRef(null)
   const temporizador = useRef(null)
+
+  async function cambiarEnviarAlCerrar(valor) {
+    setErrorEnvio('')
+    const r = await marcarEnviarAlCerrar(orden.id, valor)
+    if (!r.ok) return setErrorEnvio(r.texto)
+    onRefrescar()
+  }
 
   // Miniaturas de mis fotos: las del celular primero; las que ya están arriba, con URL firmada.
   useEffect(() => {
@@ -458,6 +619,14 @@ function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, on
           {orden.citas?.zona && ` · ${orden.citas.zona}`}
         </p>
         {orden.citas?.notas && <p className="ayuda">{orden.citas.notas}</p>}
+        {esAdmin && enLinea && (
+          <label className="casilla" style={{ marginTop: 6 }}>
+            <input type="checkbox" checked={!!orden.enviar_al_cerrar}
+              onChange={e => cambiarEnviarAlCerrar(e.target.checked)} />
+            Enviar al cliente en cuanto se cierre
+          </label>
+        )}
+        {errorEnvio && <Alerta tipo="error">{errorEnvio}</Alerta>}
         <p className="ayuda">
           Responsable: {nombreDe(nombres, orden.tecnico_id)}
           {orden.tecnico2_id && <> · Ayudante: {nombreDe(nombres, orden.tecnico2_id)}</>}
@@ -481,6 +650,11 @@ function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, on
           {orden.requiere_seguimiento && <p><strong>Requiere seguimiento</strong>{orden.fecha_seguimiento && ` para el ${orden.fecha_seguimiento}`}</p>}
         </section>
       )}
+
+      {esAdmin && orden.estado === 'cerrada' && (enLinea
+        ? <DocumentoOrden orden={orden} nombreT1={nombreDe(nombres, orden.tecnico_id)}
+            nombreT2={orden.tecnico2_id ? nombreDe(nombres, orden.tecnico2_id) : null} />
+        : <Alerta tipo="aviso" palabra="Sin señal">Para generar o enviar el PDF necesitas conexión.</Alerta>)}
 
       {/* ---- mi parte ---- */}
       {abierta && (soyT1 || soyT2) && (
@@ -748,6 +922,9 @@ export default function Trabajos() {
           {soyT1 && <span className="etiqueta">Responsable</span>}
           {soyT2 && <span className="etiqueta">Ayudante</span>}
           {sinSubir && <span className="etiqueta etiqueta-aviso">Sin subir</span>}
+          {esAdmin && o.estado === 'cerrada' && o.enviar_al_cerrar && (
+            <span className="etiqueta etiqueta-aviso">Por enviar</span>
+          )}
         </span>
       </button>
     )

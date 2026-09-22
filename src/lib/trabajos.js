@@ -273,3 +273,19 @@ export async function sincronizarTrabajos() {
   }
   return { corrio: true, subidos, fallidos }
 }
+
+// ---------------------------------------------------------------------------
+// "Enviar al cliente en cuanto se cierre": lo marca el admin, desde que ve la orden (abierta o
+// cerrada), sin esperar a nada. No es un envío automático de verdad (el PDF lo arma el
+// navegador del admin, fase 4: ver lib/documentos.js); es un recordatorio que resalta la orden
+// al cerrarse y se apaga solo al registrarse el envío.
+// ---------------------------------------------------------------------------
+export async function marcarEnviarAlCerrar(orden_id, valor) {
+  try {
+    const { error } = await supabase.from('ordenes_servicio').update({ enviar_al_cerrar: valor }).eq('id', orden_id)
+    if (error) return { ok: false, texto: explicarError(error).texto }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, texto: explicarError(e).texto }
+  }
+}
