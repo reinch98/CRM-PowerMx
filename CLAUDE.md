@@ -247,24 +247,36 @@ solo el **admin** ve "Dar por consumido lo que no volvió", con motivo) y *Adici
 Probado en emulador con un Supabase falso con los tres roles (0 textos < 17 px, 0 contrastes < 4.5, 0
 objetivos < 48 px, 0 px de desborde; reglas puras con 25 casos en Node).
 
-**Solicitud de material del técnico — acordada con Caña el 20/09/2026, SIN CONSTRUIR.** El técnico
-puede **pedir una pieza que necesita** (típicamente "para la siguiente visita") **sin ver costos ni
-precios**: solo indica qué pieza y cuántas, con una nota. Ideas para cuando se construya:
-- Es una **solicitud**, no una requisición: la requisición (`requisiciones`, solo admin, ligada a una
-  cotización) sigue siendo de compras. La solicitud del técnico es una tabla propia
-  (`solicitudes_material`: `tecnico_id`, `orden_id` / `equipo_id` / `cliente_id`, `producto_id` o texto libre
-  si la pieza no está en el catálogo, `cantidad`, `nota`, estado `pendiente` → `atendida` | `descartada`).
-  RLS: el técnico crea y lee **las suyas** (y las de su compañero de orden), sin columnas de precio ni
-  costo; admin y almacén las leen todas. Nunca se le devuelven precios, como en el resto del portal.
-- Se pide **desde la orden** (o desde "Mis trabajos"), con el mismo buscador sin precios que el almacén
-  (`existencias`), y **debe funcionar sin señal** (entra a la cola de `trabajos.js`, un elemento por asunto).
-  Si la pieza pedida sí hay en el estante, el almacén la puede **apartar para la próxima cita**; si no,
-  el admin la convierte en **requisición** (proveedor y costo los ve solo el admin).
-- Se conecta con **"Requiere seguimiento"** al cerrar (que ya pide fecha de seguimiento) y con la
-  Fase 5 (paquetes de mantenimiento): una pieza que se pide seguido debería terminar en el paquete
-  del equipo. El técnico ve solo el **estado** de lo que pidió ("Pedida", "Ya está en almacén",
-  "Descartada"), nunca importes.
-- Al llegar una solicitud, aviso al admin (y, más adelante, por WhatsApp con la misma cola de avisos).
+**Solicitud de material del técnico (SQL 19) — aplicada y probada el 21/09/2026**
+(`supabase/sql/19_solicitudes_material.sql` y `19_prueba_solicitudes_material.sql`; 10 pasos con
+rollback, todos "ok"). La base real solo tenía un admin y un técnico: la prueba usa un tercer
+perfil que cambia de rol dentro de la transacción (primero sin rol de técnico, para probar que no
+ve nada; luego técnico, como T2; al final almacenista), igual que las pruebas de la 14 y la 18.
+El técnico pide una pieza que necesita (típicamente "para la siguiente visita") **sin ver costos ni
+precios**. Es una **solicitud**, no una requisición: la requisición (`requisiciones`, solo admin,
+ligada a una cotización) sigue siendo de compras; esta tabla (`solicitudes_material`) es de
+coordinación y **no mueve inventario por sí sola**.
+- Se pide **desde una orden** (el técnico debe ser T1 o T2: `soy_de_la_orden`); el trigger
+  `_completar_solicitud_material` completa solos `equipo_id`/`cliente_id` desde la orden y copia
+  `sku`/`nombre`/`unidad` del producto (o queda `descripcion_libre` si la pieza no está en el
+  catálogo) — así el técnico lee su propia fila sin permiso sobre `productos`, igual que
+  `orden_surtido`/`entrega_lineas`.
+- RLS: el técnico crea la suya y lee las suyas y las de su compañero de la misma orden; puede
+  cancelarla (pasar a "descartada") solo mientras sigue "pendiente", nunca la marca "atendida" él
+  mismo. Almacén/admin (`_es_almacen()`) leen todas las pendientes con contexto
+  (`solicitudes_material_pendientes`: técnico, cliente, equipo, orden, existencia física) y las
+  resuelven con `atender_solicitud_material` (exige escribir cómo quedó: "se apartó en el
+  almacén", "se generó REQ-12"…) o `descartar_solicitud_material` (exige motivo).
+- Pantallas: en la orden del técnico (`Trabajos.jsx`), sección **"Pedir material"** (soyT1 o soyT2;
+  necesita señal, sin cola offline) con el mismo buscador sin precios que el almacén
+  (`cargarExistencias`, de `existencias`) o una descripción libre; lista sus solicitudes de esa
+  orden con estado y, si ya se resolvió, la resolución. En `Almacen.jsx`, pestaña **"Solicitudes"**
+  con las pendientes y los botones de atender/descartar. Reglas puras en `src/lib/solicitudes.js`
+  (16 casos en Node); probado en emulador con un Supabase falso en los dos roles (0 textos < 17 px,
+  0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde).
+- Simplificado a propósito frente a la idea original: no hay apartado automático de inventario (lo
+  decide una persona a mano, con las pantallas que ya existen) ni aviso por WhatsApp todavía. Sigue
+  pendiente conectar con "Requiere seguimiento" y con la Fase 5 (paquetes de mantenimiento).
 
 **Corrección (SQL 17, 20/09/2026):** `citas_fecha_segun_estado` (de la 09) exigía fecha salvo en
 `por_programar`, así que **cancelar una cita sin fecha tronaba** («violates check constraint»), igual

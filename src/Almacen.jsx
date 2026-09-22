@@ -7,6 +7,7 @@ import {
   cargarDevoluciones, recibirDevolucion, resolverDiferencia, cargarAdicionales, conciliarAdicional
 } from './lib/almacen'
 import { aRecibir, quedaPendiente, nivelAntiguedad, haceCuanto } from './lib/material'
+import { nombrePieza, cargarSolicitudesPendientes, atenderSolicitud, descartarSolicitud } from './lib/solicitudes'
 
 const NOMBRE_TIPO = {
   preventivo: 'Preventivo', correctivo: 'Correctivo', instalacion: 'Instalación',
@@ -388,13 +389,81 @@ function TarjetaAdicional({ adicional, onRecargar }) {
 }
 
 // ---------------------------------------------------------------------------
+// Una pieza que un técnico pidió (para esta visita o la próxima). No mueve inventario:
+// solo coordina. "Atender" exige contar cómo quedó (p. ej. "Se apartó en el almacén" o
+// "Se generó REQ-12"); "Descartar" exige el motivo.
+// ---------------------------------------------------------------------------
+function TarjetaSolicitud({ s, onRecargar }) {
+  const [resolucion, setResolucion] = useState('')
+  const [motivo, setMotivo] = useState('')
+  const [ocupado, setOcupado] = useState(false)
+  const [error, setError] = useState('')
+
+  async function atender() {
+    if (!resolucion.trim()) return setError('Escribe cómo se resolvió.')
+    setOcupado(true); setError('')
+    const r = await atenderSolicitud(s.id, resolucion)
+    setOcupado(false)
+    if (!r.ok) return setError(r.texto)
+    await onRecargar()
+  }
+
+  async function descartar() {
+    if (!motivo.trim()) return setError('Escribe el motivo.')
+    if (!confirm('¿Descartar este pedido?')) return
+    setOcupado(true); setError('')
+    const r = await descartarSolicitud(s.id, motivo)
+    setOcupado(false)
+    if (!r.ok) return setError(r.texto)
+    await onRecargar()
+  }
+
+  return (
+    <div className="tarjeta">
+      <div className="fila" style={{ justifyContent: 'space-between' }}>
+        <strong>{s.cantidad} × {nombrePieza(s)}</strong>
+        {s.fisico != null && <span className="etiqueta">En el estante {s.fisico}</span>}
+      </div>
+      <div className="ayuda">
+        Pidió: {s.tecnico}{s.cliente && <> · {s.cliente}</>}{s.equipo && <> · {s.equipo}</>}
+        {s.orden_folio && <> · OS-{s.orden_folio}</>}
+      </div>
+      {s.nota && <div className="ayuda">{s.nota}</div>}
+
+      <label className="campo">
+        <span>Cómo se resolvió</span>
+        <input value={resolucion} placeholder="Ej. se apartó en el almacén para la próxima visita"
+          onChange={e => setResolucion(e.target.value)} />
+      </label>
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      <div className="fila">
+        <button type="button" className="btn-primario" onClick={atender} disabled={ocupado}>
+          {ocupado ? 'Un momento…' : 'Marcar como atendida'}
+        </button>
+      </div>
+
+      <details style={{ marginTop: 8 }}>
+        <summary className="resumen">Descartar</summary>
+        <label className="campo">
+          <span>Motivo</span>
+          <input value={motivo} placeholder="Ej. ya no hace falta"
+            onChange={e => setMotivo(e.target.value)} />
+        </label>
+        <button type="button" className="btn-peligro" onClick={descartar} disabled={ocupado}>Descartar pedido</button>
+      </details>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Pantalla
 // ---------------------------------------------------------------------------
 export default function Almacen() {
-  const [pestana, setPestana] = useState('entregas')   // entregas | devoluciones | adicionales
+  const [pestana, setPestana] = useState('entregas')   // entregas | devoluciones | adicionales | solicitudes
   const [ordenes, setOrdenes] = useState(null)         // null = aún no carga
   const [devoluciones, setDevoluciones] = useState(null)
   const [adicionales, setAdicionales] = useState(null)
+  const [solicitudes, setSolicitudes] = useState(null)
   const [error, setError] = useState('')
   const [piezas, setPiezas] = useState([])
   const [piezasCargadas, setPiezasCargadas] = useState(false)
@@ -402,11 +471,14 @@ export default function Almacen() {
   const esAdmin = leerLocal('cache_perfil', null)?.rol === 'admin'
 
   async function recargar() {
-    const [a, b, c] = await Promise.all([cargarPorSurtir(), cargarDevoluciones(), cargarAdicionales()])
+    const [a, b, c, d] = await Promise.all([
+      cargarPorSurtir(), cargarDevoluciones(), cargarAdicionales(), cargarSolicitudesPendientes()
+    ])
     if (a.ok) setOrdenes(a.ordenes)
     if (b.ok) setDevoluciones(b.devoluciones)
     if (c.ok) setAdicionales(c.adicionales)
-    const fallo = [a, b, c].find(r => !r.ok)
+    if (d.ok) setSolicitudes(d.solicitudes)
+    const fallo = [a, b, c, d].find(r => !r.ok)
     setError(fallo ? fallo.texto : '')
   }
 
@@ -459,6 +531,9 @@ export default function Almacen() {
         <button className="pestana" aria-pressed={pestana === 'adicionales'} onClick={() => setPestana('adicionales')}>
           Adicionales{adicionales ? ` (${adicionales.length})` : ''}
         </button>
+        <button className="pestana" aria-pressed={pestana === 'solicitudes'} onClick={() => setPestana('solicitudes')}>
+          Solicitudes{solicitudes ? ` (${solicitudes.length})` : ''}
+        </button>
       </div>
       {ordenes === null && !error && enLinea && <p>Cargando…</p>}
 
@@ -507,6 +582,22 @@ export default function Almacen() {
           )}
           {(adicionales || []).map(a => (
             <TarjetaAdicional key={a.orden_id} adicional={a} onRecargar={recargar} />
+          ))}
+        </>
+      )}
+
+      {pestana === 'solicitudes' && (
+        <>
+          <p className="ayuda">
+            Piezas que un técnico pidió, para esta orden o para la próxima visita. No mueve
+            inventario por sí solo: si hay en el estante, apártala a mano; si no, conviértela en
+            requisición desde Requisiciones.
+          </p>
+          {solicitudes && solicitudes.length === 0 && (
+            <Alerta tipo="ok" palabra="Al día">No hay pedidos pendientes.</Alerta>
+          )}
+          {(solicitudes || []).map(s => (
+            <TarjetaSolicitud key={s.id} s={s} onRecargar={recargar} />
           ))}
         </>
       )}

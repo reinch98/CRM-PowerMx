@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { usuarioLocal, leerLocal } from './lib/local'
 import { redimensionar, firmaEnBlanco, dataUrlABlob } from './lib/imagen'
-import { firmarEntrega } from './lib/almacen'
+import { firmarEntrega, cargarExistencias } from './lib/almacen'
 import { conMaterial, usoParaCierre, porDevolver, debeDevolver, pendienteDeLinea } from './lib/material'
+import {
+  etiquetaEstado, nombrePieza, problemaDeSolicitud,
+  crearSolicitud, cargarSolicitudesDeOrden, cancelarSolicitud
+} from './lib/solicitudes'
 import { fotosDeOrden } from './lib/idb'
 import { cierrePendiente, pendienteDe } from './lib/cola'
 import { explicarError } from './lib/errores'
@@ -119,6 +123,143 @@ function MaterialOrden({ orden, soyT1, abierta, enLinea, nombreT1, onRefrescar }
           {(e.entrega_lineas || []).map(x => `${x.cantidad} × ${x.sku}`).join(', ')}
         </p>
       ))}
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Pedir una pieza que hace falta (típicamente para la próxima visita). Es una solicitud, no
+// una requisición: no mueve inventario ni ve costos, solo avisa al almacén/admin. Necesita
+// señal (como el resto del almacén); no hay cola sin conexión para esto.
+// ---------------------------------------------------------------------------
+function SolicitarMaterial({ ordenId, tecnicoId }) {
+  const [solicitudes, setSolicitudes] = useState(null)   // null = aún no carga
+  const [piezas, setPiezas] = useState([])
+  const [piezasCargadas, setPiezasCargadas] = useState(false)
+  const [buscar, setBuscar] = useState('')
+  const [elegida, setElegida] = useState(null)
+  const [libre, setLibre] = useState(false)
+  const [descripcion, setDescripcion] = useState('')
+  const [cantidad, setCantidad] = useState('1')
+  const [nota, setNota] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState('')
+  const [mensaje, setMensaje] = useState('')
+
+  async function cargar() {
+    const r = await cargarSolicitudesDeOrden(ordenId)
+    if (r.ok) setSolicitudes(r.solicitudes)
+  }
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    cargar()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ordenId])
+
+  async function abrirBuscador() {
+    if (piezasCargadas) return
+    setPiezasCargadas(true)
+    const r = await cargarExistencias()
+    if (r.ok) setPiezas(r.piezas)
+    else setPiezasCargadas(false)
+  }
+
+  function limpiar() {
+    setElegida(null); setBuscar(''); setLibre(false); setDescripcion(''); setCantidad('1'); setNota('')
+  }
+
+  async function enviar() {
+    setError(''); setMensaje('')
+    const problema = problemaDeSolicitud({ productoId: elegida?.id, descripcion, cantidad })
+    if (problema) return setError(problema)
+    setEnviando(true)
+    const r = await crearSolicitud({
+      ordenId, tecnicoId, productoId: elegida?.id, descripcion, cantidad, nota
+    })
+    setEnviando(false)
+    if (!r.ok) return setError(r.texto)
+    setMensaje('Pedido registrado. Lo revisa el almacén.')
+    limpiar()
+    cargar()
+  }
+
+  async function cancelar(s) {
+    if (!confirm('¿Cancelar este pedido?')) return
+    const r = await cancelarSolicitud(s.id)
+    if (!r.ok) return setError(r.texto)
+    cargar()
+  }
+
+  const encontrados = !libre && buscar.trim().length >= 2
+    ? piezas.filter(p => `${p.sku} ${p.nombre}`.toLowerCase().includes(buscar.trim().toLowerCase())).slice(0, 8)
+    : []
+
+  return (
+    <section className="tarjeta">
+      <h3>Pedir material</h3>
+      <p className="ayuda">
+        Si te falta una pieza para esta orden o para la próxima visita, pídela aquí. El almacén la
+        revisa; no ves precios ni costos.
+      </p>
+
+      {(solicitudes || []).map(s => (
+        <div key={s.id} className="linea-surtido">
+          <div className="fila" style={{ justifyContent: 'space-between' }}>
+            <strong>{s.cantidad} × {nombrePieza(s)}</strong>
+            <span className="etiqueta">{etiquetaEstado(s.estado)}</span>
+          </div>
+          {s.nota && <div className="ayuda">{s.nota}</div>}
+          {s.resolucion && <div className="ayuda">{s.resolucion}</div>}
+          {s.estado === 'pendiente' && (
+            <button type="button" className="btn-peligro" onClick={() => cancelar(s)}>Cancelar pedido</button>
+          )}
+        </div>
+      ))}
+
+      {!libre && (
+        <div className="buscador">
+          <input placeholder="Buscar pieza por SKU o nombre" aria-label="Buscar pieza por SKU o nombre"
+            value={elegida ? `${elegida.sku} — ${elegida.nombre}` : buscar}
+            onFocus={abrirBuscador}
+            onChange={e => { setElegida(null); setBuscar(e.target.value) }} />
+          {!elegida && encontrados.length > 0 && (
+            <div className="buscador-lista">
+              {encontrados.map(p => (
+                <button key={p.id} type="button" onClick={() => setElegida(p)}>
+                  <strong>{p.sku}</strong> — {p.nombre}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <label className="casilla">
+        <input type="checkbox" checked={libre}
+          onChange={e => { setLibre(e.target.checked); setElegida(null); setBuscar('') }} />
+        No está en el catálogo: la describo
+      </label>
+      {libre && (
+        <label className="campo">
+          <span>Descripción</span>
+          <input value={descripcion} onChange={e => setDescripcion(e.target.value)}
+            placeholder="Ej. banda de repuesto para el generador" />
+        </label>
+      )}
+
+      <label className="fila">Cantidad
+        <input type="number" inputMode="numeric" min="1" step="1" style={{ width: 96 }}
+          value={cantidad} onChange={e => setCantidad(e.target.value)} />
+      </label>
+      <label className="campo">
+        <span>Nota (opcional)</span>
+        <input value={nota} onChange={e => setNota(e.target.value)} placeholder="Ej. para la próxima visita" />
+      </label>
+
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {mensaje && <Alerta tipo="ok" palabra="Listo">{mensaje}</Alerta>}
+      <button type="button" className="btn-primario" onClick={enviar} disabled={enviando}>
+        {enviando ? 'Enviando…' : 'Pedir esta pieza'}
+      </button>
     </section>
   )
 }
@@ -325,6 +466,10 @@ function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, on
 
       <MaterialOrden orden={orden} soyT1={soyT1} abierta={abierta} enLinea={enLinea}
         nombreT1={nombreDe(nombres, orden.tecnico_id)} onRefrescar={onRefrescar} />
+
+      {(soyT1 || soyT2) && (enLinea
+        ? <SolicitarMaterial ordenId={orden.id} tecnicoId={yo} />
+        : <Alerta tipo="aviso" palabra="Sin señal">Para pedir material necesitas conexión.</Alerta>)}
 
       {/* ---- orden cerrada: solo lectura ---- */}
       {!abierta && (
