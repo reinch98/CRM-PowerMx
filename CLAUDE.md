@@ -458,6 +458,40 @@ día anterior → orden de servicio en PDF al cerrar (fase 4)`
   un número dedicado que no esté activo en la app normal de WhatsApp tardan días o semanas.
   Conviene iniciar ese trámite antes que el código.
 
+**Bandeja de WhatsApp (SQL 22) — aplicada y probada el 22/09/2026** (10 pasos con rollback,
+todos "ok"; la pantalla solo se vio en el emulador)
+(`supabase/sql/22_whatsapp_bandeja.sql` y `22_prueba_whatsapp_bandeja.sql`; `src/WhatsApp.jsx`,
+`src/lib/whatsapp.js`; pantalla nueva "WhatsApp", solo admin). Es el paso (2) del orden de
+construcción: el registro de conversaciones y la identificación de números. **Todavía no hay
+webhook**: hasta que Caña dé de alta el número en Meta, la bandeja está vacía y la pantalla
+misma explica los cuatro pasos del trámite.
+- `conversaciones`: una fila por número (`telefono_norm` generada, últimos 10 dígitos como en
+  `contactos`), con `contacto_id`, `ventana_hasta`, `sin_leer` y `estado`. `mensajes_wa` guarda
+  cada mensaje con `wa_message_id` **único**: el webhook de Meta reintenta, y sin ese índice el
+  mismo mensaje entraría dos veces.
+- El trigger `_ligar_conversacion_sola` liga el número a su contacto **solo si hay exactamente
+  uno activo** con ese teléfono. Con varios (un número en dos clientes) queda sin ligar a
+  propósito: el admin decide, y mientras tanto el agente no puede dar datos de nadie.
+- **Lección (la encontró la prueba, pasos 1 y 9):** una columna `generated always as (...)
+  stored` se calcula **después** de los triggers `before insert`, así que dentro del trigger
+  llega en **null**. El trigger leía `new.telefono_norm` y nunca ligaba a nadie; ahora
+  normaliza a mano con `normalizar_telefono(new.telefono)`. Vale para cualquier trigger
+  `before` que quiera usar una columna generada.
+- Funciones: `registrar_mensaje_entrante` (la usará el webhook; crea la conversación, corre la
+  ventana 24 h y sube `sin_leer`), `registrar_mensaje_saliente`, `vincular_conversacion`,
+  `marcar_conversacion_leida`, `cerrar_conversacion` y `bandeja_whatsapp` (lista con cliente,
+  equipos y último texto). RLS: solo admin lee las tablas; el bot escribirá por funciones
+  (`_es_bot_o_admin`).
+- **Ventana de 24 horas:** WhatsApp solo deja texto libre durante 24 h desde el último mensaje
+  del cliente; fuera de eso hace falta plantilla aprobada. La pantalla lo dice con palabras
+  ("Puedes responder" / "Ventana cerrada") antes de que el envío falle.
+- El envío sigue siendo **a mano**: "Guardar y abrir WhatsApp" deja la respuesta registrada en la
+  conversación y abre `wa.me` con el texto listo, igual que los avisos de cita.
+- Probado en emulador con un Supabase falso (0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos <
+  48 px, 0 px de desborde, en la lista, el hilo y el estado vacío; 21 casos puros en Node).
+  **Falta:** el webhook (Edge Function) con las credenciales de Meta, y ver la pantalla contra la
+  base real.
+
 ## Seguridad — lo más importante
 
 - Storage: bucket `ordenes` (**minúscula**, privado; Storage distingue mayúsculas).
@@ -578,6 +612,7 @@ Los técnicos trabajan casi siempre **bajo el sol directo**. Eso manda:
 `Agenda` (calendario, por programar, empalmes) · `Trabajos` (pestaña "Órdenes"; móvil,
 funciona sin señal; ver 1d: cola en localStorage, fotos encogidas en IndexedDB, firma en
 canvas) · `Almacen` (admin y almacenista; ver 2b) · `Clientes` ·
+`Contactos` · `WhatsApp` (bandeja; solo admin) ·
 `Equipos` · `Inventario` · `Cotizaciones` · `Requisiciones` · `Tarifas` (ambas solo admin) ·
 `Tecnicos` (pestaña "Usuarios") · `Agente` · `Login`. Las pantallas reciben la
 prop `irA(clave)` de `App.jsx` para saltar a otra pantalla. El portal del cliente es un aviso de "en construcción".
