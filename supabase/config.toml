@@ -422,3 +422,11 @@ enabled = true
 # ---------------------------------------------------------------------------
 [functions.agente]
 verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# El webhook de WhatsApp: Meta no manda tokens de Supabase, así que "Verify JWT"
+# tiene que ir apagado. Lo que autentica de verdad es la firma X-Hub-Signature-256
+# que la función comprueba contra WHATSAPP_APP_SECRET.
+# ---------------------------------------------------------------------------
+[functions.whatsapp]
+verify_jwt = false

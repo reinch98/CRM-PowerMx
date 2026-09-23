@@ -10,6 +10,14 @@ const ROLES = [
   ['sin_rol', 'Sin permisos', 'Entra al sistema pero no ve nada. Es el estado inicial de toda cuenta nueva.']
 ]
 
+// Roles que NO son de una persona: los usa un conector, no alguien que entra al CRM.
+// No salen en el menú (nadie debe asignarlos por error) pero sí hay que mostrarlos
+// cuando una cuenta ya los tiene, o el menú se vería vacío y un guardado accidental
+// le cambiaría el rol. Se ponen a mano en la base: update perfiles set rol = 'bot'.
+const ROLES_SISTEMA = {
+  bot: 'Conector de WhatsApp',
+}
+
 export default function Tecnicos() {
   const [perfiles, setPerfiles] = useState([])
   const [clientes, setClientes] = useState([])
@@ -96,9 +104,16 @@ export default function Tecnicos() {
                   <td><input aria-label={`Nombre de ${p.email}`} style={{ width: 150 }}
                     value={val(p, 'nombre')} onChange={e => editar(p.id, 'nombre', e.target.value)} /></td>
                   <td>
-                    <select aria-label={`Rol de ${p.email}`} value={rolActual} onChange={e => editar(p.id, 'rol', e.target.value)}>
-                      {ROLES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-                    </select>
+                    {ROLES_SISTEMA[p.rol] ? (
+                      <>
+                        <strong>{ROLES_SISTEMA[p.rol]}</strong>
+                        <div className="ayuda">Cuenta de sistema, no una persona. Su rol no se cambia desde aquí.</div>
+                      </>
+                    ) : (
+                      <select aria-label={`Rol de ${p.email}`} value={rolActual} onChange={e => editar(p.id, 'rol', e.target.value)}>
+                        {ROLES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+                      </select>
+                    )}
                   </td>
                   <td>
                     {rolActual === 'cliente' ? (

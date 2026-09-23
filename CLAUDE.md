@@ -489,8 +489,35 @@ misma explica los cuatro pasos del trámite.
   conversación y abre `wa.me` con el texto listo, igual que los avisos de cita.
 - Probado en emulador con un Supabase falso (0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos <
   48 px, 0 px de desborde, en la lista, el hilo y el estado vacío; 21 casos puros en Node).
-  **Falta:** el webhook (Edge Function) con las credenciales de Meta, y ver la pantalla contra la
-  base real.
+  **Falta:** ver la pantalla contra la base real.
+
+**Webhook de WhatsApp — Edge Function `whatsapp`** (`supabase/functions/whatsapp/index.ts`,
+escrita el 22/09/2026; **sin desplegar ni probar con un mensaje real**). Meta la llama cada vez
+que alguien le escribe al número; ella solo guarda el mensaje con `registrar_mensaje_entrante`.
+No contesta ni agenda nada: eso sigue siendo a mano desde la pantalla WhatsApp.
+- **Nada de `service_role`:** entra con una cuenta propia de rol **`bot`** que solo puede llamar
+  esas funciones. El rol `bot` **no sale en el menú** de la pantalla Usuarios (no es una persona
+  y nadie debe asignarlo por error): se pone a mano con
+  `update perfiles set rol = 'bot' where email = '…'`. La pantalla sí lo **muestra** —
+  "Conector de WhatsApp", sin menú— porque un `<select>` sin esa opción se vería vacío y un
+  guardado accidental le cambiaría el rol. Es la lista `ROLES_SISTEMA` de `Tecnicos.jsx`.
+  No ponerle teléfono ni zona, y no desactivarla: apagada, el webhook no puede entrar y los
+  mensajes que lleguen se pierden. Inicia sesión
+  con `BOT_EMAIL`/`BOT_PASSWORD` y **guarda la sesión** mientras el contenedor vive; si algo
+  falla, la tira para que el siguiente aviso vuelva a entrar.
+- **Lo que autentica es la firma, no un token de Supabase:** `X-Hub-Signature-256` es un
+  HMAC-SHA256 del cuerpo **crudo** con `WHATSAPP_APP_SECRET`. Por eso el cuerpo se lee con
+  `req.text()` y nunca se vuelve a serializar: cambiaría la firma. "Verify JWT" va apagado
+  (`[functions.whatsapp]` en `config.toml`).
+- **Siempre responde 200**, incluso si algo truena por dentro: si Meta ve un error reintenta
+  el mismo aviso durante horas. Lo que se pierde queda en el registro de la función. La
+  repetición no duplica nada porque `wa_message_id` es único.
+- `GET` sirve solo para el alta del webhook (`hub.challenge` contra `WHATSAPP_VERIFY_TOKEN`).
+- Los acuses de entrega (`statuses`) todavía no se guardan: harán falta cuando el CRM mande
+  por la API, no mientras se responda a mano.
+- Secretos en Supabase → Edge Functions: `WHATSAPP_VERIFY_TOKEN` (lo inventa Caña y lo repite
+  en Meta), `WHATSAPP_APP_SECRET` (Meta → Configuración → Básica), `BOT_EMAIL`, `BOT_PASSWORD`.
+  `SUPABASE_URL` y `SUPABASE_ANON_KEY` las pone Supabase sola.
 
 ## Seguridad — lo más importante
 
