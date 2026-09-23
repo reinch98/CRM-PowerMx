@@ -537,9 +537,19 @@ misma explica los cuatro pasos del trámite.
   `America/Mexico_City`.
 - `ANTHROPIC_API_KEY` es un secreto de Supabase, nunca va en el repo. El saldo de la
   API es chico: no cambiar a un modelo más caro sin avisar.
-- No hay CLI de Supabase instalada: la función se despliega pegando el archivo en el
-  editor web de Supabase. Al cambiarla, el archivo del repo y el de Supabase deben
-  quedar iguales.
+- **CLI de Supabase instalada el 22/09/2026** (`npx supabase`, proyecto ligado con
+  `supabase/.temp/project-ref`). La función se despliega con
+  `npx supabase functions deploy agente`, ya no pegándola en el editor web. Aun así,
+  el archivo del repo es el que manda: un deploy **pisa** lo que esté en Supabase.
+- `supabase/config.toml` (de `supabase init`) describe una copia **local** de Supabase que
+  aquí no se usa; el deploy de funciones no la aplica. **Nunca correr
+  `npx supabase config push`**: eso sí empujaría esos ajustes al proyecto real y pondría
+  `site_url = "http://127.0.0.1:3000"` en Auth, rompiendo el login de `crm.powermx.com.mx`.
+  Lo único que de verdad importa de ese archivo es el bloque `[functions.agente]` con
+  `verify_jwt = false`: sin él, `functions deploy` vuelve a encender la validación (el valor
+  por defecto es `true`) y el agente deja de responder, porque él valida solo con
+  `auth.getUser`. Toda función nueva que valide por su cuenta —como el webhook de
+  WhatsApp— necesita su propio bloque.
 - Rechaza el rol `cliente`, historial de más de 40 turnos y preguntas de más de
   2,000 caracteres. El historial lo manda el navegador: no se le tiene fe.
 - Siguientes fases: ver "Ruta de mejora".
@@ -754,7 +764,8 @@ Supabase); lint en cero.
    `signOut()` sin señal no cierra la sesión local (supabase-js devuelve el error de
    red sin borrarla): decidir si "Salir" debe funcionar desconectado.
 4. **Agente fase 3:** escritura con confirmación explícita y registro en `auditoria`.
-   Instalar la CLI de Supabase para dejar de pegar la función a mano.
+   ~~Instalar la CLI de Supabase para dejar de pegar la función a mano.~~ Hecha el
+   22/09/2026 (ver "Agente").
 5. **Portal del cliente** (solo tras la fase 1): equipos, historial y cotizaciones.
 6. **Integraciones:** Google Calendar y correo; luego Facturama (CFDI 4.0).
 7. **Calidad:** pruebas mínimas de lo que dinero e inventario tocan (totales de
