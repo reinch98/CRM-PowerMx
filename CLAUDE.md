@@ -492,7 +492,8 @@ misma explica los cuatro pasos del trámite.
   **Falta:** ver la pantalla contra la base real.
 
 **Webhook de WhatsApp — Edge Function `whatsapp`** (`supabase/functions/whatsapp/index.ts`,
-escrita el 22/09/2026; **sin desplegar ni probar con un mensaje real**). Meta la llama cada vez
+**desplegada y probada de punta a punta el 22/09/2026**: Caña mandó un WhatsApp al número de
+prueba desde su celular autorizado y apareció en la bandeja del CRM). Meta la llama cada vez
 que alguien le escribe al número; ella solo guarda el mensaje con `registrar_mensaje_entrante`.
 No contesta ni agenda nada: eso sigue siendo a mano desde la pantalla WhatsApp.
 - **Nada de `service_role`:** entra con una cuenta propia de rol **`bot`** que solo puede llamar
@@ -517,7 +518,20 @@ No contesta ni agenda nada: eso sigue siendo a mano desde la pantalla WhatsApp.
   por la API, no mientras se responda a mano.
 - Secretos en Supabase → Edge Functions: `WHATSAPP_VERIFY_TOKEN` (lo inventa Caña y lo repite
   en Meta), `WHATSAPP_APP_SECRET` (Meta → Configuración → Básica), `BOT_EMAIL`, `BOT_PASSWORD`.
-  `SUPABASE_URL` y `SUPABASE_ANON_KEY` las pone Supabase sola.
+  `SUPABASE_URL` y `SUPABASE_ANON_KEY` las pone Supabase sola. Cambiar un secreto **no** exige
+  volver a desplegar.
+- **Alta en Meta** (22/09/2026): URL `https://<proyecto>.supabase.co/functions/v1/whatsapp`,
+  el mismo token de verificación que el secreto, y suscribirse al campo **`messages`** —
+  sin esa suscripción el webhook queda dado de alta pero Meta no le manda nada. El aviso de
+  "verificar cuenta" que sale al suscribirse **no bloquea** el número de prueba entre celulares
+  autorizados; la verificación del negocio hace falta para escribirle a clientes reales con un
+  número propio y para plantillas fuera de las 24 h.
+- Para probar el apretón de manos sin tocar Meta (en PowerShell va `curl.exe`, no `curl`):
+  `curl.exe "…/functions/v1/whatsapp?hub.mode=subscribe&hub.verify_token=<el valor>&hub.challenge=12345"`
+  debe devolver `12345` con 200. Un 403 con `no` es token equivocado o secreto sin guardar;
+  un 401 sería "Verify JWT" encendido.
+- El **token de Meta no interviene aquí**: recibir no lo usa. Que el token temporal de 24 h
+  venza no apaga la bandeja; hará falta uno permanente cuando el CRM **mande** por la API.
 
 ## Seguridad — lo más importante
 
