@@ -1,20 +1,25 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { leerLocal, escribirLocal, borrarLocal, usuarioLocal } from './lib/local'
 import { Logo, Alerta } from './ui'
 import Login from './Login'
-import Agenda from './Agenda'
-import Clientes from './Clientes'
-import Contactos from './Contactos'
-import Equipos from './Equipos'
-import Trabajos from './Trabajos'
-import Almacen from './Almacen'
-import Inventario from './Inventario'
-import Cotizaciones from './Cotizaciones'
-import Requisiciones from './Requisiciones'
-import Tarifas from './Tarifas'
-import Tecnicos from './Tecnicos'
-import Agente from './Agente'
+
+// Cada pantalla es su propio paquete, que el celular descarga solo la primera vez que se
+// abre: un técnico nunca baja el código de Cotizaciones, Tarifas o el Agente, ni un
+// almacenista el de Contactos. Login se queda fuera de esto porque hace falta de
+// inmediato, antes de saber quién entra.
+const Agenda = lazy(() => import('./Agenda'))
+const Clientes = lazy(() => import('./Clientes'))
+const Contactos = lazy(() => import('./Contactos'))
+const Equipos = lazy(() => import('./Equipos'))
+const Trabajos = lazy(() => import('./Trabajos'))
+const Almacen = lazy(() => import('./Almacen'))
+const Inventario = lazy(() => import('./Inventario'))
+const Cotizaciones = lazy(() => import('./Cotizaciones'))
+const Requisiciones = lazy(() => import('./Requisiciones'))
+const Tarifas = lazy(() => import('./Tarifas'))
+const Tecnicos = lazy(() => import('./Tecnicos'))
+const Agente = lazy(() => import('./Agente'))
 
 // Qué pantallas ve cada rol. El menú y el contenido salen de aquí, así que
 // agregar una pantalla es agregar un renglón, no tocar el resto.
@@ -201,9 +206,14 @@ export default function App() {
     <>
       {barra}
       <main>
-        {Actual
-          ? <Actual irA={setPantalla} />
-          : <div className="centro"><Alerta tipo="info">No hay pantallas disponibles para tu rol.</Alerta></div>}
+        {Actual ? (
+          // El respaldo va sin <main> propio: ya estamos dentro del <main> de la app.
+          <Suspense fallback={<div className="centro" style={{ textAlign: 'center', paddingTop: 48 }}>Cargando la pantalla…</div>}>
+            <Actual irA={setPantalla} />
+          </Suspense>
+        ) : (
+          <div className="centro"><Alerta tipo="info">No hay pantallas disponibles para tu rol.</Alerta></div>
+        )}
       </main>
     </>
   )

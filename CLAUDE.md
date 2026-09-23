@@ -8,7 +8,8 @@ español, concisas, con el paso siguiente claro.
 ## Stack
 
 - React + Vite, JSX sin TypeScript. Sin router: `App.jsx` tiene un mapa `PANTALLAS`
-  con los roles que ve cada pantalla.
+  con los roles que ve cada pantalla, y cada una se carga con `lazy()` en su propio
+  paquete (ver "Paquetes por pantalla").
 - `jspdf` (fase 4): arma el PDF de la orden en el navegador del admin. Se carga con `import()`
   dentro de `lib/documentos.js`, nunca al arrancar la app (ver "Diseño"/Fase 4 en el flujo de
   servicio: arrastra `html2canvas` y `dompurify`, que aquí no se usan).
@@ -315,7 +316,7 @@ función, y el admin ya tiene todos los datos en pantalla): no cambia nada del f
   aparte, un técnico que nunca ve esta pantalla no lo descarga al abrir la app — aunque el
   service worker sí lo precachea en segundo plano en todos los celulares al instalar/actualizar
   (`vite.config.js` mete TODO el bundle a la lista, sin distinguir), así que no es gratis del
-  todo. Sigue pendiente el ítem 3 de la Ruta de mejora (dividir el bundle por pantalla).
+  todo. El resto del bundle ya se dividió por pantalla: ver "Paquetes por pantalla".
 - **No probado con datos reales:** la firma no se pudo insertar de verdad en el emulador (el
   Supabase falso no tiene un archivo de firma real que descargar), así que solo se comprobó la
   rama "El cliente no firmó esta orden." Falta ver un PDF real, con firma, abierto en un celular.
@@ -581,6 +582,24 @@ canvas) · `Almacen` (admin y almacenista; ver 2b) · `Clientes` ·
 `Tecnicos` (pestaña "Usuarios") · `Agente` · `Login`. Las pantallas reciben la
 prop `irA(clave)` de `App.jsx` para saltar a otra pantalla. El portal del cliente es un aviso de "en construcción".
 
+## Paquetes por pantalla (21/09/2026)
+
+`App.jsx` carga cada pantalla con `lazy(() => import('./Pantalla'))` y las envuelve en un
+`<Suspense>`; solo `Login` se queda en el arranque, porque hace falta antes de saber quién
+entra. El paquete principal bajó de **611 kB a 445 kB** (127 kB comprimido) y cada pantalla
+quedó en su propio archivo: Trabajos 42 kB, Agenda 22 kB, Cotizaciones 20 kB, Almacén 18 kB,
+Contactos 13 kB, Inventario 13 kB, Tarifas 12 kB, y el resto por debajo de 7 kB. Comprobado
+en el emulador con un técnico: al entrar solo descarga `Agenda.jsx`, y `Trabajos.jsx` hasta
+que abre "Órdenes" — nunca baja Cotizaciones, Tarifas, Contactos ni el Agente.
+
+**Ojo con el uso sin señal:** el service worker precarga **todos** los archivos del bundle
+(`vite.config.js` los lista completos), así que las pantallas que el técnico necesita
+desconectado siguen guardadas en el celular y una pantalla nueva no rompe el modo sin señal.
+Si alguna vez se filtra esa lista para ahorrar datos, hay que dejar dentro `Agenda` y
+`Trabajos` o el técnico se quedará sin poder abrirlas offline.
+El respaldo del `<Suspense>` va sin `<main>` propio: ya está dentro del `<main>` de la app
+(dos `<main>` anidados son HTML inválido).
+
 ## Sin señal (Trabajos)
 
 - **Service worker** (`sw/plantilla.js` → `dist/sw.js`): guarda la app al instalarse.
@@ -694,8 +713,9 @@ Supabase); lint en cero.
    - Recuperar `supabase/sql/01_...` (esquema base, hoy ausente del repo) para poder
      reconstruir la base desde cero.
 3. **Diseño** (ver sección Diseño): ~~tokens y componentes compartidos → Órdenes →
-   `Login` → Agenda → oficina~~ hecho. Además: dividir el bundle (500 kB) con
-   `import()` por pantalla; quitar `react-router-dom` si no se va a usar; y
+   `Login` → Agenda → oficina~~ hecho. ~~Dividir el bundle por pantalla.~~ Hecho el
+   21/09/2026 (ver "Paquetes por pantalla" abajo). Además: quitar `react-router-dom`
+   si no se va a usar; y
    `signOut()` sin señal no cierra la sesión local (supabase-js devuelve el error de
    red sin borrarla): decidir si "Salir" debe funcionar desconectado.
 4. **Agente fase 3:** escritura con confirmación explícita y registro en `auditoria`.
