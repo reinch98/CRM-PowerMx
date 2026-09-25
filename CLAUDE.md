@@ -412,6 +412,186 @@ al técnico que no cambió (informativo, con el nuevo nombre).
 de diagnóstico por clase × tramo de kW, precio por km, y `distancia_km` de cada cliente
 (se edita en la lista de Clientes).
 
+## Equipo capturado en campo — acordado con Caña el 24/09/2026
+
+**SQL 23 aplicado y probado el 24/09/2026** (`supabase/sql/23_equipo_en_campo.sql` y su prueba;
+10 pasos con rollback, todos "ok"). Las pantallas van aparte.
+- `equipos.numero_serie` **dejó de ser obligatorio**. Postgres permite varios nulos en un
+  índice único, así que muchos equipos "sin serie" conviven sin chocar. Columna nueva
+  `equipos.horas_uso_fecha`: un número de horas suelto no dice nada sin su fecha.
+- `registrar_equipo_en_orden(orden, datos jsonb)` — el técnico (T1 **o T2**: el ayudante bien
+  puede ser quien lee la placa) da de alta el equipo desde su orden y queda ligado a la orden
+  y a la cita. **Si la serie ya existe para ese cliente, no duplica**: liga la que había y le
+  llena solo los huecos vacíos. No toca nada comercial (`en_poliza`, frecuencia, próximo
+  mantenimiento): eso es de la oficina.
+- `equipo_de_orden(orden, equipo)` — elegir uno guardado. Un equipo de otro cliente se
+  rechaza aunque el id venga bien escrito. Solo con la orden **abierta**.
+- **El horómetro sube al equipo con un TRIGGER** (`horometro_al_equipo` sobre
+  `ordenes_servicio`), no dentro de `cerrar_orden`: así también cubre una orden que el admin
+  corrija desde la oficina, y no hay que volver a copiar entera la función de cierre (ya
+  reescrita en la 12 y la 18). Un horómetro que **retrocede no se bloquea** (motor
+  reemplazado, tablero nuevo o dedo equivocado): se guarda y queda el rastro en `auditoria`
+  con el valor anterior y la marca `retrocede`.
+- `equipos_sin_serie()` — la lista que la oficina va cerrando, con cliente y última visita.
+- `_apunta(...)` escribe en `auditoria` (columnas reales: `tabla`, `registro_id`, `accion`,
+  `valor_anterior`, `valor_nuevo`, `origen`, `usuario`; `origen` por defecto es `'agente'`,
+  aquí se usa `'campo'`).
+- **Tropiezo de la prueba:** `cerrar_orden` exige trabajo capturado, así que una prueba que
+  cierra una orden tiene que insertar antes la parte del técnico en `orden_partes`.
+
+**Pantallas (24/09/2026) — construidas, sin probar en celular real** (`src/lib/equipoCampo.js`,
+`EquipoOrden` en `Trabajos.jsx`, `Equipos.jsx`).
+- **Orden del técnico:** tarjeta **Equipo**. Sin equipo avisa "Falta" y ofrece "¿Qué equipo
+  es?"; con equipo muestra descripción, serie (o "Serie pendiente") y el horómetro con su
+  fecha, más "No es este equipo". Al elegir salen los equipos guardados del cliente como
+  botones y "Es un equipo nuevo" abre el alta (tipo, marca, modelo, capacidad, combustible
+  solo si es generador, serie y dónde está). **Necesita señal**, como pedir material: no hay
+  cola sin conexión. T1 y T2, solo con la orden abierta.
+- **Sin serie se guarda**, pero **algo** tiene que identificarlo (marca, modelo, serie o
+  dónde está): si no, quedaría un equipo fantasma que nadie reconoce en la siguiente visita.
+  Misma regla en el alta de la oficina, donde la serie dejó de llevar asterisco. La serie
+  vacía se manda como **null**, nunca como `''`: `equipos_sin_serie()` busca nulos y una
+  cadena vacía chocaría con la siguiente en el índice único.
+- **Equipos (oficina):** columna **Horómetro** ("1,200 h al 01/08/26"), etiqueta "Serie
+  pendiente" en lugar de la serie, y sección **"Les falta el número de serie"** con cliente,
+  capacidad, dónde está y la última orden, para saber a quién preguntarle.
+- **Lint:** en `Equipos.jsx`, `cargarEquipos` no puede llamar a otra función del componente
+  o `react-hooks/exhaustive-deps` deja de considerarla estable y exige ponerla en las
+  dependencias del efecto de arranque. Por eso la carga de "sin serie" va **dentro** de
+  `cargarEquipos`, no en una función aparte.
+- Probado en emulador con un Supabase falso, como técnico y como admin (0 textos < 17 px,
+  0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde; 29 casos puros en Node).
+  Comprobado que el JSON que sale a la base no lleva cadenas vacías y manda la capacidad
+  como número.
+
+El cliente casi nunca sabe el modelo ni la serie; el técnico sí, porque está parado frente
+a la placa. Así que el equipo deja de ser un requisito para agendar y pasa a ser algo que la
+base **aprende en cada visita**.
+
+**Primer servicio, número desconocido**
+1. Al pedir la cita se pregunta **capacidad, clase y dirección**. Con eso se da precio de
+   visita de diagnóstico; si pide un mantenimiento concreto, se cotiza según capacidad.
+   La clase hace falta además de la capacidad porque los rangos se traslapan entre 8 y 10 kW
+   (gasolina 1.5–10, gas LP 8–26, diésel 30–500): hay que preguntar "¿gasolina, gas o diésel?".
+2. **El cliente lo crea el admin**, no se crea solo desde WhatsApp: un número equivocado
+   llenaría la base de basura. Al confirmar la cita `por_programar` ya revisa cada una.
+3. **La orden nace sin equipo.** `agendar_cita` ya lo permite: solo valida `p_equipo` si no
+   viene nulo. Esta parte no hay que construirla.
+4. Al cerrar, el técnico captura la placa: marca, modelo, capacidad, combustible y serie.
+   **Si no puede leer la serie, el equipo se crea igual** y queda en una lista de "serie
+   pendiente" — una placa borrada no puede detener el trabajo.
+5. El equipo queda ligado al cliente y a esa orden.
+
+**Servicios siguientes:** al abrir la orden el técnico **elige entre los equipos guardados de
+ese cliente o agrega uno nuevo**. Así la base se llena sola con cada visita.
+
+**El horómetro sube al equipo.** Hoy se captura al cerrar (`ordenes_servicio.horas_equipo`,
+SQL 12) pero **se queda encerrado ahí**: para saber las horas de un generador hay que ir a
+buscar su última orden. Debe quedar también en el equipo, con su fecha. Aplica a todos los
+equipos, no solo a los nuevos.
+
+**Dos tipos de orden de servicio: generador y solar** (pedido de Caña el 24/09/2026). Son
+trabajos distintos y no se capturan igual. Nota de diseño: `equipos.tipo` ya distingue
+`generador`, `solar`, `bateria` y `otro`, así que el tipo de orden puede **salir del equipo**
+en vez de ser un campo aparte; la excepción es la primera visita, cuando todavía no hay
+equipo y hay que elegirlo a mano.
+
+**El formato solar en papel** (`Formato_Mantenimiento_FV_BESS_PowerMx.pdf`, PMX-FR-MTTO-01
+Rev. 2.0, 4 páginas, en el escritorio de Caña; el PDF trae fuentes subconjunto, así que para
+leerlo hubo que juntar sus tablas `ToUnicode` — `scratchpad/leerpdf2.mjs`). Diez secciones:
+1 datos del cliente y del servicio · 2 registro de equipos principales (módulos, inversores,
+baterías/BESS, BMS: marca, modelo, serie, cantidad) · 3 seguridad y preparación (8 puntos;
+**bloqueante**: un "NO" sin control compensatorio suspende el servicio) · 4 módulos y
+estructura (10) · 5 inversores y controladores (9) · 6 BESS, banco y BMS (11) · 7 tableros,
+protecciones DC/AC y tierra (7) · 8 mediciones de campo (strings con Voc/Isc/aislamiento,
+parámetros AC, BESS/tierra) · 9 observaciones, refacciones y evidencia fotográfica ·
+10 dictamen (Aprobado / Condicionado / No aprobado), próximo mantenimiento y dos firmas.
+Los puntos se califican **B / R / M / N/A** (bueno, regular, malo, no aplica) y varios llevan
+un dato numérico (torque, ΔT, SOC/SOH, ΔV, continuidad…).
+**Caña pidió resumirlo para que sea más dinámico en sitio** — falta acordar los recortes.
+Las secciones 1 y 2 **no se vuelven a capturar**: ya están en la orden, el cliente y el
+equipo (la 2 es justo el registro de equipos de la 23).
+
+
+**Formato solar resumido — propuesta del 24/09/2026 (sin construir, falta el visto bueno).**
+De ~55 puntos a **32**, más las mediciones. Tres reglas que hacen el ahorro:
+la caja de hallazgo **solo aparece al marcar R o M**; las secciones van plegadas con su
+contador ("Módulos 6/6"); y **BESS solo existe si el equipo tiene baterías**.
+Cada punto se califica con cuatro botones grandes **B · R · M · N/A** y su dato numérico
+va pegado al punto, no en una tabla aparte.
+
+- **No se recaptura** (sale de la orden, el cliente y el equipo): datos del cliente y del
+  sitio, contacto, técnicos, horario, y todo el registro de equipos principales.
+- **Al llegar:** clima (despejado/parcial/nublado), irradiancia (W/m²) y temperatura
+  ambiente. La irradiancia no es adorno: la termografía solo vale por encima de 600 W/m².
+  Temp. de módulo y humedad quedan opcionales.
+- **1. Seguridad (8, sin recortar)** — AST firmado · permisos vigentes · LOTO DC y AC ·
+  ausencia de tensión (V residual) · EPP · área y extintor · instrumentos calibrados
+  (cert.) · clima seguro. **Bloquea:** un "NO" sin control compensatorio escrito impide
+  cerrar la orden. Es la regla del propio formato; no se recorta porque es lo que protege
+  legalmente a PowerMx.
+- **2. Módulos y estructura (10 → 6)** — estado del módulo (limpieza + vidrio/celdas +
+  marco/backsheet, soiling %) · termografía IR (ΔT, módulos afectados) · estructura y
+  anclajes (torque) · conectores MC4 y cableado · tierra de marcos y rieles (continuidad Ω) ·
+  entorno y cubierta (sombreados nuevos + sellos + canalizaciones).
+- **3. Inversores (9 → 6)** — ventilación y gabinete · terminales DC/AC (torque) · alarmas
+  del log (códigos) · firmware y comunicación (versión) · pruebas de operación
+  (seccionamiento DC, anti-isla, paro y rearranque; t reconexión) · monitoreo vs. medición
+  local y parámetros de red (desviación %).
+- **4. BESS (11 → 7, solo con baterías)** — estado físico · bornes (torque) · BMS (SOC/SOH) ·
+  balance de celdas (ΔV) · ciclado y DoD · sala: ventilación, temperatura, sensores y contra
+  incendio · pruebas: protecciones DC, transferencia y carga/descarga (t conmutación, I y T
+  máx). El punto de **electrolito y densidad aparece solo si la tecnología es plomo inundado**.
+- **5. Tableros, protecciones y tierra (7 → 5)** — SPD DC y AC · fusibles gPV e
+  interruptores · torque en barras y peines · termografía de tableros (ΔT) · tierra y
+  documentación (GFDI/RCD, paro de emergencia, electrodo y pozo, etiquetado y unifilar).
+- **6. Mediciones** — strings como filas que se agregan ("+ String"), no seis fijas: MPPT,
+  Voc teórico, Voc medido, Isc/Imp, aislamiento +/GND y −/GND, veredicto. El veredicto se
+  puede **proponer solo** (aislamiento bajo 1 MΩ = no pasa; Voc fuera de ±10% del teórico =
+  revisar) y el técnico lo confirma. AC: solo las fases que existan. BESS/tierra: V banco,
+  I carga, I descarga, T máx celda, R tierra (avisa si pasa de 10 Ω), producción del día, PR.
+- **7. Placas de identificación** (pedido de Caña el 25/09/2026). Apartado propio para la
+  foto de la placa del **inversor**, los **paneles** y la **batería** (esta solo si hay
+  BESS), más el BMS si existe. **No son fotos de evidencia:** no cuentan el estado sino la
+  identidad, y por eso **cuelgan del equipo, no de la orden** — se toman una vez y se
+  vuelven a pedir solo si falta alguna o si el técnico dice que el componente cambió. En
+  visitas siguientes la pantalla muestra las que ya hay y no las vuelve a pedir.
+  Son la entrada de "Leer la placa con fotos" (abajo) y llenan la sección 2 del papel.
+  **Decisión de modelo:** un sistema solar tiene cuatro placas (módulos, inversor —a veces
+  dos—, banco y BMS) pero `equipos` guarda **una sola serie**. No se parte en varios
+  equipos, porque rompería el 1 cita : 1 orden : 1 equipo; los componentes van en
+  **`equipos.atributos.componentes`**, que es exactamente para lo que existe ese jsonb:
+  `[{rol: 'inversor_1'|'modulos'|'bateria'|'bms', marca, modelo, serie, cantidad, foto}]`.
+  `equipos.numero_serie` sigue siendo la del equipo principal (el inversor, en solar).
+  Las fotos van al bucket `ordenes`, en `placas/<equipo_id>/<rol>.jpg`.
+- **8. Evidencia fotográfica (sección 9 del papel).** La orden ya guarda fotos por técnico
+  en `orden_partes.fotos` y las junta al cerrar, pero van **sueltas**: nadie sabe de qué
+  punto es cada una. En el celular la foto debe **colgar del punto** que la motivó (la del
+  hot spot queda en 2.2, no en un montón), que es lo que el papel no puede hacer y por eso
+  se conforma con "No. de fotos ___ / Carpeta ___". Con eso, "No. de fotos" y "Carpeta" ya
+  no se capturan: se cuentan solos. Lo que **sí** falta traer del papel es la casilla
+  **"Reporte térmico: Sí / No"**. Un punto en **"M" exige al menos una foto** y ofrece
+  marcar "requiere seguimiento" (la columna ya existe), que es como el papel pide generar
+  la orden correctiva.
+- **9. Cierre** — dictamen **Aprobado / Condicionado / No aprobado** en tres botones
+  grandes; "No aprobado" exige escribir el motivo y avisa que el sistema se aísla.
+  Observaciones, refacciones y firma ya existen en la orden. El **próximo mantenimiento**
+  (fecha y tipo) alimenta `equipos.proximo_mantenimiento`.
+
+**Leer la placa con fotos** (pedido de Caña el 24/09/2026, sin construir): el técnico
+fotografía la placa de identificación de batería, inversor y paneles, el agente la lee y
+llena marca, modelo, serie y capacidad del equipo del cliente. Reutiliza la API de Claude
+que ya usa la Edge Function `agente` (acepta imágenes). **Regla:** lo que lea el modelo se
+muestra al técnico para que lo **revise y corrija antes de guardar**, nunca se guarda a
+ciegas: una placa sucia, a contraluz o rayada da series equivocadas, y una serie mal
+capturada es peor que ninguna (la 23 ya permite guardar sin serie). Ojo con el saldo de la
+API: una foto cuesta bastante más que una pregunta de texto.
+
+**Pendiente antes de escribir el SQL:** ver el esquema real de `equipos` (¿`numero_serie`
+admite nulos?, ¿tiene índice único?) y de `auditoria`, que vienen del `01_...` ausente del
+repo. Para crear un equipo sin serie hay que aflojar esa restricción y conviene verla antes
+de tocarla.
+
 ## WhatsApp — diseño acordado con Caña el 20/09/2026 (sin construir)
 
 Un agente conectado a WhatsApp para agendar citas, reconocer números de clientes y enlazar todo

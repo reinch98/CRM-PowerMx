@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { Alerta } from './ui'
+import { textoHorometro, cargarEquiposSinSerie } from './lib/equipoCampo'
 
 // Campos que cambian según el tipo de equipo. Se guardan dentro de atributos (jsonb).
 const ATRIBUTOS = {
@@ -76,6 +77,7 @@ export default function Equipos() {
   const [atributos, setAtributos] = useState({})
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
+  const [sinSerie, setSinSerie] = useState([])
 
   useEffect(() => { cargarClientes(); cargarEquipos() }, [])
 
@@ -95,6 +97,12 @@ export default function Equipos() {
       .order('created_at', { ascending: false })
     if (error) setError(error.message)
     else setEquipos(data)
+
+    // La lista de "serie pendiente" va aquí dentro y no en su propia función: si
+    // `cargarEquipos` llama a otra función del componente, deja de ser estable y el
+    // efecto de arranque tendría que depender de ella.
+    const r = await cargarEquiposSinSerie()
+    if (r.ok) setSinSerie(r.equipos)
   }
 
   function cambiar(campo, valor) {
@@ -113,13 +121,22 @@ export default function Equipos() {
   async function guardar(e) {
     e.preventDefault()
     if (!form.cliente_id) { setError('Elige un cliente'); return }
-    if (!form.numero_serie.trim()) { setError('El número de serie es obligatorio'); return }
+    // La serie ya NO es obligatoria (SQL 23): un equipo dado de alta en campo con la placa
+    // borrada entra sin ella y queda en la lista de "serie pendiente". Pero algo tiene que
+    // identificarlo, o nadie lo reconoce en la siguiente visita.
+    if (!form.numero_serie.trim() && !form.marca.trim() && !form.modelo.trim() && !form.ubicacion_equipo.trim()) {
+      setError('Sin número de serie, escribe al menos la marca, el modelo o dónde está el equipo')
+      return
+    }
 
     // Limpia el payload: cadenas vacías -> null en numéricos y fechas.
     const payload = { ...form }
     for (const campo of [...NUMERICAS, ...FECHAS]) {
       if (payload[campo] === '') payload[campo] = null
     }
+    // La serie vacía tiene que irse como null, no como '': `equipos_sin_serie()` busca
+    // nulos, y una cadena vacía además chocaría con la siguiente en el índice único.
+    if (payload.numero_serie.trim() === '') payload.numero_serie = null
 
     // Los atributos vacíos no se guardan.
     const limpios = Object.fromEntries(
@@ -148,7 +165,7 @@ export default function Equipos() {
   }
 
   const camposTexto = [
-    ['numero_serie', 'Número de serie *'],
+    ['numero_serie', 'Número de serie'],
     ['marca', 'Marca'],
     ['modelo', 'Modelo'],
     ['capacidad_kw', 'Capacidad (kW)'],
@@ -250,30 +267,60 @@ export default function Equipos() {
         </form>
       </details>
 
+      {/* Los que el técnico dio de alta en campo con la placa ilegible. La última visita
+          dice a quién preguntarle por la serie. */}
+      {sinSerie.length > 0 && (
+        <section className="tarjeta">
+          <h3>Les falta el número de serie ({sinSerie.length})</h3>
+          <p className="ayuda">
+            Se dieron de alta durante una visita sin poder leer la placa. Consigue la serie y
+            complétala arriba; mientras tanto el equipo funciona igual para agendar y cotizar.
+          </p>
+          {sinSerie.map(s => (
+            <div key={s.equipo_id} className="refaccion">
+              <strong>{[s.marca, s.modelo].filter(Boolean).join(' ') || s.tipo}</strong>
+              <span className="ayuda">
+                {s.cliente}
+                {s.capacidad_kw && ` · ${s.capacidad_kw} kW`}
+                {s.ubicacion_equipo && ` · ${s.ubicacion_equipo}`}
+              </span>
+              <span className="ayuda">
+                {s.ultima_orden
+                  ? `Última visita: OS-${s.ultima_orden}${s.ultima_visita ? ` del ${s.ultima_visita}` : ''}`
+                  : 'Todavía sin visitas registradas'}
+              </span>
+            </div>
+          ))}
+        </section>
+      )}
+
       <h3>Registrados ({equipos.length})</h3>
       <div className="tabla-scroll">
         <table>
           <thead>
             <tr>
               <th>Número de serie</th><th>Tipo</th><th>Cliente</th><th>Marca</th><th>Modelo</th>
-              <th>Próx. mtto.</th><th>Póliza</th><th></th>
+              <th>Horómetro</th><th>Próx. mtto.</th><th>Póliza</th><th></th>
             </tr>
           </thead>
           <tbody>
             {equipos.map(eq => (
               <tr key={eq.id}>
-                <td>{eq.numero_serie}</td>
+                <td>
+                  {eq.numero_serie || <span className="etiqueta etiqueta-aviso">Serie pendiente</span>}
+                </td>
                 <td>{eq.tipo}</td>
                 <td>{eq.clientes?.nombre}</td>
                 <td>{eq.marca}</td>
                 <td>{eq.modelo}</td>
+                <td>{textoHorometro(eq) || '—'}</td>
                 <td>{eq.proximo_mantenimiento}</td>
                 <td>{eq.en_poliza ? 'Sí' : 'No'}</td>
                 <td><button className="btn-peligro" onClick={() => borrar(eq.id)}>Borrar</button></td>
               </tr>
             ))}
             {equipos.length === 0 && (
-              <tr><td colSpan={8} className="ayuda">Todavía no hay equipos.</td></tr>
+              <tr><td colSpan={9} className="ayuda">Todavía no hay equipos.</td></tr>
             )}
           </tbody>
         </table>

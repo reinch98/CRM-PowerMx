@@ -32,7 +32,8 @@ const BUCKET = 'ordenes'
 const SELECCION =
   '*, citas(fecha, hora, duracion_min, zona, notas, tipo_servicio), ' +
   'clientes(nombre, telefono, direccion, colonia, municipio, maps_url, referencias), ' +
-  'equipos(numero_serie, marca, modelo, tipo, capacidad_kw), orden_partes(*), ' +
+  'equipos(numero_serie, marca, modelo, tipo, capacidad_kw, ubicacion_equipo, ' +
+  'horas_uso, horas_uso_fecha), orden_partes(*), ' +
   'orden_surtido(id, producto_id, sku, nombre, unidad, cantidad_pedida, cantidad_entregada, ' +
   'cantidad_usada, cantidad_devuelta, cantidad_diferencia), ' +
   'entregas(id, folio, estado, created_at, entrega_lineas(sku, nombre, unidad, cantidad))'

@@ -12,6 +12,10 @@ import {
   cargarDestinatariosOrden, registrarEnvio, urlDePdf
 } from './lib/documentos'
 import { enlaceWhatsApp } from './lib/avisos'
+import {
+  TIPOS_EQUIPO, COMBUSTIBLES, nombreTipoEquipo, descripcionEquipo, textoHorometro,
+  revisarDatosEquipo, datosParaGuardar, cargarEquiposDeCliente, ligarEquipo, altaEquipoEnOrden
+} from './lib/equipoCampo'
 import { fotosDeOrden } from './lib/idb'
 import { cierrePendiente, pendienteDe } from './lib/cola'
 import { explicarError } from './lib/errores'
@@ -137,6 +141,192 @@ function MaterialOrden({ orden, soyT1, abierta, enLinea, nombreT1, onRefrescar }
 // una requisición: no mueve inventario ni ve costos, solo avisa al almacén/admin. Necesita
 // señal (como el resto del almacén); no hay cola sin conexión para esto.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Qué equipo es (SQL 23). La orden puede nacer SIN equipo: el cliente casi nunca sabe el
+// modelo ni la serie, y el técnico sí, porque está frente a la placa. Aquí lo elige de los
+// que el cliente ya tiene guardados, o lo da de alta. Sin serie también se puede: una placa
+// borrada no detiene el trabajo.
+//
+// Necesita señal, como pedir material. El equipo hay que fijarlo ANTES de cerrar: al cerrar,
+// el horómetro sube solo al equipo que tenga la orden en ese momento.
+// ---------------------------------------------------------------------------
+const EQUIPO_VACIO = {
+  tipo: 'generador', marca: '', modelo: '', capacidad_kw: '',
+  combustible: '', numero_serie: '', ubicacion_equipo: ''
+}
+
+function EquipoOrden({ orden, puedeEditar, enLinea, onRefrescar }) {
+  const [guardados, setGuardados] = useState(null)   // null = aún no se piden
+  const [eligiendo, setEligiendo] = useState(false)
+  const [form, setForm] = useState(EQUIPO_VACIO)
+  const [alta, setAlta] = useState(false)
+  const [ocupado, setOcupado] = useState(false)
+  const [error, setError] = useState('')
+  const [mensaje, setMensaje] = useState('')
+
+  const eq = orden.equipos
+  const sinEquipo = !orden.equipo_id
+
+  async function abrirEleccion() {
+    setEligiendo(true); setError(''); setMensaje('')
+    if (guardados === null) {
+      const r = await cargarEquiposDeCliente(orden.cliente_id)
+      if (r.ok) setGuardados(r.equipos.filter(x => x.id !== orden.equipo_id))
+      else setError(r.texto)
+    }
+  }
+
+  async function elegir(id) {
+    setOcupado(true); setError('')
+    const r = await ligarEquipo(orden.id, id)
+    setOcupado(false)
+    if (!r.ok) return setError(r.texto)
+    setMensaje('Listo, la orden ya quedó en ese equipo.')
+    setEligiendo(false); setGuardados(null)
+    onRefrescar()
+  }
+
+  async function darDeAlta() {
+    const problema = revisarDatosEquipo(form)
+    if (problema) return setError(problema)
+    setError(''); setOcupado(true)
+    const r = await altaEquipoEnOrden(orden.id, datosParaGuardar(form))
+    setOcupado(false)
+    if (!r.ok) return setError(r.texto)
+    setMensaje(r.data?.reusado
+      ? 'Ese equipo ya estaba registrado con esa serie: se completó y quedó ligado a la orden.'
+      : 'Equipo dado de alta y ligado a la orden.')
+    setForm(EQUIPO_VACIO); setAlta(false); setEligiendo(false); setGuardados(null)
+    onRefrescar()
+  }
+
+  return (
+    <section className="tarjeta">
+      <h3>Equipo</h3>
+
+      {sinEquipo ? (
+        <Alerta tipo="aviso" palabra="Falta">
+          Esta orden todavía no dice de qué equipo es. Dilo antes de cerrarla: el horómetro se
+          guarda en el equipo que quede elegido.
+        </Alerta>
+      ) : (
+        <>
+          <p style={{ margin: '4px 0' }}>
+            <strong>{descripcionEquipo(eq)}</strong>
+          </p>
+          <p className="ayuda">
+            {nombreTipoEquipo(eq?.tipo)}
+            {eq?.numero_serie
+              ? <> · Serie {eq.numero_serie}</>
+              : <> · <span className="etiqueta etiqueta-aviso">Serie pendiente</span></>}
+            {textoHorometro(eq) && <> · {textoHorometro(eq)}</>}
+          </p>
+        </>
+      )}
+
+      {mensaje && <Alerta tipo="ok" palabra="Listo">{mensaje}</Alerta>}
+      {error && <Alerta tipo="error">{error}</Alerta>}
+
+      {puedeEditar && !enLinea && (
+        <Alerta tipo="aviso" palabra="Sin señal">Para elegir o dar de alta el equipo necesitas conexión.</Alerta>
+      )}
+
+      {puedeEditar && enLinea && !eligiendo && (
+        <button className={sinEquipo ? 'btn-primario' : undefined} onClick={abrirEleccion}>
+          {sinEquipo ? '¿Qué equipo es?' : 'No es este equipo'}
+        </button>
+      )}
+
+      {puedeEditar && enLinea && eligiendo && (
+        <>
+          {guardados === null && <p className="ayuda">Cargando los equipos de este cliente…</p>}
+
+          {guardados?.length > 0 && (
+            <>
+              <p className="ayuda">Equipos que este cliente ya tiene guardados:</p>
+              {guardados.map(g => (
+                <button key={g.id} className="orden-item" disabled={ocupado} onClick={() => elegir(g.id)}>
+                  <strong>{descripcionEquipo(g)}</strong>
+                  <span className="ayuda">
+                    {nombreTipoEquipo(g.tipo)}
+                    {g.numero_serie ? <> · Serie {g.numero_serie}</> : <> · Serie pendiente</>}
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
+          {guardados?.length === 0 && (
+            <p className="ayuda">Este cliente no tiene ningún otro equipo guardado.</p>
+          )}
+
+          {!alta && guardados !== null && (
+            <div className="fila">
+              <button className="btn-primario" onClick={() => { setAlta(true); setError('') }}>
+                Es un equipo nuevo
+              </button>
+              <button onClick={() => { setEligiendo(false); setAlta(false); setError('') }}>Cancelar</button>
+            </div>
+          )}
+
+          {alta && (
+            <div style={{ marginTop: 12 }}>
+              <label className="campo">
+                <span>Tipo de equipo</span>
+                <select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>
+                  {TIPOS_EQUIPO.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+                </select>
+              </label>
+              <div className="rejilla-2">
+                <label className="campo">
+                  <span>Marca</span>
+                  <input value={form.marca} onChange={e => setForm({ ...form, marca: e.target.value })} />
+                </label>
+                <label className="campo">
+                  <span>Modelo</span>
+                  <input value={form.modelo} onChange={e => setForm({ ...form, modelo: e.target.value })} />
+                </label>
+                <label className="campo">
+                  <span>Capacidad (kW)</span>
+                  <input type="number" inputMode="decimal" value={form.capacidad_kw}
+                    onChange={e => setForm({ ...form, capacidad_kw: e.target.value })} />
+                </label>
+                {form.tipo === 'generador' && (
+                  <label className="campo">
+                    <span>Combustible</span>
+                    <select value={form.combustible} onChange={e => setForm({ ...form, combustible: e.target.value })}>
+                      <option value="">— Elige —</option>
+                      {COMBUSTIBLES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+                    </select>
+                  </label>
+                )}
+              </div>
+              <label className="campo">
+                <span>Número de serie</span>
+                <input value={form.numero_serie} onChange={e => setForm({ ...form, numero_serie: e.target.value })} />
+              </label>
+              <p className="ayuda">
+                Si la placa está borrada o no alcanzas a leerla, déjalo vacío y escribe dónde
+                está el equipo. Se guarda igual y en la oficina consiguen la serie después.
+              </p>
+              <label className="campo">
+                <span>Dónde está</span>
+                <input value={form.ubicacion_equipo} placeholder="Atrás del taller, junto al tinaco"
+                  onChange={e => setForm({ ...form, ubicacion_equipo: e.target.value })} />
+              </label>
+              <div className="fila">
+                <button className="btn-primario" disabled={ocupado} onClick={darDeAlta}>
+                  {ocupado ? 'Guardando…' : 'Guardar el equipo'}
+                </button>
+                <button onClick={() => { setAlta(false); setError('') }}>Cancelar</button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
 function SolicitarMaterial({ ordenId, tecnicoId }) {
   const [solicitudes, setSolicitudes] = useState(null)   // null = aún no carga
   const [piezas, setPiezas] = useState([])
@@ -632,6 +822,9 @@ function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, on
           {orden.tecnico2_id && <> · Ayudante: {nombreDe(nombres, orden.tecnico2_id)}</>}
         </p>
       </section>
+
+      <EquipoOrden orden={orden} enLinea={enLinea} onRefrescar={onRefrescar}
+        puedeEditar={abierta && (soyT1 || soyT2)} />
 
       <MaterialOrden orden={orden} soyT1={soyT1} abierta={abierta} enLinea={enLinea}
         nombreT1={nombreDe(nombres, orden.tecnico_id)} onRefrescar={onRefrescar} />
