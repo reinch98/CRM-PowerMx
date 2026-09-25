@@ -135,6 +135,24 @@ function leerMensaje(m: Record<string, any>) {
   };
 }
 
+// Manda a pensar al agente sin esperar la respuesta. `EdgeRuntime.waitUntil` mantiene viva
+// la tarea después de que contestamos 200; si no existiera, se deja pasar en silencio y el
+// admin contesta a mano, que es lo que pasa hoy de todos modos.
+function despertarAgente(conversacion: string) {
+  const sb = cliente;
+  const rt = (globalThis as any).EdgeRuntime;
+  if (!sb || !rt?.waitUntil) return;
+  rt.waitUntil((async () => {
+    try {
+      // Va con la sesión del bot, que es lo que `agente-whatsapp` exige.
+      const { error } = await sb.functions.invoke("agente-whatsapp", { body: { conversacion } });
+      if (error) console.error("El agente no pudo contestar:", error.message);
+    } catch (e) {
+      console.error("No se pudo despertar al agente:", e instanceof Error ? e.message : e);
+    }
+  })());
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
 
@@ -178,9 +196,13 @@ Deno.serve(async (req) => {
 
         for (const m of valor.messages ?? []) {
           const datos = { ...leerMensaje(m), p_nombre_wa: nombre };
-          const { error } = await sb.rpc("registrar_mensaje_entrante", datos);
+          const { data, error } = await sb.rpc("registrar_mensaje_entrante", datos);
           // Un mensaje que falla no debe tumbar a los demás del mismo aviso.
-          if (error) console.error("No se pudo guardar", m.id, error.message);
+          if (error) { console.error("No se pudo guardar", m.id, error.message); continue; }
+
+          // El agente contesta APARTE: pensar tarda segundos y Meta reintenta el aviso si
+          // no le respondemos rápido. Si el agente está apagado, la llamada no hace nada.
+          if (data?.conversacion_id && !data?.repetido) despertarAgente(data.conversacion_id);
         }
 
         // Los acuses de entrega (`statuses`) todavía no se guardan: hacen falta

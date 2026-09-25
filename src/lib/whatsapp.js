@@ -110,6 +110,43 @@ export async function cargarContactos() {
 export const registrarRespuesta = (conversacionId, texto) =>
   llamar('registrar_mensaje_saliente', { p_conversacion: conversacionId, p_texto: texto })
 
+// ---- el agente ----
+
+export const esBorrador = m => m?.direccion === 'saliente' && m?.estado === 'borrador'
+
+export async function cargarAgente() {
+  try {
+    const { data, error } = await supabase.from('wa_agente')
+      .select('activo, modo, tope_dia, instrucciones').maybeSingle()
+    if (error) return { ok: false, texto: textoDeError(error) }
+    return { ok: true, agente: data || { activo: false, modo: 'borrador', tope_dia: 20 } }
+  } catch (e) {
+    return { ok: false, texto: textoDeError(e) }
+  }
+}
+
+export async function guardarAgente(cambios) {
+  try {
+    const { error } = await supabase.from('wa_agente').update(cambios).eq('id', true)
+    if (error) return { ok: false, texto: textoDeError(error) }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, texto: textoDeError(e) }
+  }
+}
+
+// Un borrador que el admin sí mandó deja de ser borrador. Se marca aparte del enlace
+// porque `wa.me` no avisa si de verdad se envió: por eso el texto sigue a la vista.
+export async function marcarBorradorEnviado(id) {
+  try {
+    const { error } = await supabase.from('mensajes_wa').update({ estado: 'enviado' }).eq('id', id)
+    if (error) return { ok: false, texto: textoDeError(error) }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, texto: textoDeError(e) }
+  }
+}
+
 export const marcarLeida = id => llamar('marcar_conversacion_leida', { p_conversacion: id })
 export const cerrarConversacion = (id, abrir = false) =>
   llamar('cerrar_conversacion', { p_conversacion: id, p_abrir: abrir })

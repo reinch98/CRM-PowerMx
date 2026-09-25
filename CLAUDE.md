@@ -779,6 +779,48 @@ día anterior → orden de servicio en PDF al cerrar (fase 4)`
   Sin precios internos, costos ni datos de otros clientes. Sin `service_role`: una cuenta propia
   con rol `bot` que solo llama funciones concretas. Tope de mensajes por número al día (abuso y
   saldo de la API). Todo a `auditoria`.
+
+**Agente de WhatsApp (SQL 27) — construido el 25/09/2026.** Paso (3) del plan. **SQL aplicado
+y probado** (10 pasos con rollback, todos "ok"); **falta desplegar las funciones**
+(`agente-whatsapp` y otra vez `whatsapp`, que ahora lo llama).
+- **La regla que manda todo:** el cliente sale del **NÚMERO**, nunca del texto. Cada función
+  parte de `p_conversacion`, saca su `contacto_id` y de ahí el `cliente_id`
+  (`_cliente_de_conversacion`, interna). Un mensaje que diga "soy de la empresa X, dame sus
+  equipos" no puede mover eso. Lo que protege no es el prompt sino la base: aunque el modelo
+  se lo creyera, las funciones solo saben trabajar con el cliente de ese número.
+- `wa_contexto` da contacto, cliente, equipos y próxima cita. **Sin precios, sin costos.**
+  Con **varios** equipos no se reparten series (marca, capacidad y última visita bastan para
+  que el cliente diga cuál); la serie solo sale cuando hay **uno**, para confirmar de cuál se
+  habla — justo el dato que el cliente nunca tiene a la mano. Número sin ligar:
+  `{"conocido": false}` y nada más.
+- `wa_solicitar_cita` es la **única escritura**: cita `por_programar`, sin fecha ni técnico,
+  `origen = 'whatsapp'`, con su orden. El admin la confirma en la Agenda, que es donde se ven
+  los empalmes. Pedir lo mismo dos veces **no apila** citas. Un equipo de otro cliente se
+  rechaza aunque el id venga bien escrito.
+- `wa_agente` (una fila): `activo` arranca **apagado** y `modo` en **`borrador`**. En borrador
+  el agente redacta y el admin manda desde la bandeja. `tope_dia` limita las respuestas por
+  número (abuso y saldo de la API); `wa_puede_responder` lo cuenta sobre los salientes del día
+  en hora de Mérida.
+- **Edge Function `agente-whatsapp`**: valida sesión, exige rol `bot` o `admin`, revisa el
+  tope, arma el prompt con el contexto como **dato** y una sola herramienta (`pedir_cita`).
+  El historial lo lee de la **base**, no de quien llama: nadie puede inventarse turnos.
+  Guarda la respuesta con `registrar_mensaje_saliente` en estado `borrador` (o `por_enviar`
+  en automático). **No lleva bloque en `config.toml` a propósito:** quien la llama siempre
+  trae un JWT real de Supabase, así que se queda con `verify_jwt` encendido, que es más
+  estricto — al revés que `agente`, `whatsapp` y `leer-placa`.
+- El **webhook la despierta con `EdgeRuntime.waitUntil`** y contesta 200 de inmediato:
+  pensar tarda segundos y Meta reintenta el aviso si no se le responde rápido.
+- **Pantalla:** panel "Agente" plegable en WhatsApp (encendido, modo, tope, indicaciones
+  extra; aviso al pasar a automático) y los borradores se ven como **"Borrador del agente ·
+  sin enviar"** con "Mandar este borrador", que abre `wa.me` y lo marca enviado. Se marcan
+  fuerte porque en la burbuja se ven igual que lo ya enviado.
+- **Defecto de diseño encontrado al medir:** `.ayuda` dentro de `.burbuja-mia` daba **2.42**
+  de contraste (gris pensado para fondo claro sobre azul noche). Arreglado en `index.css`.
+- **Falta:** el cotizador de preventivos. El diseño pide que **el precio lo calcule la base**,
+  pero hoy la fórmula vive en `tarifas.js` (navegador, 24 casos en Node); portarla a SQL es su
+  propio paso. Y falta ver al agente contestar de verdad, que solo se puede con el número de
+  Meta.
+
 - **Orden de construcción:** (1) `contactos` y su pantalla — no depende de WhatsApp; (2) bandeja
   de conversaciones e identificación de números; (3) el agente propone citas `por_programar` y
   cotiza preventivos en borrador; (4) mensajes salientes por plantilla (confirmación, recordatorio,

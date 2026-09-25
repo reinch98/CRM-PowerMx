@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Alerta } from './ui'
 import {
-  nombreConversacion, haceCuanto, estadoVentana, enlaceWhatsApp,
+  nombreConversacion, haceCuanto, estadoVentana, enlaceWhatsApp, esBorrador,
   cargarBandeja, cargarMensajes, cargarContactos, registrarRespuesta,
-  marcarLeida, cerrarConversacion, vincularConversacion
+  marcarLeida, cerrarConversacion, vincularConversacion,
+  cargarAgente, guardarAgente, marcarBorradorEnviado
 } from './lib/whatsapp'
 
 const cuando = iso => iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : ''
@@ -117,6 +118,22 @@ function Conversacion({ conv, contactos, onVolver, onCambio }) {
               {cuando(m.wa_timestamp || m.created_at)}
               {m.direccion === 'saliente' && m.enviado_por && <> · {m.enviado_por}</>}
             </span>
+            {/* Un borrador NO se ha mandado. Se marca fuerte porque en la burbuja se ve
+                igual que lo enviado, y confundirlos sería creer que ya contestaste. */}
+            {esBorrador(m) && (
+              <div style={{ marginTop: 6 }}>
+                <span className="etiqueta etiqueta-aviso">Borrador del agente · sin enviar</span>
+                {enlaceWhatsApp(conv.telefono, m.texto) && (
+                  <div style={{ marginTop: 6 }}>
+                    <a className="btn btn-primario" href={enlaceWhatsApp(conv.telefono, m.texto)}
+                      target="_blank" rel="noreferrer"
+                      onClick={() => marcarBorradorEnviado(m.id).then(cargar)}>
+                      Mandar este borrador
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -155,16 +172,25 @@ function Conversacion({ conv, contactos, onVolver, onCambio }) {
 export default function WhatsApp() {
   const [conversaciones, setConversaciones] = useState(null)
   const [contactos, setContactos] = useState([])
+  const [agente, setAgente] = useState(null)
   const [incluirCerradas, setIncluirCerradas] = useState(false)
   const [seleccion, setSeleccion] = useState(null)
   const [error, setError] = useState('')
   const [enLinea, setEnLinea] = useState(navigator.onLine)
 
   async function recargar(cerradas = incluirCerradas) {
-    const [b, c] = await Promise.all([cargarBandeja(cerradas), cargarContactos()])
+    const [b, c, a] = await Promise.all([cargarBandeja(cerradas), cargarContactos(), cargarAgente()])
     if (b.ok) { setConversaciones(b.conversaciones); setError('') }
     else setError(b.texto)
     if (c.ok) setContactos(c.contactos)
+    if (a.ok) setAgente(a.agente)
+  }
+
+  // Se guarda al momento: son tres ajustes, un botón de guardar solo estorbaría.
+  async function cambiarAgente(cambios) {
+    setAgente(a => ({ ...a, ...cambios }))
+    const r = await guardarAgente(cambios)
+    if (!r.ok) setError(r.texto)
   }
 
   useEffect(() => {
@@ -211,6 +237,49 @@ export default function WhatsApp() {
 
       {!enLinea && <Alerta tipo="aviso" palabra="Sin señal">La bandeja necesita conexión.</Alerta>}
       {error && <Alerta tipo="error">{error}</Alerta>}
+
+      {/* El agente arranca apagado y en borrador: redacta y tú mandas. Se pasa a
+          automático cuando lo hayas visto contestar unas cuantas veces. */}
+      {agente && (
+        <details className="tarjeta">
+          <summary className="resumen">
+            Agente · {agente.activo ? (agente.modo === 'automatico' ? 'contestando solo' : 'redactando borradores') : 'apagado'}
+          </summary>
+          <p className="ayuda" style={{ marginTop: 8 }}>
+            Contesta con lo que sabe del número: sus equipos y su próxima visita. Nunca da
+            precios ni confirma fechas; lo único que puede dejar anotado es una solicitud de
+            visita, que tú confirmas en la Agenda.
+          </p>
+          <label className="casilla">
+            <input type="checkbox" checked={!!agente.activo}
+              onChange={e => cambiarAgente({ activo: e.target.checked })} />
+            Encendido
+          </label>
+          <label className="campo">
+            <span>Qué hace al llegar un mensaje</span>
+            <select value={agente.modo} onChange={e => cambiarAgente({ modo: e.target.value })}>
+              <option value="borrador">Redactar un borrador y esperar a que yo lo mande</option>
+              <option value="automatico">Contestar solo</option>
+            </select>
+          </label>
+          {agente.modo === 'automatico' && (
+            <Alerta tipo="aviso" palabra="Ojo">
+              Va a escribirle a tus clientes sin que nadie lea antes. Déjalo en borrador
+              hasta que lo hayas visto contestar unas cuantas veces.
+            </Alerta>
+          )}
+          <label className="campo">
+            <span>Máximo de respuestas al día por número</span>
+            <input type="number" inputMode="numeric" value={agente.tope_dia}
+              onChange={e => cambiarAgente({ tope_dia: Number(e.target.value) || 1 })} />
+          </label>
+          <label className="campo">
+            <span>Algo que quieras que diga o evite</span>
+            <textarea rows={2} value={agente.instrucciones || ''}
+              onChange={e => cambiarAgente({ instrucciones: e.target.value })} />
+          </label>
+        </details>
+      )}
 
       <label className="casilla">
         <input type="checkbox" checked={incluirCerradas} onChange={e => cambiarFiltro(e.target.checked)} />

@@ -552,6 +552,9 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
   border-radius: 12px;
 }
 .burbuja-mia { align-self: flex-end; color: var(--blanco); background: var(--noche); }
+/* Dentro de la burbuja propia el fondo es azul noche: el gris de `.ayuda`, pensado para
+   fondo claro, se queda en 2.4 de contraste. La hora y el autor van en claro. */
+.burbuja-mia .ayuda { color: var(--claro); }
 
 /* Estados de cotizaciones y requisiciones: siempre con palabra. */
 .estado-borrador, .estado-cancelada { color: var(--texto-2); }
