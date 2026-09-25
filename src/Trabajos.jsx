@@ -13,6 +13,11 @@ import {
 } from './lib/documentos'
 import { enlaceWhatsApp } from './lib/avisos'
 import {
+  FORMATO_SOLAR, FORMATO_GENERADOR, COMBUSTIBLES_GEN, TIPOS_SERVICIO_GEN,
+  CALIFICACIONES, DICTAMENES, seccionesVisibles, avanceSeccion,
+  dictamenSugerido, loQueFalta
+} from './lib/revision'
+import {
   TIPOS_EQUIPO, COMBUSTIBLES, nombreTipoEquipo, descripcionEquipo, textoHorometro,
   revisarDatosEquipo, datosParaGuardar, cargarEquiposDeCliente, ligarEquipo, altaEquipoEnOrden
 } from './lib/equipoCampo'
@@ -22,7 +27,8 @@ import { explicarError } from './lib/errores'
 import {
   cargarTrabajos, leerTrabajos, leerNombres, leerCola, parteLocal, guardarParteLocal,
   agregarFotoLocal, quitarFotoLocal, pedirCierre, descartarPendiente,
-  sincronizarTrabajos, urlsFirmadas, marcarEnviarAlCerrar
+  sincronizarTrabajos, urlsFirmadas, marcarEnviarAlCerrar,
+  revisionDeOrden, guardarRevisionLocal
 } from './lib/trabajos'
 import { Alerta } from './ui'
 import Firma from './Firma'
@@ -322,6 +328,238 @@ function EquipoOrden({ orden, puedeEditar, enLinea, onRefrescar }) {
             </div>
           )}
         </>
+      )}
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// El formato de mantenimiento en el celular (SQL 24 y `lib/revision.js`).
+//
+// Se guarda en el celular en CADA toque, sin botón de guardar, y sube cuando hay señal:
+// esto se llena en una azotea, muchas veces sin cobertura.
+//
+// Lo que hace corto el formato: la caja de hallazgo solo aparece al marcar Regular o Malo,
+// las secciones van plegadas con su contador, y la de baterías no existe si el sistema no
+// las tiene.
+// ---------------------------------------------------------------------------
+const CLIMAS = [['despejado', 'Despejado'], ['parcial', 'Parcial'], ['nublado', 'Nublado']]
+
+function PuntoRevision({ punto, valor, puedeEditar, onCambio }) {
+  const v = valor?.v || ''
+  const exigeTexto = v === 'R' || v === 'M'
+  return (
+    <div className="refaccion">
+      <strong>{punto.titulo}</strong>
+      {punto.detalle && <span className="ayuda">{punto.detalle}</span>}
+      <div className="fila">
+        {CALIFICACIONES.map(([k, t]) => (
+          <button key={k} type="button" disabled={!puedeEditar}
+            className={v === k ? 'btn-primario' : undefined}
+            aria-pressed={v === k}
+            onClick={() => onCambio({ ...(valor || {}), v: k })}>
+            {t}
+          </button>
+        ))}
+      </div>
+      {exigeTexto && (
+        <label className="campo">
+          <span>{v === 'M' ? 'Qué encontraste y qué hiciste' : 'Hallazgo'}</span>
+          <textarea rows={2} value={valor?.obs || ''} disabled={!puedeEditar}
+            onChange={e => onCambio({ ...(valor || {}), obs: e.target.value })} />
+        </label>
+      )}
+      {v && v !== 'NA' && (punto.campos || []).map(([clave, etiqueta]) => (
+        <label key={clave} className="campo">
+          <span>{etiqueta}</span>
+          <input value={valor?.[clave] || ''} disabled={!puedeEditar}
+            onChange={e => onCambio({ ...(valor || {}), [clave]: e.target.value })} />
+        </label>
+      ))}
+    </div>
+  )
+}
+
+function RevisionOrden({ orden, puedeEditar }) {
+  const guardada = revisionDeOrden(orden)
+  const [datos, setDatos] = useState(guardada?.datos || {})
+  const [abierta, setAbierta] = useState(null)
+
+  const eq = orden.equipos
+  // El tipo de trabajo sale del equipo: un fotovoltaico y un generador no se revisan igual.
+  // Sin equipo todavía (primera visita), se asume generador, que es lo más común.
+  const esSolar = eq?.tipo === 'solar' || eq?.tipo === 'bateria' || guardada?.tipo === 'solar'
+  const tipo = esSolar ? 'solar' : 'generador'
+  const formato = esSolar ? FORMATO_SOLAR : FORMATO_GENERADOR
+  const llegada = datos.llegada || {}
+
+  // Por defecto, un equipo de tipo batería sí tiene banco; en un fotovoltaico lo dice el técnico.
+  const bess = llegada.bess ?? (eq?.tipo === 'bateria')
+  const plomo = !!llegada.plomo
+  // El combustible decide qué puntos existen. Sale del equipo; si no está capturado,
+  // lo elige el técnico aquí (y queda anotado para este servicio).
+  const combustible = llegada.combustible || eq?.atributos?.combustible || ''
+  const ctx = esSolar
+    ? { bess, plomo }
+    : { combustible, mayor: llegada.tipo_servicio === 'C' }
+  const secciones = seccionesVisibles(formato, ctx)
+
+  function escribir(cambio) {
+    const nuevos = { ...datos, ...cambio }
+    setDatos(nuevos)
+    guardarRevisionLocal(orden.id, tipo, nuevos)
+  }
+  const cambiarLlegada = c => escribir({ llegada: { ...llegada, ...c } })
+  const cambiarPunto = (clave, valor) => escribir({ puntos: { ...(datos.puntos || {}), [clave]: valor } })
+
+  const faltas = loQueFalta(datos, formato, ctx)
+  const sugerido = dictamenSugerido(datos, formato)
+
+  return (
+    <section className="tarjeta">
+      <h3>{esSolar ? 'Mantenimiento solar' : 'Revisión del generador'}</h3>
+      <p className="ayuda">
+        Se guarda solo en tu celular en cada toque y sube cuando haya señal.
+      </p>
+
+      {!esSolar && (
+        <>
+          <p className="ayuda">Tipo de servicio</p>
+          <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+            {TIPOS_SERVICIO_GEN.map(([k, t, d]) => (
+              <button key={k} type="button" disabled={!puedeEditar}
+                className={llegada.tipo_servicio === k ? 'btn-primario' : undefined}
+                aria-pressed={llegada.tipo_servicio === k}
+                onClick={() => cambiarLlegada({ tipo_servicio: k })}>
+                <strong>{t}</strong>
+                <span className="ayuda" style={{ display: 'block' }}>{d}</span>
+              </button>
+            ))}
+          </div>
+          <label className="campo">
+            <span>Combustible</span>
+            <select value={combustible} disabled={!puedeEditar}
+              onChange={e => cambiarLlegada({ combustible: e.target.value })}>
+              <option value="">— Elige —</option>
+              {COMBUSTIBLES_GEN.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+            </select>
+          </label>
+          {!combustible && (
+            <Alerta tipo="aviso" palabra="Falta">
+              Dinos de qué es la planta: cambian los puntos a revisar. Un diésel lleva trampa
+              de agua y dos filtros; una de gas, prueba de fugas y bujías.
+            </Alerta>
+          )}
+        </>
+      )}
+
+      {esSolar && (
+      <div className="rejilla-2">
+        <label className="campo">
+          <span>Clima</span>
+          <select value={llegada.clima || ''} disabled={!puedeEditar}
+            onChange={e => cambiarLlegada({ clima: e.target.value })}>
+            <option value="">— Elige —</option>
+            {CLIMAS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+          </select>
+        </label>
+        <label className="campo">
+          <span>Irradiancia (W/m²)</span>
+          <input type="number" inputMode="decimal" value={llegada.irradiancia || ''} disabled={!puedeEditar}
+            onChange={e => cambiarLlegada({ irradiancia: e.target.value })} />
+        </label>
+        <label className="campo">
+          <span>Temperatura ambiente (°C)</span>
+          <input type="number" inputMode="decimal" value={llegada.temp || ''} disabled={!puedeEditar}
+            onChange={e => cambiarLlegada({ temp: e.target.value })} />
+        </label>
+      </div>
+      )}
+      {esSolar && llegada.irradiancia !== undefined && llegada.irradiancia !== '' && Number(llegada.irradiancia) < 600 && (
+        <Alerta tipo="aviso" palabra="Ojo">
+          Con menos de 600 W/m² la termografía no es concluyente. Márcala como "No aplica" y
+          anota por qué, o espera a que suba la radiación.
+        </Alerta>
+      )}
+
+      {esSolar && (
+        <label className="casilla">
+          <input type="checkbox" checked={bess} disabled={!puedeEditar}
+            onChange={e => cambiarLlegada({ bess: e.target.checked })} />
+          El sistema tiene banco de baterías
+        </label>
+      )}
+      {esSolar && bess && (
+        <label className="casilla">
+          <input type="checkbox" checked={plomo} disabled={!puedeEditar}
+            onChange={e => cambiarLlegada({ plomo: e.target.checked })} />
+          Son de plomo inundado (llevan revisión de electrolito)
+        </label>
+      )}
+
+      {secciones.map(s => {
+        const a = avanceSeccion(datos, s)
+        const esta = abierta === s.clave
+        return (
+          <div key={s.clave} style={{ marginTop: 10 }}>
+            <button type="button" className="orden-item" aria-expanded={esta}
+              onClick={() => setAbierta(esta ? null : s.clave)}>
+              <span className="fila" style={{ justifyContent: 'space-between', width: '100%' }}>
+                <strong>{s.clave}. {s.titulo}</strong>
+                <span className={`etiqueta${a.completa ? '' : ' etiqueta-aviso'}`}>
+                  {a.hechos} de {a.total}
+                </span>
+              </span>
+              {s.ayuda && <span className="ayuda">{s.ayuda}</span>}
+            </button>
+            {esta && s.puntos.map(p => (
+              <PuntoRevision key={p.clave} punto={p} valor={datos.puntos?.[p.clave]}
+                puedeEditar={puedeEditar} onCambio={val => cambiarPunto(p.clave, val)} />
+            ))}
+          </div>
+        )
+      })}
+
+      <h4 style={{ marginTop: 16 }}>Dictamen del servicio</h4>
+      <p className="ayuda">
+        Por lo que llevas capturado, correspondería: <strong>{
+          DICTAMENES.find(([k]) => k === sugerido)?.[1]
+        }</strong>. Tú decides.
+      </p>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {DICTAMENES.map(([k, t, d]) => (
+          <button key={k} type="button" disabled={!puedeEditar}
+            className={datos.dictamen === k ? 'btn-primario' : undefined}
+            aria-pressed={datos.dictamen === k}
+            onClick={() => escribir({ dictamen: k })}>
+            <strong>{t}</strong>
+            <span className="ayuda" style={{ display: 'block' }}>{d}</span>
+          </button>
+        ))}
+      </div>
+      {datos.dictamen === 'no_aprobado' && (
+        <label className="campo">
+          <span>Por qué no se aprueba</span>
+          <textarea rows={3} value={datos.motivo_dictamen || ''} disabled={!puedeEditar}
+            onChange={e => escribir({ motivo_dictamen: e.target.value })} />
+        </label>
+      )}
+
+      <label className="casilla">
+        <input type="checkbox" checked={!!datos.reporte_termico} disabled={!puedeEditar}
+          onChange={e => escribir({ reporte_termico: e.target.checked })} />
+        Se entrega reporte térmico
+      </label>
+
+      {puedeEditar && faltas.length > 0 && (
+        <Alerta tipo="aviso" palabra="Falta">
+          <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
+            {faltas.map((f, i) => <li key={i}>{f}</li>)}
+          </ul>
+        </Alerta>
+      )}
+      {puedeEditar && faltas.length === 0 && (
+        <Alerta tipo="ok" palabra="Completo">El formato está lleno.</Alerta>
       )}
     </section>
   )
@@ -825,6 +1063,8 @@ function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, on
 
       <EquipoOrden orden={orden} enLinea={enLinea} onRefrescar={onRefrescar}
         puedeEditar={abierta && (soyT1 || soyT2)} />
+
+      <RevisionOrden orden={orden} puedeEditar={puedoEditar} />
 
       <MaterialOrden orden={orden} soyT1={soyT1} abierta={abierta} enLinea={enLinea}
         nombreT1={nombreDe(nombres, orden.tecnico_id)} onRefrescar={onRefrescar} />

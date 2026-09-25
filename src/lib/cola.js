@@ -3,7 +3,7 @@
 // devuelven otra, sin tocar el navegador ni la base, para poder probarlas.
 //
 // Cada elemento de la cola es un intento de subir algo de una orden:
-//   { clave: 'parte:<orden>' | 'cierre:<orden>', tipo, orden_id, payload?, n, sync? }
+//   { clave: 'parte:<orden>' | 'revision:<orden>' | 'cierre:<orden>', tipo, orden_id, payload?, n, sync? }
 //
 //   · `clave` identifica el asunto: guardar la parte de la orden X es SIEMPRE lo mismo,
 //     así que un elemento nuevo REEMPLAZA al anterior en vez de apilarse.
@@ -21,10 +21,12 @@ export function encolarEn(cola, item) {
   return [...cola.filter(i => i.clave !== item.clave), nuevo]
 }
 
-// Las partes van antes que los cierres: el cierre necesita que las notas ya estén
-// arriba para juntarlas. Dentro de cada tipo se respeta el orden de llegada.
+// El cierre va al final: necesita que las notas ya estén arriba para juntarlas, y que la
+// revisión esté arriba porque la base no lo deja cerrar si la seguridad quedó sin resolver
+// (trigger de la 24). Dentro de cada tipo se respeta el orden de llegada.
+const PESO = { parte: 0, revision: 1, cierre: 2 }
 export function ordenarCola(cola) {
-  const peso = i => (i.tipo === 'parte' ? 0 : 1)
+  const peso = i => PESO[i.tipo] ?? 1
   return [...cola].sort((a, b) => peso(a) - peso(b))
 }
 

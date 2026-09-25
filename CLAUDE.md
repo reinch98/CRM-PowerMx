@@ -513,7 +513,62 @@ Las secciones 1 y 2 **no se vuelven a capturar**: ya están en la orden, el clie
 equipo (la 2 es justo el registro de equipos de la 23).
 
 
-**Formato solar resumido — propuesta del 24/09/2026 (sin construir, falta el visto bueno).**
+**SQL 25/09/2026: `24_revision_orden.sql` aplicado y probado** (10 pasos con rollback, todos
+"ok") **y la pantalla del técnico construida** (`src/lib/revision.js`, `RevisionOrden` en
+`Trabajos.jsx`; 34 casos puros en Node; medida en el emulador: 0 textos < 17 px, 0 contrastes
+< 4.5, 0 objetivos < 48 px, 0 px de desborde, plegada y abierta).
+- Tabla **`orden_revision`**: una fila por orden con las respuestas en `jsonb`. Una fila y no
+  una por punto porque esto se llena **sin señal** y sube de un golpe; veinte inserts podrían
+  subir a medias. RLS como las partes: los dos técnicos escriben con la orden abierta,
+  cerrada todos leen y nadie edita. El sello (quién y cuándo) lo pone la base.
+- **El trigger `seguridad_antes_de_cerrar`** aplica la regla del formato: un punto de la
+  sección 1 en "M" sin control compensatorio escrito **impide cerrar**. Va sobre
+  `ordenes_servicio` y no dentro de `cerrar_orden`, por lo mismo que el horómetro. No es un
+  callejón: basta escribir el control. **La foto obligatoria en los "M" NO se bloquea en la
+  base** — se exige en la pantalla, porque una cámara que falla dejaría al técnico sin poder
+  cerrar en el sitio.
+- **Cola sin señal:** asunto nuevo `revision:<orden>` en `cola.js`, con peso **entre** la
+  parte y el cierre (`PESO = {parte: 0, revision: 1, cierre: 2}`): el cierre necesita que la
+  revisión ya esté arriba o el trigger lo rechaza. Datos locales: `revisiones_locales`.
+  `revisionDeOrden()` prefiere lo del celular si está sucio, nunca al revés: un refresco
+  pisaría lo que el técnico acaba de escribir.
+- El catálogo de puntos vive en **`src/lib/revision.js`**, no en la base: es presentación,
+  cambia con el formato en papel y lo comparten la pantalla y el PDF. Ahí están también
+  `seguridadSinControl` (misma comprobación que el trigger, adelantada para avisar antes),
+  `veredictoString` (propone Pasa / Revisar / No pasa), `dictamenSugerido` y `loQueFalta`.
+- **Falta:** las mediciones (strings/AC/BESS en solar; prueba de funcionamiento y
+  transferencia en generador), las placas y la evidencia fotográfica **por punto**. Las
+  fotos por punto necesitan el mismo camino de IndexedDB que las de la parte: van en su
+  propio paso.
+
+**Formato del generador (25/09/2026)** — de `PowerMx · Formato de Revisión y Servicio a
+Generadores` (PMX-SRV, 9 páginas). `FORMATO_GENERADOR` en `revision.js`, **desglosado por
+combustible** como pidió Caña. Diez secciones; los puntos comunes son los mismos y lo que
+cambia es la sección 3:
+- **Diésel (50 puntos):** trampa de agua drenada, filtros primario y secundario, edad del
+  combustible (más de 6 meses se muestrea) y purga de aire tras cambiar filtros. **No tiene
+  sección de encendido**: no lleva bujías.
+- **Gasolina (51):** filtro único, barniz en el carburador por combustible viejo, válvula de
+  paso, y sí lleva bujías y cables.
+- **Gas LP (54) y natural (53):** regulador y presión de entrada, prueba de fugas con
+  solución jabonosa, válvula de corte y solenoide, mangueras flexibles vigentes y detector
+  de gas. El **vaporizador es solo de LP**. Ambos llevan bujías.
+- El **servicio mayor (tipo C)** agrega el megóhmetro de devanados; el tipo se elige al
+  empezar (A inspección · B preventivo · C mayor), del anexo de periodicidad del formato.
+- El combustible sale de `equipos.atributos.combustible`; si el equipo no lo tiene
+  capturado, el técnico lo elige ahí mismo y la pantalla avisa por qué importa.
+- **La sección 1 (seguridad) NO viene en el formato en papel**: se agregó porque es la que
+  bloquea el cierre y porque antes de arrancar una planta de gas hay que descartar fuga.
+  **Convención:** la sección "1" es siempre la bloqueante, en cualquier formato — el trigger
+  de la 24 busca las claves `1.%`.
+- `aplica(item, ctx)` generaliza las condiciones: `solo: 'bess'|'plomo'|'mayor'` mira una
+  bandera del contexto y `solo: ['diesel', ...]` filtra por combustible. Sin combustible
+  conocido se muestran solo los puntos comunes: mejor preguntar de menos que inventar.
+- Probado: 61 casos en Node y en el emulador con planta de gas y de diésel (las secciones y
+  los puntos cambian en vivo al cambiar el combustible; 0 textos < 17 px, 0 contrastes <
+  4.5, 0 objetivos < 48 px, 0 px de desborde).
+
+**Formato solar resumido — propuesta del 24/09/2026.**
 De ~55 puntos a **32**, más las mediciones. Tres reglas que hacen el ahorro:
 la caja de hallazgo **solo aparece al marcar R o M**; las secciones van plegadas con su
 contador ("Módulos 6/6"); y **BESS solo existe si el equipo tiene baterías**.

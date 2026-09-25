@@ -23,6 +23,7 @@ import { claveDe, encolarEn, ordenarCola, sacarSiSigue, marcarFallo } from './co
 const CACHE = 'cache_mis_trabajos'
 const NOMBRES = 'cache_nombres_tecnicos'
 const PARTES = 'partes_locales'
+const REVISIONES = 'revisiones_locales'
 export const COLA = 'cola_trabajos'
 const BUCKET = 'ordenes'
 
@@ -33,7 +34,7 @@ const SELECCION =
   '*, citas(fecha, hora, duracion_min, zona, notas, tipo_servicio), ' +
   'clientes(nombre, telefono, direccion, colonia, municipio, maps_url, referencias), ' +
   'equipos(numero_serie, marca, modelo, tipo, capacidad_kw, ubicacion_equipo, ' +
-  'horas_uso, horas_uso_fecha), orden_partes(*), ' +
+  'horas_uso, horas_uso_fecha, atributos), orden_partes(*), orden_revision(*), ' +
   'orden_surtido(id, producto_id, sku, nombre, unidad, cantidad_pedida, cantidad_entregada, ' +
   'cantidad_usada, cantidad_devuelta, cantidad_diferencia), ' +
   'entregas(id, folio, estado, created_at, entrega_lineas(sku, nombre, unidad, cantidad))'
@@ -122,6 +123,70 @@ export async function quitarFotoLocal(orden_id, id, actuales) {
 }
 
 // ---------------------------------------------------------------------------
+// La revisión (el formato de mantenimiento, SQL 24)
+//
+// Mismo camino que la parte: se escribe en el celular en cada toque —no hay botón de
+// guardar— y queda en la cola. El técnico llena esto en una azotea sin cobertura.
+// ---------------------------------------------------------------------------
+export function revisionLocal(orden_id) {
+  return leerLocal(REVISIONES, {})[orden_id] || null
+}
+
+function escribirRevision(orden_id, rev) {
+  const todas = leerLocal(REVISIONES, {})
+  if (rev) todas[orden_id] = rev
+  else delete todas[orden_id]
+  escribirLocal(REVISIONES, todas)
+}
+
+export function guardarRevisionLocal(orden_id, tipo, datos) {
+  const previa = revisionLocal(orden_id)
+  const rev = {
+    tipo, datos,
+    version: (previa?.version || 0) + 1,
+    sucio: true,
+    actualizado: new Date().toISOString()
+  }
+  escribirRevision(orden_id, rev)
+  escribirLocal(COLA, encolarEn(leerCola(), { clave: claveDe('revision', orden_id), tipo: 'revision', orden_id }))
+  return rev
+}
+
+// Lo que la pantalla debe mostrar: lo del celular si hay algo sin subir, si no lo del
+// servidor. Nunca al revés, o un refresco pisaría lo que el técnico acaba de escribir.
+export function revisionDeOrden(orden) {
+  const local = revisionLocal(orden.id)
+  if (local?.sucio) return { tipo: local.tipo, datos: local.datos || {}, local: true }
+  const servidor = Array.isArray(orden.orden_revision) ? orden.orden_revision[0] : orden.orden_revision
+  if (servidor) return { tipo: servidor.tipo, datos: servidor.datos || {}, local: false }
+  return null
+}
+
+async function subirRevision(item) {
+  try {
+    const actual = revisionLocal(item.orden_id)
+    if (!actual) {
+      escribirLocal(COLA, sacarSiSigue(leerCola(), item.clave, item.n))
+      return { ok: true }
+    }
+    const { error } = await supabase.from('orden_revision').upsert({
+      orden_id: item.orden_id,
+      tipo: actual.tipo,
+      datos: actual.datos || {}
+    }, { onConflict: 'orden_id' })
+    if (error) return fallo(error)
+
+    if (revisionLocal(item.orden_id)?.version === actual.version) {
+      escribirRevision(item.orden_id, { ...revisionLocal(item.orden_id), sucio: false })
+    }
+    escribirLocal(COLA, sacarSiSigue(leerCola(), item.clave, item.n))
+    return { ok: true }
+  } catch (e) {
+    return fallo(e)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Cierre y descarte
 // ---------------------------------------------------------------------------
 export function pedirCierre(orden_id, payload) {
@@ -137,6 +202,7 @@ export async function descartarPendiente(clave) {
     escribirParte(item.orden_id, null)
     try { await borrarFotosDeOrden(item.orden_id) } catch { /* nada */ }
   }
+  if (item?.tipo === 'revision') escribirRevision(item.orden_id, null)
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +327,9 @@ export async function sincronizarTrabajos() {
   let subidos = 0, fallidos = 0
   try {
     for (const item of ordenarCola(leerCola())) {
-      const r = item.tipo === 'parte' ? await subirParte(item) : await subirCierre(item)
+      const r = item.tipo === 'parte' ? await subirParte(item)
+        : item.tipo === 'revision' ? await subirRevision(item)
+        : await subirCierre(item)
       if (r.ok) {
         subidos++
       } else {
