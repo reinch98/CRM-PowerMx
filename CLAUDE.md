@@ -536,10 +536,26 @@ equipo (la 2 es justo el registro de equipos de la 23).
   cambia con el formato en papel y lo comparten la pantalla y el PDF. Ahí están también
   `seguridadSinControl` (misma comprobación que el trigger, adelantada para avisar antes),
   `veredictoString` (propone Pasa / Revisar / No pasa), `dictamenSugerido` y `loQueFalta`.
-- **Falta:** las mediciones (strings/AC/BESS en solar; prueba de funcionamiento y
-  transferencia en generador), las placas y la evidencia fotográfica **por punto**. Las
-  fotos por punto necesitan el mismo camino de IndexedDB que las de la parte: van en su
-  propio paso.
+- **Mediciones (25/09/2026): construidas** para los dos formatos. En el papel son tablas
+  anchas con columnas fijas —seis strings aunque la instalación tenga dos, tres fases aunque
+  el equipo sea monofásico—; aquí **los strings se agregan uno a uno** y **las fases que no
+  existen no se preguntan** (casilla "el equipo es trifásico").
+  - **Generador:** las 14 lecturas de la sección 4, cada una **en vacío y con carga**. En el
+    **tipo A** no se pide la columna de carga: ese servicio es solo inspección con prueba en
+    vacío. Luego la prueba de transferencia (cómo se probó, arranque, retransferencia,
+    enfriamiento, aprobada o no).
+  - **Solar:** strings con `veredictoString` proponiendo Pasa / Revisar / No pasa,
+    parámetros AC del tablero y el bloque de banco y tierra (el banco solo con BESS).
+  - **Avisos mientras el técnico sigue en el sitio** (`avisosMediciones`, no bloquean):
+    frecuencia fuera de 60 ± 0.5, resistencia de tierra por encima de 10 Ω diciendo cuánto
+    dio, strings que no pasan, y **wet stacking** — un diésel probado a menos del 30 % de
+    carga acumula hollín, así que se avisa con el porcentaje capturado.
+  - `loQueFalta` ahora también reclama las mediciones (un generador sin ninguna lectura, un
+    solar sin strings). Sigue siendo aviso, no candado: lo único que impide cerrar es la
+    seguridad.
+  - 81 casos en Node; probado en el emulador con diésel trifásico y con solar.
+- **Falta:** las placas y la evidencia fotográfica **por punto**. Las fotos por punto
+  necesitan el mismo camino de IndexedDB que las de la parte: van en su propio paso.
 
 **Formato del generador (25/09/2026)** — de `PowerMx · Formato de Revisión y Servicio a
 Generadores` (PMX-SRV, 9 páginas). `FORMATO_GENERADOR` en `revision.js`, **desglosado por

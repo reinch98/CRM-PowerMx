@@ -14,8 +14,10 @@ import {
 import { enlaceWhatsApp } from './lib/avisos'
 import {
   FORMATO_SOLAR, FORMATO_GENERADOR, COMBUSTIBLES_GEN, TIPOS_SERVICIO_GEN,
-  CALIFICACIONES, DICTAMENES, seccionesVisibles, avanceSeccion,
-  dictamenSugerido, loQueFalta
+  CALIFICACIONES, DICTAMENES, seccionesVisibles, avanceSeccion, aplica,
+  dictamenSugerido, loQueFalta, avisosMediciones, veredictoString,
+  LECTURAS_GEN, TIPOS_TRANSFERENCIA, TRANSFERENCIA_GEN, AC_SOLAR, BANCO_SOLAR,
+  COLUMNAS_STRING, VEREDICTOS, stringNuevo
 } from './lib/revision'
 import {
   TIPOS_EQUIPO, COMBUSTIBLES, nombreTipoEquipo, descripcionEquipo, textoHorometro,
@@ -380,6 +382,157 @@ function PuntoRevision({ punto, valor, puedeEditar, onCambio }) {
   )
 }
 
+// Una lectura con su unidad. En el papel son tablas anchas; aquí cada renglón cabe en el
+// celular, con el rango esperado a la vista para no tener que recordarlo.
+function Lectura({ campo, valor, puedeEditar, columnas, onCambio }) {
+  return (
+    <div className="refaccion">
+      <strong>{campo.titulo}{campo.unidad ? ` (${campo.unidad})` : ''}</strong>
+      {campo.espera && <span className="ayuda">Se espera: {campo.espera}</span>}
+      <div className="rejilla-2">
+        {columnas.map(([k, t]) => (
+          <label key={k} className="campo">
+            <span>{t}</span>
+            <input type="number" inputMode="decimal" disabled={!puedeEditar}
+              value={valor?.[k] ?? ''} onChange={e => onCambio({ ...(valor || {}), [k]: e.target.value })} />
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function MedicionesGenerador({ med, ctx, puedeEditar, onCambio }) {
+  const lecturas = med.lecturas || {}
+  const trans = med.transferencia || {}
+  // El tipo A es solo inspección con prueba en vacío: no se pide la columna de carga.
+  const conCarga = ctx.tipo_servicio !== 'A'
+  const columnas = conCarga ? [['vacio', 'En vacío'], ['carga', 'Con carga']] : [['vacio', 'En vacío']]
+
+  return (
+    <>
+      {conCarga && (
+        <label className="campo">
+          <span>Carga de la prueba (%)</span>
+          <input type="number" inputMode="decimal" disabled={!puedeEditar}
+            value={med.carga_pct ?? ''} onChange={e => onCambio({ ...med, carga_pct: e.target.value })} />
+        </label>
+      )}
+      <p className="ayuda">
+        Mínimo 15 min en vacío. Con carga, al menos 30 min al 30 % o más de la capacidad.
+      </p>
+
+      {LECTURAS_GEN.filter(c => aplica(c, ctx)).map(c => (
+        <Lectura key={c.clave} campo={c} columnas={columnas} puedeEditar={puedeEditar}
+          valor={lecturas[c.clave]}
+          onCambio={v => onCambio({ ...med, lecturas: { ...lecturas, [c.clave]: v } })} />
+      ))}
+
+      <h4>Prueba de transferencia</h4>
+      <label className="campo">
+        <span>Cómo se probó</span>
+        <select value={trans.tipo || ''} disabled={!puedeEditar}
+          onChange={e => onCambio({ ...med, transferencia: { ...trans, tipo: e.target.value } })}>
+          <option value="">— Elige —</option>
+          {TIPOS_TRANSFERENCIA.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+        </select>
+      </label>
+      <div className="rejilla-2">
+        {TRANSFERENCIA_GEN.map(([k, t]) => (
+          <label key={k} className="campo">
+            <span>{t}</span>
+            <input type="number" inputMode="decimal" disabled={!puedeEditar} value={trans[k] ?? ''}
+              onChange={e => onCambio({ ...med, transferencia: { ...trans, [k]: e.target.value } })} />
+          </label>
+        ))}
+      </div>
+      <div className="fila">
+        {[['aprobada', 'Transferencia aprobada'], ['no_aprobada', 'No aprobada']].map(([v, t]) => (
+          <button key={v} type="button" disabled={!puedeEditar}
+            className={trans.resultado === v ? 'btn-primario' : undefined}
+            aria-pressed={trans.resultado === v}
+            onClick={() => onCambio({ ...med, transferencia: { ...trans, resultado: v } })}>
+            {t}
+          </button>
+        ))}
+      </div>
+    </>
+  )
+}
+
+function MedicionesSolar({ med, ctx, puedeEditar, onCambio }) {
+  const strings = med.strings || []
+  const ac = med.ac || {}
+  const banco = med.banco || {}
+
+  const cambiarString = (i, campo, v) =>
+    onCambio({ ...med, strings: strings.map((s, k) => (k === i ? { ...s, [campo]: v } : s)) })
+
+  return (
+    <>
+      <h4>Strings</h4>
+      <p className="ayuda">
+        Agrega solo los que tenga la instalación. El veredicto se propone solo: aislamiento
+        por debajo de 1 MΩ no pasa, y una Voc que se aleje más del 10 % de la teórica se revisa.
+      </p>
+      {strings.map((s, i) => {
+        const v = veredictoString(s)
+        return (
+          <div key={i} className="refaccion">
+            <span className="fila" style={{ justifyContent: 'space-between' }}>
+              <strong>String {i + 1}</strong>
+              {v && <span className={`etiqueta${v === 'pasa' ? '' : ' etiqueta-aviso'}`}>{VEREDICTOS[v]}</span>}
+            </span>
+            <div className="rejilla-2">
+              {COLUMNAS_STRING.map(([k, t]) => (
+                <label key={k} className="campo">
+                  <span>{t}</span>
+                  <input type={k === 'mppt' ? 'text' : 'number'} inputMode={k === 'mppt' ? 'text' : 'decimal'}
+                    disabled={!puedeEditar} value={s[k] ?? ''}
+                    onChange={e => cambiarString(i, k, e.target.value)} />
+                </label>
+              ))}
+            </div>
+            {puedeEditar && (
+              <button type="button" className="btn-peligro"
+                onClick={() => onCambio({ ...med, strings: strings.filter((_, k) => k !== i) })}>
+                Quitar este string
+              </button>
+            )}
+          </div>
+        )
+      })}
+      {puedeEditar && (
+        <button type="button" onClick={() => onCambio({ ...med, strings: [...strings, stringNuevo()] })}>
+          ＋ Agregar string
+        </button>
+      )}
+
+      <h4 style={{ marginTop: 16 }}>Parámetros AC en el tablero</h4>
+      <div className="rejilla-2">
+        {AC_SOLAR.filter(c => aplica(c, ctx)).map(c => (
+          <label key={c.clave} className="campo">
+            <span>{c.titulo} ({c.unidad})</span>
+            <input type="number" inputMode="decimal" disabled={!puedeEditar} value={ac[c.clave] ?? ''}
+              onChange={e => onCambio({ ...med, ac: { ...ac, [c.clave]: e.target.value } })} />
+          </label>
+        ))}
+      </div>
+
+      <h4 style={{ marginTop: 16 }}>Banco y tierra</h4>
+      <div className="rejilla-2">
+        {BANCO_SOLAR.filter(c => aplica(c, ctx)).map(c => (
+          <label key={c.clave} className="campo">
+            <span>{c.titulo} ({c.unidad})</span>
+            <input type="number" inputMode="decimal" disabled={!puedeEditar} value={banco[c.clave] ?? ''}
+              onChange={e => onCambio({ ...med, banco: { ...banco, [c.clave]: e.target.value } })} />
+          </label>
+        ))}
+      </div>
+    </>
+  )
+}
+
 function RevisionOrden({ orden, puedeEditar }) {
   const guardada = revisionDeOrden(orden)
   const [datos, setDatos] = useState(guardada?.datos || {})
@@ -399,9 +552,11 @@ function RevisionOrden({ orden, puedeEditar }) {
   // El combustible decide qué puntos existen. Sale del equipo; si no está capturado,
   // lo elige el técnico aquí (y queda anotado para este servicio).
   const combustible = llegada.combustible || eq?.atributos?.combustible || ''
+  // Las fases que el equipo no tiene no se preguntan: en el papel siempre venían las tres.
+  const trifasico = llegada.trifasico ?? false
   const ctx = esSolar
-    ? { bess, plomo }
-    : { combustible, mayor: llegada.tipo_servicio === 'C' }
+    ? { bess, plomo, trifasico }
+    : { combustible, trifasico, tipo_servicio: llegada.tipo_servicio, mayor: llegada.tipo_servicio === 'C' }
   const secciones = seccionesVisibles(formato, ctx)
 
   function escribir(cambio) {
@@ -413,6 +568,7 @@ function RevisionOrden({ orden, puedeEditar }) {
   const cambiarPunto = (clave, valor) => escribir({ puntos: { ...(datos.puntos || {}), [clave]: valor } })
 
   const faltas = loQueFalta(datos, formato, ctx)
+  const avisos = avisosMediciones(datos, ctx)
   const sugerido = dictamenSugerido(datos, formato)
 
   return (
@@ -519,6 +675,38 @@ function RevisionOrden({ orden, puedeEditar }) {
           </div>
         )
       })}
+
+      <div style={{ marginTop: 10 }}>
+        <button type="button" className="orden-item" aria-expanded={abierta === 'med'}
+          onClick={() => setAbierta(abierta === 'med' ? null : 'med')}>
+          <span className="fila" style={{ justifyContent: 'space-between', width: '100%' }}>
+            <strong>Mediciones</strong>
+            <span className="etiqueta">{esSolar ? 'Strings, AC y banco' : 'Prueba de funcionamiento'}</span>
+          </span>
+        </button>
+        {abierta === 'med' && (
+          <>
+            <label className="casilla">
+              <input type="checkbox" checked={trifasico} disabled={!puedeEditar}
+                onChange={e => cambiarLlegada({ trifasico: e.target.checked })} />
+              El equipo es trifásico
+            </label>
+            {esSolar
+              ? <MedicionesSolar med={datos.mediciones || {}} ctx={ctx} puedeEditar={puedeEditar}
+                  onCambio={m => escribir({ mediciones: m })} />
+              : <MedicionesGenerador med={datos.mediciones || {}} ctx={ctx} puedeEditar={puedeEditar}
+                  onCambio={m => escribir({ mediciones: m })} />}
+          </>
+        )}
+      </div>
+
+      {avisos.length > 0 && (
+        <Alerta tipo="aviso" palabra="Revisa">
+          <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
+            {avisos.map((a, i) => <li key={i}>{a}</li>)}
+          </ul>
+        </Alerta>
+      )}
 
       <h4 style={{ marginTop: 16 }}>Dictamen del servicio</h4>
       <p className="ayuda">

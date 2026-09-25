@@ -258,6 +258,112 @@ export const TIPOS_SERVICIO_GEN = [
   ['C', 'Tipo C · Mayor', '500 h o 12 meses. Todo B más filtro de aire, refrigerante, bandas, megóhmetro y prueba de ATS.'],
 ]
 
+// ---------------------------------------------------------------------------
+// Mediciones
+//
+// En el papel son tablas anchas con columnas fijas: seis strings aunque la instalación
+// tenga dos, y tres fases aunque el equipo sea monofásico. Aquí los strings se agregan uno
+// a uno y las fases que no existen no se preguntan.
+// ---------------------------------------------------------------------------
+
+// Generador: cada lectura se toma EN VACÍO y CON CARGA (sección 4 del formato).
+export const LECTURAS_GEN = [
+  { clave: 'v_l1l2', titulo: 'Voltaje L1-L2', unidad: 'V', solo: 'trifasico' },
+  { clave: 'v_l2l3', titulo: 'Voltaje L2-L3', unidad: 'V', solo: 'trifasico' },
+  { clave: 'v_l3l1', titulo: 'Voltaje L3-L1', unidad: 'V', solo: 'trifasico' },
+  { clave: 'v_ln', titulo: 'Voltaje L-N', unidad: 'V' },
+  { clave: 'i_l1', titulo: 'Corriente L1', unidad: 'A' },
+  { clave: 'i_l2', titulo: 'Corriente L2', unidad: 'A', solo: 'trifasico' },
+  { clave: 'i_l3', titulo: 'Corriente L3', unidad: 'A', solo: 'trifasico' },
+  { clave: 'frecuencia', titulo: 'Frecuencia', unidad: 'Hz', espera: '60 ± 0.5' },
+  { clave: 'p_activa', titulo: 'Potencia activa', unidad: 'kW' },
+  { clave: 'fp', titulo: 'Factor de potencia', unidad: '' },
+  { clave: 'p_aceite', titulo: 'Presión de aceite', unidad: 'psi' },
+  { clave: 't_refrigerante', titulo: 'Temperatura de refrigerante', unidad: '°C' },
+  { clave: 'rpm', titulo: 'RPM', unidad: 'rpm', espera: '1800 o 3600' },
+  { clave: 'v_bateria', titulo: 'Voltaje de batería en marcha', unidad: 'V' },
+]
+
+export const TIPOS_TRANSFERENCIA = [
+  ['simulacion', 'Simulación de falla de red'],
+  ['carga_real', 'Carga real'],
+  ['banco', 'Banco de carga'],
+]
+
+export const TRANSFERENCIA_GEN = [
+  ['t_arranque', 'Arranque hasta tomar carga (s)'],
+  ['t_retransferencia', 'Retransferencia a la red (s)'],
+  ['t_enfriamiento', 'Enfriamiento programado (min)'],
+]
+
+// Solar: parámetros AC en el tablero y lecturas del banco y la tierra.
+export const AC_SOLAR = [
+  { clave: 'l1n', titulo: 'L1-N', unidad: 'V' },
+  { clave: 'l2n', titulo: 'L2-N', unidad: 'V', solo: 'trifasico' },
+  { clave: 'l3n', titulo: 'L3-N', unidad: 'V', solo: 'trifasico' },
+  { clave: 'l1l2', titulo: 'L1-L2', unidad: 'V', solo: 'trifasico' },
+  { clave: 'l2l3', titulo: 'L2-L3', unidad: 'V', solo: 'trifasico' },
+  { clave: 'l3l1', titulo: 'L3-L1', unidad: 'V', solo: 'trifasico' },
+  { clave: 'frecuencia', titulo: 'Frecuencia', unidad: 'Hz', espera: '60 ± 0.5' },
+]
+
+export const BANCO_SOLAR = [
+  { clave: 'v_banco', titulo: 'Voltaje del banco', unidad: 'Vdc', solo: 'bess' },
+  { clave: 'i_carga', titulo: 'Corriente de carga', unidad: 'A', solo: 'bess' },
+  { clave: 'i_descarga', titulo: 'Corriente de descarga', unidad: 'A', solo: 'bess' },
+  { clave: 't_celda', titulo: 'Temperatura máxima de celda', unidad: '°C', solo: 'bess' },
+  { clave: 'r_tierra', titulo: 'Resistencia de tierra', unidad: 'Ω', espera: 'menos de 10' },
+  { clave: 'produccion', titulo: 'Producción del día', unidad: 'kWh' },
+  { clave: 'pr', titulo: 'Rendimiento (PR)', unidad: '%' },
+]
+
+export const COLUMNAS_STRING = [
+  ['mppt', 'MPPT'],
+  ['voc_teorico', 'Voc teórico (V)'],
+  ['voc_medido', 'Voc medido (V)'],
+  ['isc', 'Isc / Imp (A)'],
+  ['aisl_pos', 'Aislamiento +/tierra (MΩ)'],
+  ['aisl_neg', 'Aislamiento −/tierra (MΩ)'],
+]
+
+export const VEREDICTOS = {
+  pasa: 'Pasa',
+  revisar: 'Revisar',
+  no_pasa: 'No pasa',
+}
+
+export const stringNuevo = () => ({ mppt: '', voc_teorico: '', voc_medido: '', isc: '', aisl_pos: '', aisl_neg: '' })
+
+const numero = v => (v === '' || v === null || v === undefined ? null : Number(v))
+
+// Lo que la medición dice que está mal. No bloquea nada: avisa mientras el técnico sigue
+// en el sitio, que es cuando se puede corregir.
+export function avisosMediciones(datos, ctx = {}) {
+  const avisos = []
+  const med = datos?.mediciones || {}
+
+  const hz = [numero(med.ac?.frecuencia), numero(med.lecturas?.frecuencia?.vacio), numero(med.lecturas?.frecuencia?.carga)]
+  if (hz.some(v => v !== null && Number.isFinite(v) && (v < 59.5 || v > 60.5))) {
+    avisos.push('La frecuencia se sale de 60 ± 0.5 Hz.')
+  }
+
+  const tierra = numero(med.banco?.r_tierra)
+  if (tierra !== null && Number.isFinite(tierra) && tierra > 10) {
+    avisos.push(`La resistencia de tierra es de ${tierra} Ω: la norma pide menos de 10.`)
+  }
+
+  // Wet stacking: un diésel que solo trabaja en vacío o con poca carga acumula hollín.
+  const carga = numero(med.carga_pct)
+  if (ctx.combustible === 'diesel' && carga !== null && Number.isFinite(carga) && carga < 30) {
+    avisos.push(`La prueba con carga fue al ${carga} %. En diésel se pide 30 % o más durante 30 min para que no acumule hollín.`)
+  }
+
+  const malos = (med.strings || []).filter(s => veredictoString(s) === 'no_pasa').length
+  if (malos > 0) avisos.push(`${malos} string${malos === 1 ? '' : 's'} no pasa${malos === 1 ? '' : 'n'} la prueba de aislamiento.`)
+
+  return avisos
+}
+
 // Las placas que se fotografían una vez y quedan en el equipo, no en la orden.
 export const PLACAS = [
   ['inversor', 'Inversor'],
@@ -375,6 +481,15 @@ export function loQueFalta(datos, formato = FORMATO_SOLAR, opciones) {
     const a = avanceSeccion(datos, s)
     if (!a.completa) faltas.push(`${s.titulo}: faltan ${a.total - a.hechos} de ${a.total}.`)
   }
+
+  const med = datos?.mediciones || {}
+  if (formato === FORMATO_GENERADOR) {
+    const hayLecturas = Object.values(med.lecturas || {}).some(l => l?.vacio || l?.carga)
+    if (!hayLecturas) faltas.push('Mediciones: falta la prueba de funcionamiento.')
+  } else if ((med.strings || []).length === 0) {
+    faltas.push('Mediciones: no capturaste ningún string.')
+  }
+
   if (!datos?.dictamen) faltas.push('Falta el dictamen del servicio.')
   return faltas
 }
