@@ -554,8 +554,34 @@ equipo (la 2 es justo el registro de equipos de la 23).
     solar sin strings). Sigue siendo aviso, no candado: lo único que impide cerrar es la
     seguridad.
   - 81 casos en Node; probado en el emulador con diésel trifásico y con solar.
-- **Falta:** las placas y la evidencia fotográfica **por punto**. Las fotos por punto
-  necesitan el mismo camino de IndexedDB que las de la parte: van en su propio paso.
+- **Placas y evidencia por punto (25/09/2026): construidas.** SQL `25_placas_equipo.sql`
+  (`guardar_placa`) y su prueba; `PLACAS_SOLAR`/`PLACAS_GENERADOR`/`placaGuardada` en
+  `revision.js`; en `trabajos.js` `guardarFotoRevision`, `olvidarFotoRevision` y
+  `subirFotosDeRevision`.
+  - **La foto cuelga de SU punto.** En el papel todas caían en un montón y el formato solo
+    apuntaba cuántas eran; aquí la del hot spot queda en el punto del hot spot. Por eso
+    "No. de fotos" y "Carpeta" ya no se capturan: se cuentan solos. El botón aparece al
+    marcar Regular o Malo, y en "Malo" se lee el recordatorio de que ese punto se documenta
+    con fotografía (aviso en la pantalla, **no** candado en la base).
+  - **Las placas cuelgan del EQUIPO**, no de la orden: identidad, no estado. Se toman una
+    vez y en visitas siguientes la pantalla muestra lo que ya hay. Van a
+    `placas/<equipo_id>/<rol>.jpg` y `guardar_placa` las escribe en
+    `equipos.atributos.componentes` conservando lo que ese componente ya tuviera. Roles:
+    solar `modulos`/`inversor_1`/`inversor_2`/`bateria`/`bms`; generador
+    `generador`/`motor`/`alternador`/`tablero`. Exige que la orden ya tenga equipo.
+  - **`destino` en IndexedDB** (`parte` | `revision` | `placa`): las tres clases de foto
+    viven en la misma orden pero suben por caminos distintos. Sin eso, tirar la parte
+    pendiente se llevaba por delante las fotos de la revisión, y `subirParte` habría
+    subido una placa a la lista de la parte. `borrarFotosDeOrden` ahora acepta qué
+    destinos tirar; al cerrar sí se tira todo, porque la revisión sube antes que el cierre.
+  - Cada placa se marca `guardada` tras llamar a `guardar_placa`, para no repetir la
+    llamada en cada sincronización.
+  - Probado de punta a punta en el emulador: foto → IndexedDB → Storage
+    (`placas/e1/motor.jpg`) → `guardar_placa` con los argumentos correctos → marcada.
+    **Ojo al medir:** el panel del navegador aplica `pointer: coarse` **solo** con el
+    preajuste `mobile`; en escritorio los botones miden 40 px a propósito y parecen
+    fallos. Medido en celular: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px,
+    0 px de desborde.
 
 **Formato del generador (25/09/2026)** — de `PowerMx · Formato de Revisión y Servicio a
 Generadores` (PMX-SRV, 9 páginas). `FORMATO_GENERADOR` en `revision.js`, **desglosado por

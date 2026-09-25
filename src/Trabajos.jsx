@@ -17,7 +17,7 @@ import {
   CALIFICACIONES, DICTAMENES, seccionesVisibles, avanceSeccion, aplica,
   dictamenSugerido, loQueFalta, avisosMediciones, veredictoString,
   LECTURAS_GEN, TIPOS_TRANSFERENCIA, TRANSFERENCIA_GEN, AC_SOLAR, BANCO_SOLAR,
-  COLUMNAS_STRING, VEREDICTOS, stringNuevo
+  COLUMNAS_STRING, VEREDICTOS, stringNuevo, PLACAS_SOLAR, PLACAS_GENERADOR, placaGuardada
 } from './lib/revision'
 import {
   TIPOS_EQUIPO, COMBUSTIBLES, nombreTipoEquipo, descripcionEquipo, textoHorometro,
@@ -30,7 +30,7 @@ import {
   cargarTrabajos, leerTrabajos, leerNombres, leerCola, parteLocal, guardarParteLocal,
   agregarFotoLocal, quitarFotoLocal, pedirCierre, descartarPendiente,
   sincronizarTrabajos, urlsFirmadas, marcarEnviarAlCerrar,
-  revisionDeOrden, guardarRevisionLocal
+  revisionDeOrden, guardarRevisionLocal, guardarFotoRevision, olvidarFotoRevision
 } from './lib/trabajos'
 import { Alerta } from './ui'
 import Firma from './Firma'
@@ -347,7 +347,7 @@ function EquipoOrden({ orden, puedeEditar, enLinea, onRefrescar }) {
 // ---------------------------------------------------------------------------
 const CLIMAS = [['despejado', 'Despejado'], ['parcial', 'Parcial'], ['nublado', 'Nublado']]
 
-function PuntoRevision({ punto, valor, puedeEditar, onCambio }) {
+function PuntoRevision({ punto, valor, puedeEditar, onCambio, onFoto }) {
   const v = valor?.v || ''
   const exigeTexto = v === 'R' || v === 'M'
   return (
@@ -370,6 +370,29 @@ function PuntoRevision({ punto, valor, puedeEditar, onCambio }) {
           <textarea rows={2} value={valor?.obs || ''} disabled={!puedeEditar}
             onChange={e => onCambio({ ...(valor || {}), obs: e.target.value })} />
         </label>
+      )}
+      {exigeTexto && (
+        <>
+          <div className="fila">
+            {puedeEditar && (
+              <label className="btn boton-archivo">
+                ＋ Foto del hallazgo
+                <input type="file" accept="image/*" capture="environment" multiple
+                  className="oculto-accesible" onChange={e => onFoto(e)} />
+              </label>
+            )}
+            {(valor?.fotos?.length > 0) && (
+              <span className="etiqueta">
+                {valor.fotos.length} foto{valor.fotos.length === 1 ? '' : 's'}
+              </span>
+            )}
+          </div>
+          {v === 'M' && !(valor?.fotos?.length > 0) && (
+            <span className="ayuda">
+              Todo punto en "Malo" se documenta con fotografía.
+            </span>
+          )}
+        </>
       )}
       {v && v !== 'NA' && (punto.campos || []).map(([clave, etiqueta]) => (
         <label key={clave} className="campo">
@@ -567,9 +590,37 @@ function RevisionOrden({ orden, puedeEditar }) {
   const cambiarLlegada = c => escribir({ llegada: { ...llegada, ...c } })
   const cambiarPunto = (clave, valor) => escribir({ puntos: { ...(datos.puntos || {}), [clave]: valor } })
 
+  // La foto se queda en el celular pegada a SU punto. En el papel todas caían en un montón
+  // y el formato solo apuntaba cuántas eran; aquí la del hot spot queda en el punto del
+  // hot spot, y así se puede ver el historial de ese punto en ese equipo.
+  async function agregarFotosPunto(clave, e) {
+    const archivos = [...e.target.files]
+    e.target.value = ''
+    const previo = datos.puntos?.[clave] || {}
+    const fotos = [...(previo.fotos || [])]
+    for (const archivo of archivos) {
+      const blob = await redimensionar(archivo)
+      fotos.push({ id: await guardarFotoRevision(orden.id, blob, 'revision'), ruta: null })
+    }
+    cambiarPunto(clave, { ...previo, fotos })
+  }
+
+  async function agregarPlaca(rol, e) {
+    const archivo = e.target.files?.[0]
+    e.target.value = ''
+    if (!archivo) return
+    const blob = await redimensionar(archivo)
+    const previa = datos.placas?.[rol]
+    if (previa?.id) olvidarFotoRevision(previa.id)       // se reemplaza: la vieja ya no sirve
+    const id = await guardarFotoRevision(orden.id, blob, 'placa')
+    escribir({ placas: { ...(datos.placas || {}), [rol]: { id, ruta: null } } })
+  }
+
   const faltas = loQueFalta(datos, formato, ctx)
   const avisos = avisosMediciones(datos, ctx)
   const sugerido = dictamenSugerido(datos, formato)
+  const placas = (esSolar ? PLACAS_SOLAR : PLACAS_GENERADOR).filter(p => aplica(p, ctx))
+  const placasFaltan = placas.filter(p => !datos.placas?.[p.rol] && !placaGuardada(eq, p.rol)?.foto).length
 
   return (
     <section className="tarjeta">
@@ -670,11 +721,64 @@ function RevisionOrden({ orden, puedeEditar }) {
             </button>
             {esta && s.puntos.map(p => (
               <PuntoRevision key={p.clave} punto={p} valor={datos.puntos?.[p.clave]}
-                puedeEditar={puedeEditar} onCambio={val => cambiarPunto(p.clave, val)} />
+                puedeEditar={puedeEditar} onCambio={val => cambiarPunto(p.clave, val)}
+                onFoto={e => agregarFotosPunto(p.clave, e)} />
             ))}
           </div>
         )
       })}
+
+      <div style={{ marginTop: 10 }}>
+        <button type="button" className="orden-item" aria-expanded={abierta === 'placas'}
+          onClick={() => setAbierta(abierta === 'placas' ? null : 'placas')}>
+          <span className="fila" style={{ justifyContent: 'space-between', width: '100%' }}>
+            <strong>Placas de identificación</strong>
+            <span className={`etiqueta${placasFaltan > 0 ? ' etiqueta-aviso' : ''}`}>
+              {placasFaltan > 0 ? `Faltan ${placasFaltan}` : 'Completas'}
+            </span>
+          </span>
+          <span className="ayuda">Se toman una vez y se quedan en el equipo.</span>
+        </button>
+        {abierta === 'placas' && (
+          <>
+            {!orden.equipo_id && (
+              <Alerta tipo="aviso" palabra="Falta">
+                Primero di de qué equipo es la orden, arriba: las placas se guardan en el equipo.
+              </Alerta>
+            )}
+            {placas.map(p => {
+              const local = datos.placas?.[p.rol]
+              const yaEstaba = placaGuardada(eq, p.rol)
+              const lista = !!local || !!yaEstaba?.foto
+              return (
+                <div key={p.rol} className="refaccion">
+                  <span className="fila" style={{ justifyContent: 'space-between' }}>
+                    <strong>{p.titulo}</strong>
+                    {lista && <span className="etiqueta">{local && !local.ruta ? 'Por subir' : 'Guardada'}</span>}
+                  </span>
+                  {yaEstaba && (
+                    <span className="ayuda">
+                      {[yaEstaba.marca, yaEstaba.modelo].filter(Boolean).join(' ')}
+                      {yaEstaba.serie && ` · Serie ${yaEstaba.serie}`}
+                    </span>
+                  )}
+                  {puedeEditar && orden.equipo_id && (
+                    <label className="btn boton-archivo">
+                      {lista ? 'Cambiar la foto' : '＋ Foto de la placa'}
+                      <input type="file" accept="image/*" capture="environment"
+                        className="oculto-accesible" onChange={e => agregarPlaca(p.rol, e)} />
+                    </label>
+                  )}
+                </div>
+              )
+            })}
+            <p className="ayuda">
+              Con la foto basta: en la oficina se leen marca, modelo y serie. Si no hay placa
+              legible, sáltala y captúralos a mano en el equipo.
+            </p>
+          </>
+        )}
+      </div>
 
       <div style={{ marginTop: 10 }}>
         <button type="button" className="orden-item" aria-expanded={abierta === 'med'}

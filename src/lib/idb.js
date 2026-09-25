@@ -25,11 +25,15 @@ function abrir() {
   })
 }
 
-export async function guardarFoto({ id, orden_id, blob }) {
+// `destino` dice a qué pertenece la foto: la parte del técnico, un punto de la revisión o
+// la placa de un componente. Las tres viven en la misma orden, pero suben por caminos
+// distintos y no deben mezclarse: sin esto, la foto de una placa acabaría en la lista de
+// fotos de la parte.
+export async function guardarFoto({ id, orden_id, blob, destino = 'parte' }) {
   const db = await abrir()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(ALMACEN, 'readwrite')
-    tx.objectStore(ALMACEN).put({ id, orden_id, blob })
+    tx.objectStore(ALMACEN).put({ id, orden_id, blob, destino })
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
   })
@@ -45,8 +49,11 @@ export async function fotosDeOrden(orden_id) {
   })
 }
 
-export async function borrarFotosDeOrden(orden_id) {
-  const fotos = await fotosDeOrden(orden_id)
+// `destinos` acota qué se tira: tirar la parte pendiente no debe llevarse por delante las
+// fotos de la revisión, que viven en la misma orden.
+export async function borrarFotosDeOrden(orden_id, destinos = null) {
+  const todas = await fotosDeOrden(orden_id)
+  const fotos = destinos ? todas.filter(f => destinos.includes(f.destino || 'parte')) : todas
   const db = await abrir()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(ALMACEN, 'readwrite')

@@ -364,13 +364,31 @@ export function avisosMediciones(datos, ctx = {}) {
   return avisos
 }
 
-// Las placas que se fotografían una vez y quedan en el equipo, no en la orden.
-export const PLACAS = [
-  ['inversor', 'Inversor'],
-  ['modulos', 'Paneles'],
-  ['bateria', 'Batería / BESS', 'bess'],
-  ['bms', 'BMS / monitoreo'],
+// Las placas que se fotografían una vez y quedan en el EQUIPO, no en la orden: no cuentan
+// el estado, cuentan la identidad. En visitas siguientes ya no se vuelven a pedir.
+// Llenan `equipos.atributos.componentes` (SQL 25) y son la entrada de la lectura con el
+// agente. Los `rol` tienen que coincidir con los que acepta `guardar_placa`.
+export const PLACAS_SOLAR = [
+  { rol: 'inversor_1', titulo: 'Inversor' },
+  { rol: 'inversor_2', titulo: 'Segundo inversor o cargador' },
+  { rol: 'modulos', titulo: 'Paneles' },
+  { rol: 'bateria', titulo: 'Batería / BESS', solo: 'bess' },
+  { rol: 'bms', titulo: 'BMS / monitoreo' },
 ]
+
+export const PLACAS_GENERADOR = [
+  { rol: 'generador', titulo: 'Generador' },
+  { rol: 'motor', titulo: 'Motor' },
+  { rol: 'alternador', titulo: 'Alternador' },
+  { rol: 'tablero', titulo: 'Controlador o tablero de transferencia' },
+]
+
+// Qué componente del equipo ya tiene su placa guardada, para no volver a pedirla.
+export function placaGuardada(equipo, rol) {
+  const lista = equipo?.atributos?.componentes
+  if (!Array.isArray(lista)) return null
+  return lista.find(c => c?.rol === rol) || null
+}
 
 export const DICTAMENES = [
   ['aprobado', 'Aprobado', 'Operación óptima y segura. Queda en servicio sin restricciones.'],

@@ -162,6 +162,61 @@ export function revisionDeOrden(orden) {
   return null
 }
 
+// Guarda una foto en el celular y devuelve su id. Quien la pide decide dónde anotarla:
+// en un punto de la revisión o en la placa de un componente.
+export async function guardarFotoRevision(orden_id, blob, destino = 'revision') {
+  const id = crypto.randomUUID()
+  await guardarFoto({ id, orden_id, blob, destino })
+  return id
+}
+
+export async function olvidarFotoRevision(id) {
+  try { await borrarFoto(id) } catch { /* si no estaba, no pasa nada */ }
+}
+
+// Sube las fotos de la revisión que todavía no tienen ruta y devuelve los datos con las
+// rutas puestas. Primero los archivos y luego el renglón, igual que en la parte: si el
+// renglón subiera antes, quedaría apuntando a fotos que nunca llegaron.
+async function subirFotosDeRevision(orden_id, datos, equipo_id) {
+  const locales = await fotosDeOrden(orden_id)
+  const blobDe = id => locales.find(x => x.id === id)?.blob
+  let cambio = false
+  const puntos = { ...(datos.puntos || {}) }
+
+  for (const [clave, punto] of Object.entries(puntos)) {
+    const fotos = punto?.fotos || []
+    if (fotos.length === 0) continue
+    const nuevas = []
+    for (const f of fotos) {
+      if (f.ruta) { nuevas.push(f); continue }
+      const blob = blobDe(f.id)
+      if (!blob) { nuevas.push(f); continue }          // ya no está en el celular
+      const ruta = `${orden_id}/revision/${f.id}.jpg`
+      const { error } = await supabase.storage.from(BUCKET)
+        .upload(ruta, blob, { contentType: 'image/jpeg', upsert: true })
+      if (error) throw error
+      nuevas.push({ ...f, ruta })
+      cambio = true
+    }
+    puntos[clave] = { ...punto, fotos: nuevas }
+  }
+
+  const placas = { ...(datos.placas || {}) }
+  for (const [rol, placa] of Object.entries(placas)) {
+    if (!placa || placa.ruta) continue
+    const blob = blobDe(placa.id)
+    if (!blob || !equipo_id) continue
+    const ruta = `placas/${equipo_id}/${rol}.jpg`
+    const { error } = await supabase.storage.from(BUCKET)
+      .upload(ruta, blob, { contentType: 'image/jpeg', upsert: true })
+    if (error) throw error
+    placas[rol] = { ...placa, ruta }
+    cambio = true
+  }
+
+  return cambio ? { ...datos, puntos, placas } : datos
+}
+
 async function subirRevision(item) {
   try {
     const actual = revisionLocal(item.orden_id)
@@ -169,10 +224,32 @@ async function subirRevision(item) {
       escribirLocal(COLA, sacarSiSigue(leerCola(), item.clave, item.n))
       return { ok: true }
     }
+
+    const orden = leerTrabajos().find(o => o.id === item.orden_id)
+    let datos = await subirFotosDeRevision(item.orden_id, actual.datos || {}, orden?.equipo_id)
+
+    // Las placas van al EQUIPO, no a la orden: una función aparte las escribe en
+    // `atributos.componentes` (25). Se marca cuál ya se guardó para no repetir la
+    // llamada en cada sincronización.
+    const placas = { ...(datos.placas || {}) }
+    for (const [rol, placa] of Object.entries(placas)) {
+      if (!placa?.ruta || placa.guardada) continue
+      const { error } = await supabase.rpc('guardar_placa', {
+        p_orden: item.orden_id, p_rol: rol, p_ruta: placa.ruta, p_datos: placa.datos || null
+      })
+      if (error) return fallo(error)
+      placas[rol] = { ...placa, guardada: true }
+      datos = { ...datos, placas }
+    }
+
+    if (datos !== (actual.datos || {})) {
+      escribirRevision(item.orden_id, { ...revisionLocal(item.orden_id), datos })
+    }
+
     const { error } = await supabase.from('orden_revision').upsert({
       orden_id: item.orden_id,
       tipo: actual.tipo,
-      datos: actual.datos || {}
+      datos
     }, { onConflict: 'orden_id' })
     if (error) return fallo(error)
 
@@ -200,9 +277,12 @@ export async function descartarPendiente(clave) {
   escribirLocal(COLA, leerCola().filter(i => i.clave !== clave))
   if (item?.tipo === 'parte') {
     escribirParte(item.orden_id, null)
-    try { await borrarFotosDeOrden(item.orden_id) } catch { /* nada */ }
+    try { await borrarFotosDeOrden(item.orden_id, ['parte']) } catch { /* nada */ }
   }
-  if (item?.tipo === 'revision') escribirRevision(item.orden_id, null)
+  if (item?.tipo === 'revision') {
+    escribirRevision(item.orden_id, null)
+    try { await borrarFotosDeOrden(item.orden_id, ['revision', 'placa']) } catch { /* nada */ }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -308,8 +388,11 @@ async function subirCierre(item) {
     if (error) return fallo(error)
 
     // Cerrada (o ya lo estaba: el reintento de un cierre que sí llegó). Se limpia el celular.
+    // Aquí sí se tira TODO: la revisión sube antes que el cierre, así que sus fotos ya
+    // están en Storage.
     try { await borrarFotosDeOrden(item.orden_id) } catch { /* nada */ }
     escribirParte(item.orden_id, null)
+    escribirRevision(item.orden_id, null)
     escribirLocal(CACHE, leerTrabajos().map(o => (o.id === item.orden_id ? { ...o, estado: 'cerrada' } : o)))
     escribirLocal(COLA, sacarSiSigue(leerCola(), item.clave, item.n))
     return { ok: true }
