@@ -13,7 +13,7 @@ import {
 } from './lib/documentos'
 import { enlaceWhatsApp } from './lib/avisos'
 import {
-  FORMATO_SOLAR, FORMATO_GENERADOR, COMBUSTIBLES_GEN, TIPOS_SERVICIO_GEN,
+  COMBUSTIBLES_GEN, TIPOS_SERVICIO_GEN, formatoDe, contextoDeRevision,
   CALIFICACIONES, DICTAMENES, seccionesVisibles, avanceSeccion, aplica,
   dictamenSugerido, loQueFalta, avisosMediciones, veredictoString,
   LECTURAS_GEN, TIPOS_TRANSFERENCIA, TRANSFERENCIA_GEN, AC_SOLAR, BANCO_SOLAR,
@@ -566,20 +566,14 @@ function RevisionOrden({ orden, puedeEditar }) {
   // Sin equipo todavía (primera visita), se asume generador, que es lo más común.
   const esSolar = eq?.tipo === 'solar' || eq?.tipo === 'bateria' || guardada?.tipo === 'solar'
   const tipo = esSolar ? 'solar' : 'generador'
-  const formato = esSolar ? FORMATO_SOLAR : FORMATO_GENERADOR
+  const formato = formatoDe(tipo)
   const llegada = datos.llegada || {}
 
-  // Por defecto, un equipo de tipo batería sí tiene banco; en un fotovoltaico lo dice el técnico.
-  const bess = llegada.bess ?? (eq?.tipo === 'bateria')
-  const plomo = !!llegada.plomo
-  // El combustible decide qué puntos existen. Sale del equipo; si no está capturado,
-  // lo elige el técnico aquí (y queda anotado para este servicio).
-  const combustible = llegada.combustible || eq?.atributos?.combustible || ''
-  // Las fases que el equipo no tiene no se preguntan: en el papel siempre venían las tres.
-  const trifasico = llegada.trifasico ?? false
-  const ctx = esSolar
-    ? { bess, plomo, trifasico }
-    : { combustible, trifasico, tipo_servicio: llegada.tipo_servicio, mayor: llegada.tipo_servicio === 'C' }
+  // El contexto decide qué puntos existen (baterías, combustible, fases, tipo de servicio)
+  // y lo arma `revision.js`, no esta pantalla: el PDF tiene que llegar a lo mismo o
+  // acabaría mostrando puntos que el técnico nunca vio.
+  const ctx = contextoDeRevision(tipo, datos, eq)
+  const { bess = false, plomo = false, trifasico = false, combustible = '' } = ctx
   const secciones = seccionesVisibles(formato, ctx)
 
   function escribir(cambio) {

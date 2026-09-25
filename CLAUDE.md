@@ -317,6 +317,31 @@ función, y el admin ya tiene todos los datos en pantalla): no cambia nada del f
   service worker sí lo precachea en segundo plano en todos los celulares al instalar/actualizar
   (`vite.config.js` mete TODO el bundle a la lista, sin distinguir), así que no es gratis del
   todo. El resto del bundle ya se dividió por pantalla: ver "Paquetes por pantalla".
+- **El PDF lleva el formato de mantenimiento (25/09/2026).** Ya no es solo "trabajo
+  realizado": arma el documento completo desde `orden_revision`.
+  - **Dictamen arriba de todo**, en un recuadro: es lo primero que el cliente quiere saber.
+    Luego las condiciones de llegada (clima e irradiancia en solar; tipo de servicio,
+    combustible y fases en generador).
+  - **Los puntos, sección por sección**, con su calificación en palabra (no "B", que en el
+    papel es un botón), sus datos numéricos y el hallazgo indentado cuando lo hay. Se
+    imprimen **solo los contestados** y solo las secciones que aplican.
+  - **Mediciones**: strings con su veredicto, parámetros AC y banco en solar; lecturas en
+    vacío y con carga más la prueba de transferencia en generador.
+  - **Anexo de evidencia**: las fotos van **dentro** del documento, dos por fila y con el
+    punto del que son. Tope de `MAX_FOTOS_PDF` (12) para que quepa en WhatsApp; si hay más,
+    lo dice. Un PDF de ejemplo con 3 páginas y 2 fotos pesó 120 kB y tardó 95 ms.
+  - Pantalla y PDF comparten `contextoDeRevision`, `formatoDe` y `revisionDe` de
+    `revision.js`: si cada uno dedujera por su cuenta qué aplica, el papel mostraría puntos
+    que el técnico nunca vio.
+  - **Dos defectos que solo aparecieron generando el PDF de verdad:**
+    1. **Helvetica solo escribe WinAnsi.** Un carácter fuera de ahí no falla: sale en dos
+       bytes y en el PDF se ve basura. Le pasó a la **Ω** de "Aislamiento (MΩ)". `paraPdf()`
+       traduce los que usamos (Ω→ohm, Δ→delta, −→-, ±→+/-, →→->), deja pasar la puntuación
+       que sí está en WinAnsi y marca con `?` lo que no reconoce (15 casos en Node).
+    2. **jsPDF no valida las imágenes**: le das cualquier cosa con cara de JPEG y la
+       incrusta, y el visor muestra un hueco. `fotoDataUrl` ahora la **decodifica** con
+       `createImageBitmap` antes de entregarla; una foto corrupta se salta y el documento
+       sigue completo (comprobado: 2 imágenes de 3, sin error y con la firma en su lugar).
 - **No probado con datos reales:** la firma no se pudo insertar de verdad en el emulador (el
   Supabase falso no tiene un archivo de firma real que descargar), así que solo se comprobó la
   rama "El cliente no firmó esta orden." Falta ver un PDF real, con firma, abierto en un celular.

@@ -13,6 +13,31 @@
 import { supabase } from './supabase'
 import { explicarError } from './errores'
 import { hoyLocal, semanaLocal } from './fechas'
+import {
+  revisionDe, formatoDe, contextoDeRevision, seccionesVisibles, aplica,
+  DICTAMENES, CALIFICACIONES, veredictoString, VEREDICTOS, COLUMNAS_STRING,
+  AC_SOLAR, BANCO_SOLAR, LECTURAS_GEN, TIPOS_TRANSFERENCIA, TRANSFERENCIA_GEN,
+} from './revision'
+import { nombreCombustible } from './equipoCampo'
+
+// "B" en la pantalla es un botón; en el papel tiene que leerse solo.
+const CALIFICACION_LARGA = Object.fromEntries(CALIFICACIONES)
+
+// Las fuentes estándar de jsPDF (Helvetica) solo saben escribir WinAnsi. Un carácter fuera
+// de ahí no falla: sale escrito en dos bytes y en el PDF se ve basura. Nos pasó con la Ω de
+// "Aislamiento (MΩ)". Los que de verdad usamos se traducen; del resto, la puntuación que sí
+// está en WinAnsi se deja pasar y lo demás se marca, para que nadie firme un documento con
+// un dato ilegible sin enterarse.
+const TRADUCE = { 'Ω': 'ohm', 'Δ': 'delta ', '−': '-', '→': '->', '±': '+/-' }
+const PUNTUACION_OK = '–—‘’“”„†‡•…‰‹›€™Šš Žž Ÿƒˆ˜Œœ'.replace(/ /g, '')
+
+export function paraPdf(texto) {
+  let s = String(texto ?? '')
+  for (const [de, a] of Object.entries(TRADUCE)) s = s.split(de).join(a)
+  return [...s].map(ch => (
+    ch.codePointAt(0) <= 255 || PUNTUACION_OK.includes(ch) ? ch : '?'
+  )).join('')
+}
 
 const BUCKET = 'ordenes'
 const NOCHE = [12, 21, 32]     // #0c1520
@@ -83,6 +108,25 @@ async function logoDataUrl() {
 
 // La firma vive en el bucket privado: se descarga con la sesión del admin (sin señal firmada:
 // download() ya aplica RLS). Si no hay firma o falla, se sigue sin ella.
+// Cuántas fotos entran en el anexo. Cada una pesa unos 150 kB y el PDF tiene que poder
+// mandarse por WhatsApp; el resto se queda en el expediente.
+const MAX_FOTOS_PDF = 12
+
+async function fotoDataUrl(ruta) {
+  if (!ruta) return null
+  try {
+    const { data, error } = await supabase.storage.from(BUCKET).download(ruta)
+    if (error || !data) return null
+    // jsPDF NO valida la imagen: si le das cualquier cosa con cara de JPEG la incrusta y
+    // el visor muestra un hueco. Se comprueba aquí decodificándola de verdad.
+    const mapa = await createImageBitmap(data)
+    mapa.close()
+    return await blobADataUrl(data)
+  } catch {
+    return null      // archivo corrupto o formato que el navegador no abre
+  }
+}
+
 async function firmaDataUrl(ruta) {
   if (!ruta) return null
   try {
@@ -112,19 +156,19 @@ export async function construirPdfOrden(orden, nombreTecnico, nombreTecnico2, ti
   function titulo(texto) {
     saltoSiHaceFalta(12)
     doc.setFont('helvetica', 'bold').setFontSize(12).setTextColor(...NOCHE)
-    doc.text(texto, izq, y)
+    doc.text(paraPdf(texto), izq, y)
     y += 6
     doc.setFont('helvetica', 'normal').setFontSize(10.5).setTextColor(...TEXTO)
   }
   function parrafo(texto) {
-    const lineas = doc.splitTextToSize(texto, der - izq)
+    const lineas = doc.splitTextToSize(paraPdf(texto), der - izq)
     saltoSiHaceFalta(lineas.length * 5 + 2)
     doc.text(lineas, izq, y)
     y += lineas.length * 5 + 3
   }
   function linea(texto) {
     saltoSiHaceFalta(6)
-    doc.text(texto, izq, y)
+    doc.text(paraPdf(texto), izq, y)
     y += 6
   }
 
@@ -154,8 +198,109 @@ export async function construirPdfOrden(orden, nombreTecnico, nombreTecnico2, ti
   if (tecnicos) linea(`Atendió: ${tecnicos}`)
   y += 3
 
+  // ---- la revisión: el formato de mantenimiento que llenó el técnico ----
+  const rev = revisionDe(orden)
+  const formato = rev ? formatoDe(rev.tipo) : null
+  const ctxRev = rev ? contextoDeRevision(rev.tipo, rev.datos, eq) : null
+
+  if (rev) {
+    // El dictamen va arriba de todo: es lo primero que el cliente quiere saber.
+    const dic = DICTAMENES.find(([k]) => k === rev.datos.dictamen)
+    if (dic) {
+      saltoSiHaceFalta(20)
+      doc.setFillColor(...CLARO)
+      doc.rect(izq, y - 5, der - izq, 16, 'F')
+      doc.setFont('helvetica', 'bold').setFontSize(12).setTextColor(...NOCHE)
+      doc.text(paraPdf(`Dictamen: ${dic[1]}`), izq + 3, y + 1)
+      doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...TEXTO)
+      doc.text(doc.splitTextToSize(paraPdf(dic[2]), der - izq - 6), izq + 3, y + 6)
+      y += 18
+      if (rev.datos.motivo_dictamen?.trim()) parrafo(rev.datos.motivo_dictamen.trim())
+    }
+
+    const ll = rev.datos.llegada || {}
+    const condiciones = rev.tipo === 'solar'
+      ? [ll.clima && `Clima: ${ll.clima}`,
+         ll.irradiancia && `Irradiancia: ${ll.irradiancia} W/m²`,
+         ll.temp && `Temperatura ambiente: ${ll.temp} °C`]
+      : [ll.tipo_servicio && `Servicio tipo ${ll.tipo_servicio}`,
+         ctxRev.combustible && `Combustible: ${nombreCombustible(ctxRev.combustible) || ctxRev.combustible}`,
+         `${ctxRev.trifasico ? 'Trifásico' : 'Monofásico'}`]
+    const texto = condiciones.filter(Boolean).join(' · ')
+    if (texto) { linea(texto); y += 2 }
+  }
+
   titulo('Trabajo realizado')
   parrafo(orden.trabajos_realizados?.trim() || 'Sin notas capturadas.')
+
+  if (rev) {
+    for (const s of seccionesVisibles(formato, ctxRev)) {
+      const contestados = s.puntos.filter(p => rev.datos.puntos?.[p.clave]?.v)
+      if (contestados.length === 0) continue
+      titulo(`${s.clave}. ${s.titulo}`)
+      for (const p of s.puntos) {
+        const r = rev.datos.puntos?.[p.clave]
+        if (!r?.v) continue
+        const extras = (p.campos || [])
+          .map(([k, etiqueta]) => (r[k] ? `${etiqueta}: ${r[k]}` : null))
+          .filter(Boolean).join(' · ')
+        linea(`${p.clave}  ${p.titulo} — ${CALIFICACION_LARGA[r.v] || r.v}`)
+        if (extras) { doc.setFontSize(9.5); linea(`      ${extras}`); doc.setFontSize(10.5) }
+        if (r.obs?.trim()) {
+          doc.setFontSize(9.5)
+          parrafo(`      ${r.obs.trim()}`)
+          doc.setFontSize(10.5)
+        }
+      }
+      y += 2
+    }
+
+    // ---- mediciones ----
+    const med = rev.datos.mediciones || {}
+    if (rev.tipo === 'solar') {
+      const strings = (med.strings || []).filter(s => Object.values(s).some(v => v !== ''))
+      if (strings.length > 0) {
+        titulo('Mediciones por string')
+        strings.forEach((s, i) => {
+          const v = veredictoString(s)
+          const partes = COLUMNAS_STRING.map(([k, t]) => (s[k] ? `${t}: ${s[k]}` : null)).filter(Boolean)
+          linea(`String ${i + 1} — ${v ? VEREDICTOS[v] : 'sin veredicto'}`)
+          doc.setFontSize(9.5); parrafo(`      ${partes.join(' · ')}`); doc.setFontSize(10.5)
+        })
+      }
+      const ac = AC_SOLAR.filter(c => aplica(c, ctxRev) && med.ac?.[c.clave])
+      if (ac.length > 0) {
+        titulo('Parámetros eléctricos')
+        linea(ac.map(c => `${c.titulo}: ${med.ac[c.clave]} ${c.unidad}`).join(' · '))
+      }
+      const banco = BANCO_SOLAR.filter(c => aplica(c, ctxRev) && med.banco?.[c.clave])
+      if (banco.length > 0) {
+        titulo('Banco y tierra')
+        for (const c of banco) linea(`${c.titulo}: ${med.banco[c.clave]} ${c.unidad}`)
+      }
+    } else {
+      const lecturas = LECTURAS_GEN.filter(c => aplica(c, ctxRev) &&
+        (med.lecturas?.[c.clave]?.vacio || med.lecturas?.[c.clave]?.carga))
+      if (lecturas.length > 0) {
+        titulo('Prueba de funcionamiento')
+        if (med.carga_pct) linea(`Prueba con carga al ${med.carga_pct} % de la capacidad.`)
+        for (const c of lecturas) {
+          const l = med.lecturas[c.clave]
+          const partes = [l.vacio && `en vacío ${l.vacio}`, l.carga && `con carga ${l.carga}`].filter(Boolean)
+          linea(`${c.titulo}${c.unidad ? ` (${c.unidad})` : ''}: ${partes.join(' · ')}`)
+        }
+      }
+      const t = med.transferencia || {}
+      if (t.tipo || t.resultado) {
+        titulo('Prueba de transferencia')
+        const como = TIPOS_TRANSFERENCIA.find(([k]) => k === t.tipo)?.[1]
+        if (como) linea(`Cómo se probó: ${como}`)
+        for (const [k, etiqueta] of TRANSFERENCIA_GEN) if (t[k]) linea(`${etiqueta}: ${t[k]}`)
+        if (t.resultado) linea(`Resultado: ${t.resultado === 'aprobada' ? 'Aprobada' : 'No aprobada'}`)
+      }
+    }
+    if (rev.datos.reporte_termico) linea('Se entrega reporte térmico por separado.')
+  }
 
   if (orden.observaciones?.trim()) { titulo('Observaciones'); parrafo(orden.observaciones.trim()) }
   if (orden.recomendaciones?.trim()) { titulo('Recomendaciones'); parrafo(orden.recomendaciones.trim()) }
@@ -178,6 +323,54 @@ export async function construirPdfOrden(orden, nombreTecnico, nombreTecnico2, ti
       titulo('Material adicional (no entregado por almacén)')
       for (const r of adicionales) linea(`${r.cantidad || 1} × ${r.descripcion}`)
       y += 2
+    }
+  }
+
+  // ---- evidencia fotográfica ----
+  // El papel solo podía apuntar "No. de fotos ___" y una carpeta; aquí la foto va dentro
+  // del documento y dice de qué punto es. Se limita el número para que el PDF siga
+  // pesando lo que se puede mandar por WhatsApp.
+  if (rev) {
+    const conFoto = []
+    for (const s of seccionesVisibles(formato, ctxRev)) {
+      for (const p of s.puntos) {
+        for (const f of rev.datos.puntos?.[p.clave]?.fotos || []) {
+          if (f.ruta) conFoto.push({ punto: `${p.clave} ${p.titulo}`, ruta: f.ruta })
+        }
+      }
+    }
+    if (conFoto.length > 0) {
+      doc.addPage(); y = 20
+      titulo('Evidencia fotográfica')
+      const muestra = conFoto.slice(0, MAX_FOTOS_PDF)
+      if (conFoto.length > muestra.length) {
+        parrafo(`Se anexan ${muestra.length} de ${conFoto.length} fotografías; el resto queda en el expediente.`)
+      }
+      const anchoFoto = (der - izq - 6) / 2
+      let columna = 0
+      let filaAlto = 0
+      for (const f of muestra) {
+        const imagen = await fotoDataUrl(f.ruta)
+        if (!imagen) continue
+        const altoFoto = anchoFoto * 0.75
+        if (columna === 0) { saltoSiHaceFalta(altoFoto + 12); filaAlto = altoFoto + 12 }
+        const x = izq + columna * (anchoFoto + 6)
+        try {
+          doc.addImage(imagen, 'JPEG', x, y, anchoFoto, altoFoto)
+        } catch {
+          // Una foto que no se puede pintar (archivo corrupto, formato raro) no puede
+          // tumbar la orden entera: se deja el hueco anotado y el documento sigue.
+          doc.setDrawColor(...TEXTO).rect(x, y, anchoFoto, altoFoto)
+          doc.setFontSize(9)
+          doc.text('Foto no legible', x + 4, y + altoFoto / 2)
+        }
+        doc.setFontSize(8.5)
+        doc.text(doc.splitTextToSize(paraPdf(f.punto), anchoFoto), x, y + altoFoto + 4)
+        doc.setFontSize(10.5)
+        columna = columna === 0 ? 1 : 0
+        if (columna === 0) y += filaAlto
+      }
+      if (columna === 1) y += filaAlto
     }
   }
 

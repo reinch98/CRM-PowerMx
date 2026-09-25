@@ -421,6 +421,32 @@ export function seccionesVisibles(formato, ctx = {}) {
 
 export const respuesta = (datos, clave) => datos?.puntos?.[clave] || null
 
+export const formatoDe = tipo => (tipo === 'solar' ? FORMATO_SOLAR : FORMATO_GENERADOR)
+
+// Qué se muestra de una revisión ya guardada. Vive aquí y no en cada pantalla porque lo
+// usan la captura del técnico y el PDF: si cada una lo dedujera por su cuenta, el papel
+// acabaría mostrando puntos que el técnico nunca vio.
+export function contextoDeRevision(tipo, datos, equipo) {
+  const llegada = datos?.llegada || {}
+  const trifasico = llegada.trifasico ?? false
+  if (tipo === 'solar') {
+    return { bess: llegada.bess ?? (equipo?.tipo === 'bateria'), plomo: !!llegada.plomo, trifasico }
+  }
+  return {
+    combustible: llegada.combustible || equipo?.atributos?.combustible || '',
+    trifasico,
+    tipo_servicio: llegada.tipo_servicio,
+    mayor: llegada.tipo_servicio === 'C',
+  }
+}
+
+// La revisión de una orden, venga del servidor como fila o como lista.
+export function revisionDe(orden) {
+  const r = Array.isArray(orden?.orden_revision) ? orden.orden_revision[0] : orden?.orden_revision
+  if (!r) return null
+  return { tipo: r.tipo || 'generador', datos: r.datos || {} }
+}
+
 // "4 de 6" por sección, para el contador del encabezado plegado.
 export function avanceSeccion(datos, seccion) {
   const puntos = puntosDe(seccion)
