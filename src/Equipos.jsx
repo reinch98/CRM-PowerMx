@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { Alerta } from './ui'
 import { textoHorometro, cargarEquiposSinSerie } from './lib/equipoCampo'
+import {
+  CAMPOS_COMPONENTE, nombreRol, componentesPorLeer, diferencias,
+  leerPlaca, guardarComponente, urlDeFoto
+} from './lib/placas'
 
 // Campos que cambian según el tipo de equipo. Se guardan dentro de atributos (jsonb).
 const ATRIBUTOS = {
@@ -69,6 +73,102 @@ const vacio = {
 // Columnas numéricas y de fecha: Postgres no acepta cadena vacía, hay que mandar null.
 const NUMERICAS = ['capacidad_kw', 'anio', 'horas_uso', 'frecuencia_meses']
 const FECHAS = ['fecha_instalacion', 'proximo_mantenimiento']
+
+// ---------------------------------------------------------------------------
+// Una placa fotografiada en campo a la que le faltan datos.
+//
+// El agente PROPONE lo que leyó; no se guarda solo. Una placa sucia o a contraluz da
+// series equivocadas, y una serie mal capturada es peor que ninguna: se arrastra a
+// cotizaciones y órdenes y nadie sabe que está mal. Por eso todo pasa por esta revisión.
+// ---------------------------------------------------------------------------
+function PlacaPorLeer({ equipo, componente, onGuardado }) {
+  const [campos, setCampos] = useState(() =>
+    Object.fromEntries(CAMPOS_COMPONENTE.map(([k]) => [k, componente[k] ?? ''])))
+  const [filas, setFilas] = useState(null)      // lo que cambiaría, tras leer
+  const [notas, setNotas] = useState('')
+  const [foto, setFoto] = useState(null)
+  const [ocupado, setOcupado] = useState(false)
+  const [error, setError] = useState('')
+  const [listo, setListo] = useState(false)
+
+  async function verFoto() {
+    setFoto(await urlDeFoto(componente.foto))
+  }
+
+  async function leer() {
+    setOcupado(true); setError(''); setNotas('')
+    const r = await leerPlaca(componente.foto)
+    setOcupado(false)
+    if (!r.ok) return setError(r.texto)
+    setFilas(diferencias(componente, r.leido))
+    setCampos(c => ({ ...c, ...r.leido }))
+    if (r.notas) setNotas(r.notas)
+  }
+
+  async function guardar() {
+    setOcupado(true); setError('')
+    const r = await guardarComponente(equipo.id, componente.rol, campos, filas ? 'agente' : 'oficina')
+    setOcupado(false)
+    if (!r.ok) return setError(r.texto)
+    setListo(true)
+    onGuardado()
+  }
+
+  return (
+    <div className="refaccion">
+      <strong>{nombreRol(componente.rol)}</strong>
+      <span className="ayuda">
+        {equipo.clientes?.nombre}
+        {equipo.numero_serie ? ` · equipo ${equipo.numero_serie}` : ' · equipo sin serie'}
+      </span>
+
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {listo && <Alerta tipo="ok" palabra="Listo">Guardado en el equipo.</Alerta>}
+      {notas && <Alerta tipo="aviso" palabra="El agente dice">{notas}</Alerta>}
+
+      <div className="fila">
+        <button type="button" onClick={verFoto}>Ver la foto</button>
+        <button type="button" className="btn-primario" disabled={ocupado} onClick={leer}>
+          {ocupado ? 'Leyendo…' : 'Leer la placa'}
+        </button>
+      </div>
+      {foto && (
+        <a href={foto} target="_blank" rel="noreferrer">
+          <img src={foto} alt={`Placa de ${nombreRol(componente.rol)}`}
+            style={{ maxWidth: '100%', borderRadius: 8, marginTop: 8 }} />
+        </a>
+      )}
+
+      {filas && (
+        <p className="ayuda" style={{ marginTop: 8 }}>
+          Revisa lo que leyó antes de guardar. Lo marcado como <strong>distinto</strong> ya
+          tenía otro valor capturado.
+        </p>
+      )}
+
+      <div className="rejilla-2">
+        {CAMPOS_COMPONENTE.map(([k, etiqueta]) => {
+          const fila = filas?.find(f => f.clave === k)
+          return (
+            <label key={k} className="campo">
+              <span>
+                {etiqueta}
+                {fila?.nuevo && <> · <span className="etiqueta">nuevo</span></>}
+                {fila?.distinto && <> · <span className="etiqueta etiqueta-aviso">distinto</span></>}
+              </span>
+              <input value={campos[k] ?? ''} onChange={e => setCampos({ ...campos, [k]: e.target.value })} />
+              {fila?.distinto && <span className="ayuda">Antes decía: {fila.antes}</span>}
+            </label>
+          )
+        })}
+      </div>
+
+      <button type="button" className="btn-primario" disabled={ocupado} onClick={guardar}>
+        {ocupado ? 'Guardando…' : 'Guardar en el equipo'}
+      </button>
+    </div>
+  )
+}
 
 export default function Equipos() {
   const [clientes, setClientes] = useState([])
@@ -163,6 +263,10 @@ export default function Equipos() {
     if (error) setError(error.message)
     else cargarEquipos()
   }
+
+  // Todas las placas con foto a las que les falta algún dato, de todos los equipos.
+  const porLeer = equipos.flatMap(eq =>
+    componentesPorLeer(eq).map(componente => ({ equipo: eq, componente })))
 
   const camposTexto = [
     ['numero_serie', 'Número de serie'],
@@ -266,6 +370,22 @@ export default function Equipos() {
           </button>
         </form>
       </details>
+
+      {/* Placas fotografiadas en campo a las que les faltan datos. El técnico ya hizo su
+          parte tomando la foto; aquí se leen y se revisan. */}
+      {porLeer.length > 0 && (
+        <section className="tarjeta">
+          <h3>Placas por leer ({porLeer.length})</h3>
+          <p className="ayuda">
+            El técnico fotografió estas placas en el sitio. El agente propone marca, modelo y
+            serie; tú los revisas antes de que se guarden en el equipo.
+          </p>
+          {porLeer.map(({ equipo, componente }) => (
+            <PlacaPorLeer key={`${equipo.id}-${componente.rol}`} equipo={equipo}
+              componente={componente} onGuardado={cargarEquipos} />
+          ))}
+        </section>
+      )}
 
       {/* Los que el técnico dio de alta en campo con la placa ilegible. La última visita
           dice a quién preguntarle por la serie. */}

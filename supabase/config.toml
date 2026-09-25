@@ -430,3 +430,10 @@ verify_jwt = false
 # ---------------------------------------------------------------------------
 [functions.whatsapp]
 verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# Lectura de placas: la llama el CRM con la sesión del admin, y la función valida
+# ella misma con auth.getUser antes de tocar la API. Mismo trato que `agente`.
+# ---------------------------------------------------------------------------
+[functions.leer-placa]
+verify_jwt = false

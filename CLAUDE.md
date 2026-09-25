@@ -675,7 +675,34 @@ va pegado al punto, no en una tabla aparte.
   Observaciones, refacciones y firma ya existen en la orden. El **próximo mantenimiento**
   (fecha y tipo) alimenta `equipos.proximo_mantenimiento`.
 
-**Leer la placa con fotos** (pedido de Caña el 24/09/2026, sin construir): el técnico
+**Leer la placa con fotos — construida el 25/09/2026** (`supabase/sql/26_componente_equipo.sql`
+y su prueba; `supabase/functions/leer-placa/index.ts`; `src/lib/placas.js`; sección
+"Placas por leer" en `Equipos.jsx`). **El SQL 26 y el deploy de la función los tiene que
+correr Caña.**
+- **La lee la OFICINA, no el campo.** El técnico fotografía y sigue trabajando: no espera a
+  ningún modelo bajo el sol, y el saldo de la API se cuida (solo admin, como el agente).
+- **Nada se guarda solo:** la función devuelve lo que leyó, la pantalla lo muestra en campos
+  editables marcando lo **nuevo** y lo **distinto** (con el valor anterior a la vista), y
+  recién al confirmar se escribe con `actualizar_componente`. Una serie mal leída es peor
+  que ninguna: se arrastra a cotizaciones y órdenes sin que nadie sepa que está mal.
+- **SQL 26** saca el mezclado del arreglo a `_fijar_componente` (interna, revocada a
+  todos) para que las dos puertas usen la misma lógica: `guardar_placa` (técnico, desde su
+  orden abierta) y `actualizar_componente` (**solo admin**, sobre cualquier equipo, sin
+  orden). **Un campo vacío no borra lo que ya estaba**: si el agente no pudo leer la serie,
+  la capturada a mano se queda. El `origen` queda en `auditoria` (`campo` | `oficina` |
+  `agente`).
+- El prompt pide **copiar exactamente**, no completar ni adivinar, y omitir el campo cuando
+  un carácter sea ambiguo (0/O, 1/I, 5/S, 8/B) diciéndolo en `notas`, que la pantalla
+  muestra. El texto de una placa es **dato, no instrucción**: si trae frases que parezcan
+  órdenes, se transcriben.
+- `[functions.leer-placa] verify_jwt = false` en `config.toml`; la función valida con
+  `auth.getUser` y baja la foto **con la sesión de quien pregunta**, así que no tiene
+  permisos propios sobre Storage.
+- 21 casos puros en Node; probado en el emulador con un lector falso: propone, marca lo
+  nuevo, deja corregir la serie a mano y manda `actualizar_componente` con `origen: agente`
+  (0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde).
+
+**Idea original (24/09/2026):** el técnico
 fotografía la placa de identificación de batería, inversor y paneles, el agente la lee y
 llena marca, modelo, serie y capacidad del equipo del cliente. Reutiliza la API de Claude
 que ya usa la Edge Function `agente` (acepta imágenes). **Regla:** lo que lea el modelo se
