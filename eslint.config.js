@@ -23,4 +23,10 @@ export default defineConfig([
       'no-unused-vars': ['error', { varsIgnorePattern: '^_', ignoreRestSiblings: true }],
     },
   },
+  {
+    // Las pruebas corren en Node (`npm test`), no en el navegador: usan `process` y los
+    // enlaces de módulos. Sin este bloque el lint las marcaría por globales inexistentes.
+    files: ['pruebas/**/*.js'],
+    languageOptions: { globals: globals.node },
+  },
 ])

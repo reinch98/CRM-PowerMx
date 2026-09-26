@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .env
 
+
+# La CLI de Supabase guarda aquí el proyecto ligado y la URL del pooler: no van al repo.
+supabase/.temp/

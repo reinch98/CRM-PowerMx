@@ -1120,8 +1120,8 @@ El respaldo del `<Suspense>` va sin `<main>` propio: ya está dentro del `<main>
 - Windows no distingue mayúsculas en nombres de archivo; Cloudflare sí. El archivo
   debe llamarse exactamente como su `import` (componentes en PascalCase). Para
   renombrar solo la mayúscula: `git mv` en dos pasos, pasando por un nombre temporal.
-- Correr `npm run lint` y `npm run build` antes de cada push. El lint está en cero:
-  si algo nuevo lo rompe, se arregla, no se ignora.
+- Correr `npm test`, `npm run lint` y `npm run build` antes de cada push. Los tres están
+  en verde: si algo nuevo los rompe, se arregla, no se ignora.
 - En `Trabajos` (offline) no usar nada que pida red para datos de la orden:
   `getSession()` sí, `getUser()` no.
 - Los scripts SQL van numerados en `supabase/sql/` y deben poder repetirse sin
@@ -1134,6 +1134,73 @@ El respaldo del `<Suspense>` va sin `<main>` propio: ya está dentro del `<main>
   usuario: `set local role authenticated` + `set_config('request.jwt.claims', ...)`.
   Correr **siempre** el bloque completo: una línea suelta de una prueba puede tocar
   datos reales si el usuario simulado no la frena.
+
+## Pruebas (26/09/2026)
+
+`npm test` — 232 casos con el corredor de Node (`node:test`), sin dependencias nuevas, en
+menos de un segundo. Antes existían "24 casos probados en Node", "81 casos", "34 casos"…
+pero vivían en **scripts de usar y tirar**: nada impedía que un cambio rompiera el cálculo
+de un total o el orden de la cola sin que nadie se enterara. Ahora están en el repo.
+
+- Cubre las **reglas puras**: `revision` (50), `tarifas` (27), `preventivo` (22),
+  `equipoCampo`+`solicitudes` (19), `material` (17), `documentos` (17), `whatsapp`+`avisos`
+  (15), `cola` (14), `formularios` (14), `almacen` (12), `contactos` (12), `errores` (8),
+  `fechas` (5). Lo que dinero e inventario tocan, que es lo que pedía la ruta de mejora:
+  el traslado de 40 km, el disponible, la cola sin señal.
+- **No cubre** la base ni las pantallas: eso se prueba como siempre (`begin/rollback` en el
+  editor SQL y el emulador). El doble de `pruebas/falso/supabase.js` **revienta a
+  propósito** si una prueba llama a la red: significa que el cálculo está enredado con la
+  consulta y hay que sacarlo.
+- **Dos cosas que el arnés tiene que arreglar** (`pruebas/enlaces.js`, con
+  `node:module.register`):
+  1. `src/lib/supabase.js` usa `import.meta.env`, que solo existe dentro de Vite y truena
+     al cargarlo en Node: se desvía al doble. Ojo con no atrapar `@supabase/supabase-js`,
+     que también lleva "supabase" en el nombre.
+  2. En el código conviven `from './errores'` y `from './fechas.js'` porque **Vite resuelve
+     la extensión y Node no**. El enlace le agrega `.js` al que no la trae, en vez de
+     obligar a tocar 26 imports que ya funcionan en producción.
+- Las pruebas se llaman `pruebas/<lib>.prueba.js` y el `npm test` las pasa por glob (el
+  corredor de Node no las encontraría solas: busca `*.test.js`). `eslint.config.js` tiene
+  un bloque para `pruebas/**` con las globales de Node.
+- **Dos veces la prueba estaba mal, no el código:** `paraPdf` recorre por **puntos de
+  código**, así que un emoji deja UN interrogante y no dos; y el tipo `solar` se llama
+  "Sistema solar", no "Solar". Vale anotarlo: al escribir una prueba sobre código que ya
+  funciona, la primera sospecha es la prueba.
+
+## Foto del esquema (`00_volcar_esquema.sql`, 26/09/2026)
+
+**El problema:** los scripts 09 a 29 son casi todos `alter table` sobre tablas que **nunca
+estuvieron en el repo**. `01_productos.sql` crea `productos` y `03_roles.sql` crea
+`perfiles`, pero `clientes`, `equipos`, `citas`, `ordenes_servicio`, `cotizaciones`,
+`movimientos_inventario`, `auditoria` y `datos_fiscales` solo existen dentro de Supabase.
+Si el proyecto se pierde, se pierde el esquema.
+
+**Por qué no sirve `npx supabase db dump`:** corre `pg_dump` **dentro de Docker**, y en la
+máquina de Caña no hay Docker, ni Podman, ni `pg_dump`, ni `psql`. El único camino sin
+instalar nada es leer los catálogos desde el editor SQL.
+
+`supabase/sql/00_volcar_esquema.sql` es un `select` (no cambia nada, se puede repetir) que
+arma el DDL con `pg_get_functiondef`, `pg_get_indexdef`, `pg_get_constraintdef`,
+`pg_get_viewdef` y `pg_get_triggerdef`. Devuelve **una sola fila** para que el editor no
+corte ni reordene, y de ahí se guarda como `supabase/sql/00_esquema_base.sql`.
+
+- **El orden está pensado para poder correrse en una base vacía:** tipos → funciones →
+  secuencias → tablas → defaults → restricciones → índices → vistas → triggers → RLS →
+  políticas → permisos. Las **funciones van antes de las tablas** porque hay columnas
+  generadas que las llaman (`conversaciones.telefono_norm` usa `normalizar_telefono`), y
+  los **defaults van después** por lo contrario: un default puede llamar a una función que
+  todavía no existiría. Aun así es una foto, no una migración.
+- **Las vistas salen con su `reloptions`**, así que conservan `security_invoker`.
+  Reconstruir `existencias`, `resguardo_por_cliente` o `catalogo` en invoker dejaría al
+  técnico sin existencias ni catálogo (ver "Seguridad").
+- **Lo revocado también se escribe.** Un listado de `grant` no puede mostrar que a `anon`
+  se le quitó todo, ni que `_fijar_componente` está revocada a PUBLIC: en este proyecto eso
+  es una promesa de seguridad, así que el script emite los `revoke` explícitos.
+- **PUBLIC no es un rol:** `has_function_privilege('public', …)` falla y `format('%I',
+  'PUBLIC')` crearía un rol que no existe. Se lee el ACL con `aclexplode` buscando el
+  otorgado `0`, que es PUBLIC; `proacl` nulo significa el permiso por defecto.
+- **Sin probar:** no hay forma de correrlo desde este entorno (ni Docker ni credenciales de
+  base). Si truena, el mensaje de Postgres dice qué línea y se corrige.
 
 ## Ruta de mejora
 
@@ -1194,8 +1261,10 @@ Supabase); lint en cero.
      pendientes en el menú.
      **Orden de despliegue de cualquier función nueva: primero el SQL, después el
      código que la llama.**
-   - Recuperar `supabase/sql/01_...` (esquema base, hoy ausente del repo) para poder
-     reconstruir la base desde cero.
+   - Recuperar el esquema base (`clientes`, `equipos`, `citas`, `ordenes_servicio`,
+     `cotizaciones`, `movimientos_inventario`, `auditoria`, `datos_fiscales`: ninguna se
+     crea en el repo) para poder reconstruir la base desde cero. Herramienta escrita el
+     26/09/2026: ver "Foto del esquema" abajo. **Falta que Caña corra el script.**
 3. **Diseño** (ver sección Diseño): ~~tokens y componentes compartidos → Órdenes →
    `Login` → Agenda → oficina~~ hecho. ~~Dividir el bundle por pantalla.~~ Hecho el
    21/09/2026 (ver "Paquetes por pantalla" abajo). Además: quitar `react-router-dom`
@@ -1207,8 +1276,9 @@ Supabase); lint en cero.
    22/09/2026 (ver "Agente").
 5. **Portal del cliente** (solo tras la fase 1): equipos, historial y cotizaciones.
 6. **Integraciones:** Google Calendar y correo; luego Facturama (CFDI 4.0).
-7. **Calidad:** pruebas mínimas de lo que dinero e inventario tocan (totales de
-   cotización, disponible, cola offline); reescribir el README.
+7. **Calidad:** ~~pruebas mínimas de lo que dinero e inventario tocan (totales de
+   cotización, disponible, cola offline)~~ hecho el 26/09/2026 (ver "Pruebas" abajo).
+   Falta reescribir el README.
 
 **Envío de refacciones en línea** (al final, junto con Mercado Pago; anotado 20/09/2026)
 - Un solo precio público por refacción, igual en mostrador, sitio y cotizaciones.
