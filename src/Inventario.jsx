@@ -100,6 +100,11 @@ export default function Inventario() {
     for (const campo of ['precio', 'costo', 'minimo']) {
       if (campo in cambios) payload[campo] = num(cambios[campo])
     }
+    // Texto, no número: la etiqueta vacía se guarda como null para no dejar equivalencias
+    // fantasma que agruparían entre sí todos los productos sin grupo.
+    if ('grupo_equivalente' in cambios) {
+      payload.grupo_equivalente = cambios.grupo_equivalente.trim() || null
+    }
     const { error } = await supabase.from('productos').update(payload).eq('id', p.id)
     if (error) return setError(error.message)
     const { [p.id]: _, ...resto } = editando
@@ -248,7 +253,8 @@ export default function Inventario() {
               <thead>
                 <tr>
                   <th>SKU</th><th>Producto</th><th>Marca</th>
-                  <th>Precio</th><th>Costo</th><th>Margen</th><th>Mínimo</th><th></th>
+                  <th>Precio</th><th>Costo</th><th>Margen</th><th>Mínimo</th>
+                  <th>Grupo equivalente</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -285,6 +291,17 @@ export default function Inventario() {
                           type="number" style={{ width: 90, textAlign: 'right' }} aria-label={`Mínimo de ${p.sku}`}
                           value={'minimo' in ed ? ed.minimo : (p.minimo ?? '')}
                           onChange={e => editar(p.id, 'minimo', e.target.value)}
+                        />
+                      </td>
+                      <td>
+                        {/* Dos productos con la MISMA etiqueta son intercambiables: el
+                            original y su genérico. De ahí salen las opciones de cada
+                            línea de un paquete de mantenimiento (SQL 28). */}
+                        <input
+                          style={{ width: 150 }} aria-label={`Grupo equivalente de ${p.sku}`}
+                          placeholder="p. ej. FILTRO-ACEITE-P554407"
+                          value={'grupo_equivalente' in ed ? ed.grupo_equivalente : (p.grupo_equivalente ?? '')}
+                          onChange={e => editar(p.id, 'grupo_equivalente', e.target.value)}
                         />
                       </td>
                       <td>

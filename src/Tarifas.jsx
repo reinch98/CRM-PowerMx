@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { CLASES, CONCEPTOS_CATALOGO, esConceptoCatalogo, nombreTarifaCatalogo, sugerirSkuTarifa } from './lib/tarifas'
+import {
+  cargarPaquetes, crearPaquete, agregarLineaPaquete, quitarLineaPaquete, borrarPaquete
+} from './lib/preventivo'
 import { Alerta } from './ui'
 
 // Tarifas de servicio (solo admin; el técnico nunca ve precios). Se COPIAN a la
@@ -25,6 +28,206 @@ const vacia = {
 
 const aNumero = v => (v === '' || v == null ? null : Number(v))
 
+// ---------------------------------------------------------------------------
+// Paquetes de mantenimiento: qué refacciones lleva un preventivo (SQL 28).
+//
+// El precio del servicio va en la tabla de arriba, fijo. Esto es lo OTRO que cambia de un
+// equipo a otro: qué piezas se le ponen. Un paquete apunta a una clase y un tramo de kW
+// (lo general) o a una marca y modelo concretos, y al cotizar **gana el específico**.
+//
+// Cada línea dice qué hace falta ("Filtro de aceite") y con qué producto se cumple. Si ese
+// producto tiene grupo equivalente en Inventario, al cotizar salen también sus genéricos
+// con lo disponible de cada uno.
+// ---------------------------------------------------------------------------
+const paqueteVacio = {
+  tipo: 'menor', clase: 'diesel', kw_desde: '', kw_hasta: '',
+  marca: '', modelo: '', nombre: '', notas: ''
+}
+
+function PaquetesMantenimiento({ productos }) {
+  const [paquetes, setPaquetes] = useState([])
+  const [nuevo, setNuevo] = useState(paqueteVacio)
+  const [lineas, setLineas] = useState({})    // { [paqueteId]: { descripcion, producto_id, cantidad } }
+  const [error, setError] = useState('')
+  const [mensaje, setMensaje] = useState('')
+
+  useEffect(() => { cargar() }, [])
+
+  async function cargar() {
+    const r = await cargarPaquetes()
+    if (r.ok) setPaquetes(r.paquetes)
+    else setError(r.texto)
+  }
+
+  async function crear(e) {
+    e.preventDefault()
+    setError(''); setMensaje('')
+    const r = await crearPaquete({
+      tipo: nuevo.tipo,
+      clase: nuevo.clase || null,
+      kw_desde: nuevo.kw_desde === '' ? null : Number(nuevo.kw_desde),
+      kw_hasta: nuevo.kw_hasta === '' ? null : Number(nuevo.kw_hasta),
+      marca: nuevo.marca.trim() || null,
+      modelo: nuevo.modelo.trim() || null,
+      nombre: nuevo.nombre.trim() || null,
+      notas: nuevo.notas.trim() || null,
+    })
+    if (!r.ok) return setError(r.texto)
+    setNuevo(paqueteVacio); setMensaje('Paquete creado. Agrégale sus piezas.'); cargar()
+  }
+
+  async function agregarLinea(paqueteId) {
+    const l = lineas[paqueteId] || {}
+    if (!l.descripcion?.trim()) return setError('Escribe qué pieza es.')
+    if (!l.producto_id) return setError('Elige con qué producto se cumple.')
+    setError('')
+    const r = await agregarLineaPaquete(paqueteId, {
+      descripcion: l.descripcion.trim(),
+      producto_id: l.producto_id,
+      cantidad: Number(l.cantidad) || 1,
+      orden: 0,
+    })
+    if (!r.ok) return setError(r.texto)
+    setLineas({ ...lineas, [paqueteId]: {} })
+    cargar()
+  }
+
+  async function quitarLinea(id) {
+    const r = await quitarLineaPaquete(id)
+    if (!r.ok) return setError(r.texto)
+    cargar()
+  }
+
+  async function borrar(p) {
+    if (!confirm(`¿Borrar el paquete "${nombrePaquete(p)}"?`)) return
+    const r = await borrarPaquete(p.id)
+    if (!r.ok) return setError(r.texto)
+    cargar()
+  }
+
+  const nombrePaquete = p => p.nombre
+    || [p.tipo === 'menor' ? 'Menor' : 'Mayor',
+        p.marca && p.modelo ? `${p.marca} ${p.modelo}` : NOMBRE_CLASE[p.clase] || p.clase,
+        p.kw_desde != null || p.kw_hasta != null
+          ? `${p.kw_desde ?? 0}–${p.kw_hasta ?? '∞'} kW` : null].filter(Boolean).join(' · ')
+
+  const cambiarLinea = (id, campo, valor) =>
+    setLineas({ ...lineas, [id]: { ...(lineas[id] || {}), [campo]: valor } })
+
+  return (
+    <section className="tarjeta" style={{ marginTop: 16 }}>
+      <h3>Paquetes de mantenimiento</h3>
+      <p className="ayuda">
+        Qué refacciones lleva un preventivo. El precio va arriba, en las tarifas; esto es lo
+        que se aparta del almacén. Si un paquete apunta a una marca y modelo, gana sobre el
+        general de su clase.
+      </p>
+
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {mensaje && <Alerta tipo="ok" palabra="Listo">{mensaje}</Alerta>}
+
+      {paquetes.map(p => (
+        <div key={p.id} className="refaccion">
+          <span className="fila" style={{ justifyContent: 'space-between' }}>
+            <strong>{nombrePaquete(p)}</strong>
+            <button type="button" className="btn-peligro" onClick={() => borrar(p)}>Borrar</button>
+          </span>
+
+          {(p.paquete_lineas || []).map(l => (
+            <span key={l.id} className="fila" style={{ justifyContent: 'space-between' }}>
+              <span>
+                {l.cantidad} × {l.descripcion}
+                <span className="ayuda">
+                  {' '}{productos.find(x => x.id === l.producto_id)?.sku || 'sin producto'}
+                </span>
+              </span>
+              <button type="button" onClick={() => quitarLinea(l.id)}>Quitar</button>
+            </span>
+          ))}
+          {(p.paquete_lineas || []).length === 0 && (
+            <span className="ayuda">Sin piezas todavía: así no se puede cotizar.</span>
+          )}
+
+          <div className="rejilla-2">
+            <label className="campo">
+              <span>Qué pieza</span>
+              <input value={lineas[p.id]?.descripcion || ''} placeholder="Filtro de aceite"
+                onChange={e => cambiarLinea(p.id, 'descripcion', e.target.value)} />
+            </label>
+            <label className="campo">
+              <span>Cantidad</span>
+              <input type="number" min="1" value={lineas[p.id]?.cantidad ?? 1}
+                onChange={e => cambiarLinea(p.id, 'cantidad', e.target.value)} />
+            </label>
+          </div>
+          <label className="campo">
+            <span>Con qué producto</span>
+            <select value={lineas[p.id]?.producto_id || ''}
+              onChange={e => cambiarLinea(p.id, 'producto_id', e.target.value)}>
+              <option value="">— Elige —</option>
+              {productos.map(x => (
+                <option key={x.id} value={x.id}>
+                  {x.sku} — {x.nombre}{x.grupo_equivalente ? ' (con genéricos)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" onClick={() => agregarLinea(p.id)}>Agregar la pieza</button>
+        </div>
+      ))}
+
+      <details className="tarjeta" style={{ marginTop: 12 }}>
+        <summary className="resumen">＋ Nuevo paquete</summary>
+        <form onSubmit={crear} style={{ maxWidth: 520, marginTop: 12 }}>
+          <div className="rejilla-2">
+            <label className="campo">
+              <span>Tipo</span>
+              <select value={nuevo.tipo} onChange={e => setNuevo({ ...nuevo, tipo: e.target.value })}>
+                <option value="menor">Mantenimiento menor</option>
+                <option value="mayor">Mantenimiento mayor</option>
+              </select>
+            </label>
+            <label className="campo">
+              <span>Clase</span>
+              <select value={nuevo.clase} onChange={e => setNuevo({ ...nuevo, clase: e.target.value })}>
+                <option value="">Cualquiera</option>
+                {CLASES.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+              </select>
+            </label>
+            <label className="campo">
+              <span>Desde (kW)</span>
+              <input type="number" value={nuevo.kw_desde}
+                onChange={e => setNuevo({ ...nuevo, kw_desde: e.target.value })} />
+            </label>
+            <label className="campo">
+              <span>Hasta (kW)</span>
+              <input type="number" value={nuevo.kw_hasta}
+                onChange={e => setNuevo({ ...nuevo, kw_hasta: e.target.value })} />
+            </label>
+            <label className="campo">
+              <span>Marca (opcional)</span>
+              <input value={nuevo.marca} onChange={e => setNuevo({ ...nuevo, marca: e.target.value })} />
+            </label>
+            <label className="campo">
+              <span>Modelo (opcional)</span>
+              <input value={nuevo.modelo} onChange={e => setNuevo({ ...nuevo, modelo: e.target.value })} />
+            </label>
+          </div>
+          <p className="ayuda">
+            Marca y modelo solo si este paquete es para ese equipo en concreto. Al cotizar,
+            un paquete con modelo gana sobre el general de su clase.
+          </p>
+          <label className="campo">
+            <span>Nombre (opcional)</span>
+            <input value={nuevo.nombre} onChange={e => setNuevo({ ...nuevo, nombre: e.target.value })} />
+          </label>
+          <button type="submit" className="btn-primario">Crear paquete</button>
+        </form>
+      </details>
+    </section>
+  )
+}
+
 export default function Tarifas() {
   const [filas, setFilas] = useState([])
   const [nueva, setNueva] = useState(vacia)
@@ -32,15 +235,22 @@ export default function Tarifas() {
   const [edicion, setEdicion] = useState({})    // { [id]: { campo: valor } }
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
+  const [productos, setProductos] = useState([])
 
   useEffect(() => { cargar() }, [])
 
   async function cargar() {
-    const { data, error } = await supabase
-      .from('tarifas_servicio').select('*')
-      .order('concepto').order('clase').order('kw_desde')
-    if (error) return setError(error.message)
-    setFilas(data || [])
+    const [t, p] = await Promise.all([
+      supabase.from('tarifas_servicio').select('*')
+        .order('concepto').order('clase').order('kw_desde'),
+      // Para armar las líneas de un paquete hace falta el catálogo con su grupo
+      // equivalente: es lo que decide qué genéricos salen al cotizar.
+      supabase.from('productos').select('id, sku, nombre, grupo_equivalente')
+        .eq('activo', true).order('sku')
+    ])
+    if (t.error) return setError(t.error.message)
+    setFilas(t.data || [])
+    setProductos(p.data || [])
   }
 
   const diagnostico = useMemo(() => filas.filter(f => f.concepto === 'diagnostico'), [filas])
@@ -301,6 +511,8 @@ export default function Tarifas() {
           </table>
         </div>
       </section>
+
+      <PaquetesMantenimiento productos={productos} />
 
       <section className="tarjeta">
         <h3>Agregar tarifa</h3>

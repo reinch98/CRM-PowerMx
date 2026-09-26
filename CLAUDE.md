@@ -1249,3 +1249,41 @@ Supabase); lint en cero.
   `App.jsx`) para cuidar el saldo de la API. La función igual acepta al técnico por
   llamada directa; el costo solo sale si el rol es `admin`. Si algún día se abre al
   técnico, probar antes que no dé costos ni cotizaciones.
+
+## Cotizador de preventivos (SQL 28, 25/09/2026)
+
+Cómo lo quiso Caña: el precio de **mantenimiento menor y mayor es FIJO**, tabulado por
+**clase y capacidad** (no es una fórmula como el diagnóstico). El cliente ve **un solo
+precio** y las refacciones van incluidas, pero por dentro **sí apartan inventario**. Lo que
+cambia de un equipo a otro no es el precio sino **qué código se usa**: hay material genérico
+que sirve igual.
+
+**Eso salió gratis.** Apartar inventario y armar la lista del almacén (SQL 14) solo miran
+`producto_id` y `cantidad` — **el precio nunca entra**. Así que la refacción entra como
+partida normal con `precio_unitario: 0` y la marca `incluida`, se aparta igual y llega al
+almacén, **sin tocar una línea** de `cambiar_estado_cotizacion` ni del almacén. En la lista
+de partidas se marca "Incluida en el servicio": una pieza a $0 sin etiqueta parecería un
+precio que se olvidó capturar.
+
+- **`tarifas_servicio`** gana los conceptos `preventivo_menor` y `preventivo_mayor` (la 21 ya
+  daba SKU propio, clase y tramo opcionales). `preventivo` a secas se queda para lo viejo.
+- **`productos.grupo_equivalente`**: una etiqueta que se escribe igual en el original y en el
+  genérico, y con eso son intercambiables. Una columna, no un catálogo de equivalencias: más
+  fácil de capturar y de entender. Se edita en Inventario → Catálogo, por renglón; vacía se
+  guarda como **null**, o todos los productos sin grupo se agruparían entre sí.
+- **`paquetes_mantenimiento` + `paquete_lineas`**: qué lleva un preventivo. General (clase +
+  tramo) o del **modelo exacto**, y al buscar **gana el específico**. Se capturan en Tarifas.
+- **`paquete_preventivo(equipo, tipo)`** devuelve el precio fijo y cada línea con **todos los
+  códigos que sirven y cuánto hay de cada uno**. Cuando no se puede cotizar dice **por qué,
+  en palabras** ("captura el combustible", "no hay tarifa para esa clase") y **nunca inventa
+  un precio**.
+- `src/lib/preventivo.js`: `opcionSugerida` (la preferida si alcanza, si no la que tenga con
+  qué cumplir), `problemasDelPaquete`, `faltantes` (avisa qué habrá que pedir; no bloquea,
+  porque al aceptar la cotización se genera la requisición sola) y `partidasDePreventivo`.
+  24 casos en Node.
+- Probado de punta a punta en el emulador: crear paquete → agregarle una pieza → cotizar.
+  Salió servicio $4,500 + refacción $0 marcada como incluida, total $5,220 (solo IVA sobre el
+  servicio). 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde.
+- **Falta (fase 5):** que el paquete se aprenda de lo que de verdad se usó en visitas
+  anteriores. Ya tiene de dónde: `orden_surtido.cantidad_usada` guarda las piezas
+  estructuradas desde la 18.
