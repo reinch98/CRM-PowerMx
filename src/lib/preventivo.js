@@ -105,6 +105,52 @@ function textoDeError(error) {
   return explicarError(error).texto
 }
 
+// El almacén precarga la lista de surtido con el paquete del equipo. **No devuelve
+// precios**: el almacenista no los ve, y por eso esto no pasa por `paquete_preventivo`.
+export async function surtidoDesdePaquete(ordenId, tipo) {
+  try {
+    const { data, error } = await supabase.rpc('surtido_desde_paquete', {
+      p_orden: ordenId, p_tipo: tipo,
+    })
+    if (error) return { ok: false, texto: textoDeError(error) }
+    return { ok: true, datos: data }
+  } catch (e) {
+    return { ok: false, texto: textoDeError(e) }
+  }
+}
+
+// Lo que de verdad se ha usado en equipos parecidos. Propone; no decide.
+export async function piezasQueSeRepiten(filtros = {}) {
+  try {
+    const { data, error } = await supabase.rpc('piezas_que_se_repiten', {
+      p_clase: filtros.clase || null,
+      p_kw_desde: filtros.kw_desde ?? null,
+      p_kw_hasta: filtros.kw_hasta ?? null,
+      p_marca: filtros.marca || null,
+      p_modelo: filtros.modelo || null,
+      p_desde: filtros.desde || null,
+    })
+    if (error) return { ok: false, texto: textoDeError(error) }
+    return { ok: true, piezas: data || [] }
+  } catch (e) {
+    return { ok: false, texto: textoDeError(e) }
+  }
+}
+
+// Qué tan seguro es que una pieza sea parte del mantenimiento, en palabras. Lo que importa
+// es en cuántas VISITAS apareció, no cuántas piezas salieron: 20 piezas en una sola visita
+// fue una reparación, no un preventivo.
+export function queTanSeguido(pieza) {
+  const de = Number(pieza?.de_visitas || 0)
+  const v = Number(pieza?.visitas || 0)
+  if (de === 0) return { texto: 'Sin visitas cerradas', proporcion: 0, fuerte: false }
+  const proporcion = v / de
+  if (de < 3) return { texto: `${v} de ${de} visitas · todavía son pocas`, proporcion, fuerte: false }
+  if (proporcion >= 0.8) return { texto: `${v} de ${de} visitas · casi siempre`, proporcion, fuerte: true }
+  if (proporcion >= 0.5) return { texto: `${v} de ${de} visitas · seguido`, proporcion, fuerte: false }
+  return { texto: `${v} de ${de} visitas · de vez en cuando`, proporcion, fuerte: false }
+}
+
 export async function cargarPaquete(equipoId, tipo) {
   try {
     const { data, error } = await supabase.rpc('paquete_preventivo', {

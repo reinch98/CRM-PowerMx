@@ -8,6 +8,7 @@ import {
 } from './lib/almacen'
 import { aRecibir, quedaPendiente, nivelAntiguedad, haceCuanto } from './lib/material'
 import { nombrePieza, cargarSolicitudesPendientes, atenderSolicitud, descartarSolicitud } from './lib/solicitudes'
+import { surtidoDesdePaquete } from './lib/preventivo'
 
 const NOMBRE_TIPO = {
   preventivo: 'Preventivo', correctivo: 'Correctivo', instalacion: 'Instalación',
@@ -29,6 +30,24 @@ function TarjetaOrden({ orden, piezas, onRecargar, onNecesitoPiezas }) {
   const [buscar, setBuscar] = useState('')
   const [elegida, setElegida] = useState(null)
   const [cantidadNueva, setCantidadNueva] = useState('1')
+  const [precargando, setPrecargando] = useState(false)
+
+  async function precargar(tipo) {
+    setPrecargando(true); setError(''); setMensaje('')
+    const r = await surtidoDesdePaquete(orden.orden_id, tipo)
+    setPrecargando(false)
+    if (!r.ok) return setError(r.texto)
+    if (r.datos?.agregadas > 0) {
+      setMensaje(`Se prepararon ${r.datos.agregadas} pieza${r.datos.agregadas === 1 ? '' : 's'} del paquete.`)
+      onRecargar()
+    } else {
+      // Sin piezas no es un error: puede que ese equipo aún no tenga paquete.
+      setError(r.datos?.motivo || 'El paquete no agregó ninguna pieza.')
+    }
+    if (r.datos?.sin_codigo) {
+      setError(`Quedó fuera por no tener código capturado: ${r.datos.sin_codigo}.`)
+    }
+  }
 
   const lineas = orden.lineas || []
   const entregas = orden.entregas || []
@@ -117,7 +136,23 @@ function TarjetaOrden({ orden, piezas, onRecargar, onNecesitoPiezas }) {
 
       <h3>Piezas</h3>
       {lineas.length === 0 && (
-        <p className="ayuda">Esta orden no trae piezas de una cotización. Si lleva material, agrégalo abajo.</p>
+        <>
+          <p className="ayuda">Esta orden no trae piezas de una cotización. Si lleva material, agrégalo abajo.</p>
+          {/* Una cita de póliza abre orden SIN cotización, así que nunca tiene piezas: el
+              paquete del equipo dice qué preparar (SQL 29). De cada pieza se toma el código
+              con más existencia, así que puede proponer un genérico en vez del original. */}
+          <div className="fila">
+            {['menor', 'mayor'].map(t => (
+              <button key={t} type="button" disabled={precargando}
+                onClick={() => precargar(t)}>
+                {precargando ? 'Buscando…' : `Preparar mantenimiento ${t}`}
+              </button>
+            ))}
+          </div>
+          <p className="ayuda">
+            Trae las piezas del paquete de ese equipo. Puedes cambiarlas o quitarlas después.
+          </p>
+        </>
       )}
       {lineas.map(l => {
         const pend = pendiente(l)

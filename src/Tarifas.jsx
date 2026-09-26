@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { CLASES, CONCEPTOS_CATALOGO, esConceptoCatalogo, nombreTarifaCatalogo, sugerirSkuTarifa } from './lib/tarifas'
 import {
-  cargarPaquetes, crearPaquete, agregarLineaPaquete, quitarLineaPaquete, borrarPaquete
+  cargarPaquetes, crearPaquete, agregarLineaPaquete, quitarLineaPaquete, borrarPaquete,
+  piezasQueSeRepiten, queTanSeguido
 } from './lib/preventivo'
 import { Alerta } from './ui'
 
@@ -50,6 +51,7 @@ function PaquetesMantenimiento({ productos }) {
   const [lineas, setLineas] = useState({})    // { [paqueteId]: { descripcion, producto_id, cantidad } }
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
+  const [sugerencias, setSugerencias] = useState({})   // paqueteId -> piezas que se repiten
 
   useEffect(() => { cargar() }, [])
 
@@ -94,6 +96,29 @@ function PaquetesMantenimiento({ productos }) {
 
   async function quitarLinea(id) {
     const r = await quitarLineaPaquete(id)
+    if (!r.ok) return setError(r.texto)
+    cargar()
+  }
+
+  // Se busca con los mismos filtros del paquete: si es de un modelo concreto, mira ese
+  // modelo; si es general, toda su clase y tramo.
+  async function sugerir(p) {
+    setError('')
+    const r = await piezasQueSeRepiten({
+      clase: p.clase, kw_desde: p.kw_desde, kw_hasta: p.kw_hasta,
+      marca: p.marca, modelo: p.modelo,
+    })
+    if (!r.ok) return setError(r.texto)
+    setSugerencias({ ...sugerencias, [p.id]: r.piezas })
+  }
+
+  async function agregarSugerida(paqueteId, s) {
+    const r = await agregarLineaPaquete(paqueteId, {
+      descripcion: s.nombre,
+      producto_id: s.producto_id,
+      cantidad: Number(s.cantidad_tipica) || 1,
+      orden: 0,
+    })
     if (!r.ok) return setError(r.texto)
     cargar()
   }
@@ -173,6 +198,40 @@ function PaquetesMantenimiento({ productos }) {
             </select>
           </label>
           <button type="button" onClick={() => agregarLinea(p.id)}>Agregar la pieza</button>
+
+          {/* Qué se usó de verdad en equipos parecidos (SQL 29). Propone; no decide: una
+              pieza que salió tres veces puede ser casualidad y no parte del mantenimiento. */}
+          <div style={{ marginTop: 10 }}>
+            <button type="button" onClick={() => sugerir(p)}>
+              ¿Qué se ha usado en equipos así?
+            </button>
+            {sugerencias[p.id] && (
+              sugerencias[p.id].length === 0 ? (
+                <p className="ayuda">
+                  Todavía no hay visitas cerradas con material declarado en equipos de este
+                  tipo. Cuando las haya, aquí saldrá qué se repite.
+                </p>
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  {sugerencias[p.id].map(s => {
+                    const f = queTanSeguido(s)
+                    return (
+                      <span key={s.producto_id} className="fila"
+                        style={{ justifyContent: 'space-between' }}>
+                        <span>
+                          <strong>{s.sku}</strong> — {s.nombre}
+                          <span className="ayuda"> {f.texto} · suelen ser {s.cantidad_tipica}</span>
+                        </span>
+                        <button type="button" onClick={() => agregarSugerida(p.id, s)}>
+                          Agregarla
+                        </button>
+                      </span>
+                    )
+                  })}
+                </div>
+              )
+            )}
+          </div>
         </div>
       ))}
 

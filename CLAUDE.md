@@ -1287,3 +1287,37 @@ precio que se olvidó capturar.
 - **Falta (fase 5):** que el paquete se aprenda de lo que de verdad se usó en visitas
   anteriores. Ya tiene de dónde: `orden_surtido.cantidad_usada` guarda las piezas
   estructuradas desde la 18.
+
+## Fase 5 · el paquete se aprende y precarga el surtido (SQL 29, 25/09/2026)
+
+**SQL aplicado y probado** (10 pasos con rollback, todos "ok"). Las dos cosas que el plan
+dejó para el final porque exigían que las piezas usadas quedaran estructuradas (la 18).
+
+- **`surtido_desde_paquete(orden, tipo)`** llena la lista del almacén con el paquete del
+  equipo. Hace falta porque **una cita de póliza abre orden sin cotización**, y la lista se
+  armaba de las partidas de la cotización aceptada: el almacén no tenía nada que preparar.
+  De cada línea toma el código con **más existencia** (puede proponer el genérico en vez del
+  original); lo que ya estaba **no se toca**, así que llamarla dos veces no duplica ni pisa
+  lo que el almacén ajustó a mano. Avisa qué línea quedó fuera por no tener códigos.
+- **`piezas_que_se_repiten(...)`** mira las órdenes **cerradas** de equipos parecidos (clase
+  y tramo, o marca y modelo) y cuenta **en cuántas VISITAS apareció** cada pieza, no cuántas
+  piezas salieron. Esa distinción es el fondo del asunto: una pieza en 9 de 10 visitas es
+  parte del mantenimiento; 20 piezas en una sola visita fue una reparación. Por eso devuelve
+  también `de_visitas`, y `queTanSeguido()` lo traduce ("casi siempre", "seguido", "de vez
+  en cuando", "todavía son pocas" con menos de 3 visitas). **Propone; no decide.**
+- **Fallo de diseño corregido al escribirlo:** la primera versión hacía que
+  `surtido_desde_paquete` llamara a `paquete_preventivo`. Eso revienta con el almacenista
+  —esa función exige `es_admin()`— y aflojarle el permiso **le habría abierto los precios**,
+  que es justo lo que el sistema promete que nunca ve. La parte común (qué códigos sirven y
+  cuánto hay) se sacó a `_paquete_de_equipo` y `_codigos_de_linea`, **sin precio**, y
+  `paquete_preventivo` les agrega el precio encima. Por eso la 29 **redefine** esa función
+  de la 28: una sola lógica, dos puertas con permisos distintos. El paso 10 de la prueba
+  comprueba exactamente eso.
+- **Tropiezos de la prueba:** `orden_surtido_uso_no_excede` (18) impide declarar uso sin
+  entrega, así que un histórico de prueba tiene que entregar antes de usar; y el almacenista
+  **no puede crear órdenes**, así que las suyas se crean en la preparación.
+- **Pantallas:** en Almacén, cuando una orden no trae piezas salen "Preparar mantenimiento
+  menor / mayor"; en Tarifas, cada paquete tiene "¿Qué se ha usado en equipos así?" con las
+  piezas, su frecuencia en palabras y la cantidad típica, y un botón para agregarlas.
+  10 casos en Node; medido en celular: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos <
+  48 px, 0 px de desborde.
