@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { aFormulario, paraGuardar } from './lib/formularios'
 import { Alerta } from './ui'
 
 const vacio = {
@@ -16,6 +17,8 @@ export default function Clientes() {
   const [form, setForm] = useState(vacio)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
+  const [editando, setEditando] = useState(null)   // id del cliente que se está editando
+  const [abierto, setAbierto] = useState(false)
 
   useEffect(() => { cargar() }, [])
 
@@ -48,17 +51,33 @@ export default function Clientes() {
     setForm({ ...form, [campo]: valor })
   }
 
+  // Editar reusa el MISMO formulario del alta: un campo nuevo se agrega una sola vez y
+  // sirve para las dos cosas.
+  function editar(c) {
+    setForm(aFormulario(c, vacio))
+    setEditando(c.id)
+    setAbierto(true)
+    setError('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function cancelar() {
+    setForm(vacio); setEditando(null); setError('')
+  }
+
   async function guardar(e) {
     e.preventDefault()
     if (!form.nombre.trim()) { setError('El nombre es obligatorio'); return }
     setGuardando(true)
     setError('')
     // Postgres no acepta '' en una columna numérica: vacío se manda como null.
-    const payload = { ...form, distancia_km: form.distancia_km === '' ? null : Number(form.distancia_km) }
-    const { error } = await supabase.from('clientes').insert([payload])
+    const payload = paraGuardar(form, { numericas: ['distancia_km'] })
+    const { error } = editando
+      ? await supabase.from('clientes').update(payload).eq('id', editando)
+      : await supabase.from('clientes').insert([payload])
     setGuardando(false)
     if (error) setError(error.message)
-    else { setForm(vacio); cargar() }
+    else { setForm(vacio); setEditando(null); setAbierto(false); cargar() }
   }
 
   const campos = [
@@ -88,8 +107,11 @@ export default function Clientes() {
 
       {error && <Alerta tipo="error">{error}</Alerta>}
 
-      <details className="tarjeta">
-        <summary className="resumen">＋ Agregar cliente</summary>
+      <details className="tarjeta" open={abierto}
+        onToggle={e => { setAbierto(e.target.open); if (!e.target.open && editando) cancelar() }}>
+        <summary className="resumen">
+          {editando ? '✎ Editando un cliente' : '＋ Agregar cliente'}
+        </summary>
         <form onSubmit={guardar} style={{ maxWidth: 520, marginTop: 12 }}>
           <label className="campo">
             <span>Tipo de cliente</span>
@@ -114,9 +136,12 @@ export default function Clientes() {
             </label>
           ))}
 
-          <button type="submit" className="btn-primario" disabled={guardando}>
-            {guardando ? 'Guardando…' : 'Guardar cliente'}
-          </button>
+          <div className="fila">
+            <button type="submit" className="btn-primario" disabled={guardando}>
+              {guardando ? 'Guardando…' : editando ? 'Guardar cambios' : 'Guardar cliente'}
+            </button>
+            {editando && <button type="button" onClick={cancelar}>Cancelar</button>}
+          </div>
         </form>
       </details>
 
@@ -145,7 +170,12 @@ export default function Clientes() {
                     onBlur={e => guardarKm(c, e.target.value)}
                   />
                 </td>
-                <td><button className="btn-peligro" onClick={() => borrar(c.id)}>Borrar</button></td>
+                <td>
+                  <div className="fila">
+                    <button onClick={() => editar(c)}>Editar</button>
+                    <button className="btn-peligro" onClick={() => borrar(c.id)}>Borrar</button>
+                  </div>
+                </td>
               </tr>
             ))}
             {clientes.length === 0 && (

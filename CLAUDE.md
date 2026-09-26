@@ -1029,6 +1029,33 @@ Los técnicos trabajan casi siempre **bajo el sol directo**. Eso manda:
   celular usar `resize_window` con el preajuste `mobile`; el panel de escritorio del
   navegador integrado mide 375 px, así que no sirve para anchos grandes.
 
+
+## Editar clientes y equipos (25/09/2026)
+
+Hasta hoy **solo se podía dar de alta**: en Clientes lo único editable era la columna de km,
+y en Equipos nada. Corregir un teléfono obligaba a entrar al Table Editor de Supabase.
+
+Las dos pantallas **reusan el MISMO formulario** del alta con un botón "Editar" por renglón:
+así un campo nuevo se agrega una sola vez y no se olvida en la edición. El `<details>` pasa a
+ser controlado (`open`), se abre al editar y al cerrarlo se cancela.
+
+`src/lib/formularios.js`, compartido por las dos:
+- `aFormulario(registro, vacio)` toma **solo las claves que el formulario conoce** (así `id`
+  y `created_at` no viajan de vuelta en el `update`) y convierte `null` en `''`, porque un
+  `<input value={null}` pasa a no controlado y React se queja.
+- `paraGuardar(form, { numericas, fechas })` deshace la conversión: `''` se va como `null`,
+  que es lo único que Postgres acepta en esas columnas.
+
+**Lo delicado estaba en Equipos:** `atributos` guarda tanto los campos del formulario
+(combustible, número de paneles…) como **`componentes`, que son las placas que el técnico
+fotografió en campo** (SQL 25). Sobrescribir el jsonb entero al editar las habría borrado sin
+que nadie se enterara. Al guardar se conservan las claves **ajenas al formulario** y se
+reemplazan solo las suyas, de modo que vaciar un campo sí lo borra pero las placas quedan.
+Comprobado en el emulador: tras editar la ubicación, `componentes` seguía con la serie del
+motor y su foto, y el combustible intacto.
+
+Medido en celular en las dos pantallas, lista y edición: 0 textos < 17 px, 0 contrastes <
+4.5, 0 objetivos < 48 px, 0 px de desborde.
 ## Pantallas
 
 `Agenda` (calendario, por programar, empalmes) · `Trabajos` (pestaña "Órdenes"; móvil,

@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { hoyLocal, sumarDias } from './lib/fechas'
 import { partidasDeDiagnostico, tarifasDeCatalogo } from './lib/tarifas'
+import {
+  TIPOS_PREVENTIVO, cargarPaquete, opcionSugerida, problemasDelPaquete,
+  faltantes, partidasDePreventivo, esIncluida
+} from './lib/preventivo'
 import { Alerta } from './ui'
 
 const IVA = 0.16
@@ -55,6 +59,120 @@ const vacio = () => ({
   prog_tecnico_id: '',
   prog_tecnico2_id: ''
 })
+
+// ---------------------------------------------------------------------------
+// Mantenimiento preventivo de un equipo (SQL 28).
+//
+// El cliente ve UN precio: el del servicio, fijo y tabulado por clase y capacidad. Las
+// refacciones entran a cero y marcadas como incluidas — así no se cobran dos veces pero
+// **sí apartan inventario**, porque apartar solo mira el producto y la cantidad.
+//
+// Lo que cambia de un equipo a otro no es el precio sino qué código se usa: cada línea
+// trae el original y sus genéricos con lo disponible de cada uno, y aquí se elige.
+// ---------------------------------------------------------------------------
+function PreventivoDeEquipo({ equipoId, onAgregar }) {
+  const [tipo, setTipo] = useState('menor')
+  const [paquete, setPaquete] = useState(null)
+  const [elegidas, setElegidas] = useState({})
+  const [ocupado, setOcupado] = useState(false)
+  const [error, setError] = useState('')
+
+  if (!equipoId) return null
+
+  async function consultar(cual = tipo) {
+    setOcupado(true); setError(''); setPaquete(null); setElegidas({})
+    const r = await cargarPaquete(equipoId, cual)
+    setOcupado(false)
+    if (!r.ok) return setError(r.texto)
+    setPaquete(r.paquete)
+  }
+
+  const problemas = paquete ? problemasDelPaquete(paquete, elegidas) : []
+  const porComprar = paquete ? faltantes(paquete, elegidas) : []
+  const sePuede = paquete?.servicio && problemas.length === 0
+
+  return (
+    <details className="tarjeta" style={{ marginTop: 12 }}>
+      <summary className="resumen">＋ Mantenimiento preventivo de este equipo</summary>
+
+      <div className="fila" style={{ marginTop: 10 }}>
+        {TIPOS_PREVENTIVO.map(([v, t]) => (
+          <button key={v} type="button" className={tipo === v ? 'btn-primario' : undefined}
+            aria-pressed={tipo === v}
+            onClick={() => { setTipo(v); consultar(v) }}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {ocupado && <p className="ayuda">Buscando el paquete…</p>}
+      {error && <Alerta tipo="error">{error}</Alerta>}
+
+      {paquete && !paquete.servicio && (
+        <Alerta tipo="aviso" palabra="No se puede">{paquete.falta}</Alerta>
+      )}
+
+      {paquete?.servicio && (
+        <>
+          <p style={{ margin: '10px 0 4px' }}>
+            <strong>{paquete.servicio.nombre}</strong> — {pesos(paquete.servicio.precio)}
+          </p>
+          <p className="ayuda">
+            Precio fijo. Las refacciones de abajo van incluidas: no se le cobran aparte,
+            pero sí se apartan del inventario al aceptar la cotización.
+          </p>
+
+          {paquete.falta && <Alerta tipo="aviso" palabra="Ojo">{paquete.falta}</Alerta>}
+
+          {(paquete.lineas || []).map(l => {
+            const sugerida = opcionSugerida(l)
+            const valor = elegidas[l.linea_id] ?? sugerida?.producto_id ?? ''
+            const elegida = (l.opciones || []).find(o => o.producto_id === valor)
+            const corta = elegida && Number(elegida.disponible) < Number(l.cantidad)
+            return (
+              <div key={l.linea_id} className="refaccion">
+                <strong>{l.cantidad} × {l.descripcion}</strong>
+                {(l.opciones || []).length === 0 ? (
+                  <span className="ayuda">Sin ningún código capturado para esta pieza.</span>
+                ) : (
+                  <label className="campo">
+                    <span>Con qué código</span>
+                    <select value={valor}
+                      onChange={e => setElegidas({ ...elegidas, [l.linea_id]: e.target.value })}>
+                      {l.opciones.map(o => (
+                        <option key={o.producto_id} value={o.producto_id}>
+                          {o.sku} — {o.nombre} · hay {o.disponible}{o.preferido ? ' · original' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {corta && (
+                  <span className="ayuda">
+                    Solo hay {elegida.disponible} y se necesitan {l.cantidad}. Se puede
+                    cotizar igual: al aceptar se genera la requisición por lo que falte.
+                  </span>
+                )}
+              </div>
+            )
+          })}
+
+          {porComprar.length > 0 && (
+            <Alerta tipo="aviso" palabra="Habrá que pedir">
+              {porComprar.map(f => `${f.falta} × ${f.sku}`).join(' · ')}
+            </Alerta>
+          )}
+          {problemas.length > 0 && <Alerta tipo="aviso" palabra="Falta">{problemas.join(' ')}</Alerta>}
+
+          <button type="button" className="btn-primario" disabled={!sePuede}
+            onClick={() => { onAgregar(partidasDePreventivo(paquete, elegidas)); setPaquete(null) }}>
+            Agregar a la cotización
+          </button>
+        </>
+      )}
+    </details>
+  )
+}
 
 export default function Cotizaciones({ irA }) {
   const [vista, setVista] = useState('lista')
@@ -613,6 +731,10 @@ export default function Cotizaciones({ irA }) {
             )}
           </div>
 
+          <PreventivoDeEquipo equipoId={form.equipo_id} onAgregar={ps => {
+            setPartidas([...partidas, ...ps]); setError('')
+          }} />
+
           <button type="button" onClick={agregarLibre} style={{ marginBottom: 12 }}>
             ＋ Agregar partida libre
           </button>
@@ -630,6 +752,11 @@ export default function Cotizaciones({ irA }) {
                   <tr key={i}>
                     <td>
                       {p.sku || '—'}
+                      {/* Sin esta etiqueta, una pieza a $0 parece un precio que se olvidó
+                          capturar. Va incluida en el servicio, pero sí aparta inventario. */}
+                      {esIncluida(p) && (
+                        <div><span className="etiqueta">Incluida en el servicio</span></div>
+                      )}
                       {faltaDePartida(p) > 0 && (
                         <div className="estado-pendiente" style={{ fontWeight: 700 }}>
                           Sin existencia suficiente: faltan {faltaDePartida(p)}. Se pedirá al aceptar.

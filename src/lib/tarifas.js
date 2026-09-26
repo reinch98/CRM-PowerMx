@@ -134,6 +134,10 @@ export const importe = (cantidad, precio) => redondear(Number(cantidad || 0) * N
 
 export const CONCEPTOS_CATALOGO = [
   ['correctivo', 'Servicio correctivo'],
+  // Menor y mayor son dos servicios con precio propio, tabulado por clase y tramo de kW
+  // (SQL 28). `preventivo` a secas se queda para lo que ya estuviera capturado.
+  ['preventivo_menor', 'Mantenimiento menor'],
+  ['preventivo_mayor', 'Mantenimiento mayor'],
   ['preventivo', 'Mantenimiento preventivo'],
   ['instalacion_gas', 'Instalación de gas'],
   ['instalacion_electrica', 'Instalación eléctrica'],
@@ -165,8 +169,9 @@ export function tarifasDeCatalogo(tarifas) {
 }
 
 const ABREV_CONCEPTO = {
-  correctivo: 'COR', preventivo: 'PRE', instalacion_gas: 'INSGAS',
-  instalacion_electrica: 'INSELEC', otro: 'SERV'
+  correctivo: 'COR', preventivo: 'PRE',
+  preventivo_menor: 'PMEN', preventivo_mayor: 'PMAY',
+  instalacion_gas: 'INSGAS', instalacion_electrica: 'INSELEC', otro: 'SERV'
 }
 const ABREV_CLASE = { gasolina: 'GAS', gas_lp: 'GLP', diesel: 'DIE', solar: 'SOL', bateria: 'BAT' }
 

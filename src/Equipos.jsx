@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { Alerta } from './ui'
 import { textoHorometro, cargarEquiposSinSerie } from './lib/equipoCampo'
+import { aFormulario } from './lib/formularios'
 import {
   CAMPOS_COMPONENTE, nombreRol, componentesPorLeer, diferencias,
   leerPlaca, guardarComponente, urlDeFoto
@@ -178,6 +179,8 @@ export default function Equipos() {
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
   const [sinSerie, setSinSerie] = useState([])
+  const [editando, setEditando] = useState(null)   // el equipo que se está editando
+  const [abierto, setAbierto] = useState(false)
 
   useEffect(() => { cargarClientes(); cargarEquipos() }, [])
 
@@ -242,19 +245,48 @@ export default function Equipos() {
     const limpios = Object.fromEntries(
       Object.entries(atributos).filter(([, v]) => v !== '' && v != null)
     )
-    payload.atributos = limpios
+    // Al EDITAR hay que conservar lo que este formulario no maneja. `atributos` también
+    // guarda `componentes`, que son las placas que el técnico fotografió en campo (SQL 25):
+    // sobrescribir el jsonb entero las borraría sin que nadie se entere. Se conservan las
+    // claves ajenas al formulario y se reemplazan solo las suyas, para que vaciar un campo
+    // sí lo borre.
+    const delFormulario = (ATRIBUTOS[form.tipo] || []).map(([clave]) => clave)
+    const ajenos = Object.fromEntries(
+      Object.entries(editando?.atributos || {}).filter(([k]) => !delFormulario.includes(k))
+    )
+    payload.atributos = { ...ajenos, ...limpios }
 
     setGuardando(true)
     setError('')
-    const { error } = await supabase.from('equipos').insert([payload])
+    const { error } = editando
+      ? await supabase.from('equipos').update(payload).eq('id', editando.id)
+      : await supabase.from('equipos').insert([payload])
     setGuardando(false)
 
     if (error) setError(error.message)
     else {
       setForm(vacio)
       setAtributos({})
+      setEditando(null)
+      setAbierto(false)
       cargarEquipos()
     }
+  }
+
+  // Editar reusa el mismo formulario del alta, incluidos los atributos del tipo.
+  function editar(eq) {
+    setForm(aFormulario(eq, vacio))
+    setAtributos(Object.fromEntries(
+      (ATRIBUTOS[eq.tipo] || []).map(([clave]) => [clave, eq.atributos?.[clave] ?? ''])
+    ))
+    setEditando(eq)
+    setAbierto(true)
+    setError('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function cancelar() {
+    setForm(vacio); setAtributos({}); setEditando(null); setError('')
   }
 
   async function borrar(id) {
@@ -289,8 +321,11 @@ export default function Equipos() {
 
       {error && <Alerta tipo="error">{error}</Alerta>}
 
-      <details className="tarjeta">
-        <summary className="resumen">＋ Agregar equipo</summary>
+      <details className="tarjeta" open={abierto}
+        onToggle={e => { setAbierto(e.target.open); if (!e.target.open && editando) cancelar() }}>
+        <summary className="resumen">
+          {editando ? '✎ Editando un equipo' : '＋ Agregar equipo'}
+        </summary>
         <form onSubmit={guardar} style={{ maxWidth: 520, marginTop: 12 }}>
           <label className="campo">
             <span>Cliente *</span>
@@ -365,9 +400,12 @@ export default function Equipos() {
             </fieldset>
           )}
 
-          <button type="submit" className="btn-primario" disabled={guardando}>
-            {guardando ? 'Guardando…' : 'Guardar equipo'}
-          </button>
+          <div className="fila">
+            <button type="submit" className="btn-primario" disabled={guardando}>
+              {guardando ? 'Guardando…' : editando ? 'Guardar cambios' : 'Guardar equipo'}
+            </button>
+            {editando && <button type="button" onClick={cancelar}>Cancelar</button>}
+          </div>
         </form>
       </details>
 
@@ -436,7 +474,12 @@ export default function Equipos() {
                 <td>{textoHorometro(eq) || '—'}</td>
                 <td>{eq.proximo_mantenimiento}</td>
                 <td>{eq.en_poliza ? 'Sí' : 'No'}</td>
-                <td><button className="btn-peligro" onClick={() => borrar(eq.id)}>Borrar</button></td>
+                <td>
+                  <div className="fila">
+                    <button onClick={() => editar(eq)}>Editar</button>
+                    <button className="btn-peligro" onClick={() => borrar(eq.id)}>Borrar</button>
+                  </div>
+                </td>
               </tr>
             ))}
             {equipos.length === 0 && (
