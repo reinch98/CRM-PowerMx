@@ -931,6 +931,21 @@ No contesta ni agenda nada: eso sigue siendo a mano desde la pantalla WhatsApp.
   **no usar su botón de arreglo**, deja al técnico sin existencias ni catálogo.
   Verificar el modo con `select relname, reloptions from pg_class ...`.
   `create or replace view` no cambia el modo: hace falta `alter view ... set`.
+- **El botón del asesor SÍ se usó, y se notó el 26/09/2026.** La foto del esquema
+  (`00_volcar_esquema.sql`) destapó que `catalogo` y `resguardo_por_cliente` estaban en
+  `security_invoker = on`, contra lo que dice el párrafo de arriba; solo `existencias`
+  seguía en definer. Con `productos` cerrada a todos menos al admin (tiene UNA política,
+  `admin_productos`), eso deja esas dos vistas **VACÍAS para quien no sea admin**: cero
+  filas, sin error ni permiso denegado, y la rama de `cliente` del resguardo no puede
+  dispararse nunca. **No se notaba** porque ninguna pantalla las lee (el código usa
+  `disponibles` en Cotizaciones e Inventario, las dos de admin, y `existencias` en Almacén
+  y en "Pedir material" del técnico); se habría notado en la función `agente` llamada por un
+  técnico y en el portal del cliente. Arreglado con `30_modo_vistas.sql` y su prueba, que
+  además comprueba que el candado `mi_rol()` sigue puesto (una cuenta sin rol y el
+  almacenista siguen viendo 0 en `catalogo`: ahí van los precios).
+  **Lección:** una propiedad que vive en `reloptions` no se ve en el código ni en el diff, y
+  un botón de la consola la puede voltear sin que nadie se entere. Si el aviso "Security
+  Definer View" vuelve a aparecer para esas tres, es esperado.
 - La llave anon es pública por diseño; lo que protege es RLS. Nunca usar
   `service_role` ni en el front ni en el agente.
 - El costo no sale nunca al sitio público ni a un técnico.
@@ -1199,8 +1214,15 @@ corte ni reordene, y de ahí se guarda como `supabase/sql/00_esquema_base.sql`.
 - **PUBLIC no es un rol:** `has_function_privilege('public', …)` falla y `format('%I',
   'PUBLIC')` crearía un rol que no existe. Se lee el ACL con `aclexplode` buscando el
   otorgado `0`, que es PUBLIC; `proacl` nulo significa el permiso por defecto.
-- **Sin probar:** no hay forma de correrlo desde este entorno (ni Docker ni credenciales de
-  base). Si truena, el mensaje de Postgres dice qué línea y se corrige.
+- **Corrida por Caña el 26/09/2026, a la primera:** `supabase/sql/00_esquema_base.sql`, 4,885
+  líneas — **30 tablas, 6 vistas, 74 funciones, 60 políticas**, 12 triggers, 63 índices, 136
+  restricciones y 84 `revoke`. Ahí quedaron por fin `clientes`, `equipos`, `citas`,
+  `ordenes_servicio`, `cotizaciones`, `movimientos_inventario`, `auditoria` y
+  `datos_fiscales`. Ese archivo **no se edita a mano**: se vuelve a correr el script y se
+  reemplaza entero.
+- **Y encontró un fallo de seguridad que llevaba días escondido** en el modo de dos vistas
+  (ver "Modo de las vistas" en Seguridad, y `30_modo_vistas.sql`). Ese solo hallazgo ya pagó
+  el trabajo: era invisible en el código, en el diff y en la pantalla.
 
 ## Ruta de mejora
 
