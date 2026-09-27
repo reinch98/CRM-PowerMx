@@ -819,10 +819,21 @@ y probado** (10 pasos con rollback, todos "ok"). Las dos funciones (`agente-what
   fuerte porque en la burbuja se ven igual que lo ya enviado.
 - **Defecto de diseño encontrado al medir:** `.ayuda` dentro de `.burbuja-mia` daba **2.42**
   de contraste (gris pensado para fondo claro sobre azul noche). Arreglado en `index.css`.
-- **El cotizador de preventivos: construido el 27/09/2026** (`supabase/sql/37_wa_cotizar_preventivo.sql`
-  y su prueba; `wa_cotizar_preventivo` es la **segunda y última** herramienta de escritura del
-  agente). Se pudo hacer ahora porque el precio fijo ya vive en SQL desde la 28 y la 29 lo
-  partió en piezas sin precio; cuando se diseñó, la fórmula solo existía en el navegador.
+- **El cotizador de preventivos: aplicado y probado el 27/09/2026**
+  (`supabase/sql/37_wa_cotizar_preventivo.sql` y `37_prueba_wa_cotizar_preventivo.sql`,
+  **13 de 13 "ok"** llamando como `bot`; `wa_cotizar_preventivo` es la **segunda y última**
+  herramienta de escritura del agente). Se pudo hacer ahora porque el precio fijo ya vive en
+  SQL desde la 28 y la 29 lo partió en piezas sin precio; cuando se diseñó, la fórmula solo
+  existía en el navegador.
+  Lo comprobado en la base: servicio 4,500 + traslado 900 = subtotal 5,400, IVA 864, total
+  6,264; 3 partidas; estado `borrador` y `origen = 'whatsapp'`; la refacción en 0, `incluida`
+  y **con `producto_id`**; **0 movimientos de `apartado`** (un borrador no mueve inventario);
+  pedir dos veces devuelve el mismo folio; el equipo de otro cliente se rechaza; sin tarifa de
+  mayor explica el motivo y no inventa precio; un número sin ligar no cotiza nada.
+  **Y el traslado dio 900.00, el mismo número que `tarifas.js`** — era la comprobación de que
+  las dos implementaciones de la regla coinciden.
+  Ojo: la prueba consume folios de cotización, porque la secuencia no se revierte con el
+  `rollback` (lo mismo que pasa con las pruebas de la 1b y la 1c).
   - **El agente NO dice el precio** (decisión de Caña, 27/09/2026): solo avisa que la
     cotización se está preparando. La función a propósito **no devuelve el total**, así que el
     modelo no lo sabe y no hay forma de que lo suelte. El admin la revisa y la manda.
