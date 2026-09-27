@@ -12,6 +12,7 @@ const Agenda = lazy(() => import('./Agenda'))
 const Clientes = lazy(() => import('./Clientes'))
 const Contactos = lazy(() => import('./Contactos'))
 const WhatsApp = lazy(() => import('./WhatsApp'))
+const Solicitudes = lazy(() => import('./Solicitudes'))
 const Equipos = lazy(() => import('./Equipos'))
 const Trabajos = lazy(() => import('./Trabajos'))
 const Almacen = lazy(() => import('./Almacen'))
@@ -30,6 +31,7 @@ const PANTALLAS = {
   almacen:      { titulo: 'Almacén',      componente: Almacen,      roles: ['admin', 'almacenista'] },
   clientes:     { titulo: 'Clientes',     componente: Clientes,     roles: ['admin'] },
   contactos:    { titulo: 'Contactos',    componente: Contactos,    roles: ['admin'] },
+  solicitudes:  { titulo: 'Solicitudes',  componente: Solicitudes,  roles: ['admin'] },
   whatsapp:     { titulo: 'WhatsApp',     componente: WhatsApp,     roles: ['admin'] },
   equipos:      { titulo: 'Equipos',      componente: Equipos,      roles: ['admin'] },
   inventario:   { titulo: 'Inventario',   componente: Inventario,   roles: ['admin'] },

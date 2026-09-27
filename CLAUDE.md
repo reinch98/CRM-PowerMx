@@ -26,6 +26,8 @@ español, concisas, con el paso siguiente claro.
 - Este CRM es la fuente de verdad de clientes, equipos, productos e inventario.
 - El sitio público vive aparte (repo `POWERMX-sitio`, otro proyecto de Supabase).
   Se publica desde un Excel con `convertir.js`. El CRM nunca escribe ahí.
+  Al revés sí hay un puente: el formulario de cotizar del sitio escribe en el CRM, y **solo**
+  por la Edge Function `solicitud-web` (ver "Solicitudes del sitio").
 
 ## Reglas del modelo de datos — no romper
 
@@ -904,6 +906,61 @@ No contesta ni agenda nada: eso sigue siendo a mano desde la pantalla WhatsApp.
   un 401 sería "Verify JWT" encendido.
 - El **token de Meta no interviene aquí**: recibir no lo usa. Que el token temporal de 24 h
   venza no apaga la bandeja; hará falta uno permanente cuando el CRM **mande** por la API.
+
+## Solicitudes del sitio (SQL 36, 27/09/2026) — SQL aplicado y probado; falta desplegar la función y publicar
+
+**SQL 36 aplicado y probado el 27/09/2026** (`36_prueba_solicitudes_web.sql`, 11 pasos con rollback,
+todos "ok": entra y sugiere cliente, el reintento no duplica, otro contenido crea otra, el bot y el
+técnico ven 0, el admin ve las 3, resolver y reabrir dejan y borran autor y fecha, `anon` no toca
+nada). Falta: `npx supabase functions deploy solicitud-web`, publicar CRM y sitio, y probar con una
+solicitud real.
+
+El formulario de `cotizar.html` (sitio) mandaba todo a un webhook de n8n (`webhook-test`, que
+solo recibe con el editor abierto: se perdían leads) y a WhatsApp. Por decisión de Caña, **las
+solicitudes llegan solo al CRM**; n8n ya no interviene. Primer puente real entre el sitio y el CRM.
+
+`formulario → Edge Function solicitud-web → registrar_solicitud_web (SQL) → tabla solicitudes_web
+→ pantalla "Solicitudes" (admin)`
+
+- **Una solicitud NO crea cliente, cotización ni cita.** Un número equivocado o un bot llenaría la
+  base de basura (misma decisión que en WhatsApp). El admin la ve, contesta por WhatsApp y decide.
+  Lo único que la base hace sola es **sugerir** un cliente cuando el teléfono es de exactamente una
+  persona activa de `contactos`.
+- **Sin `service_role` y sin permisos a `anon`:** la función entra con la cuenta `bot` (la misma
+  del webhook de WhatsApp) y solo puede llamar a `registrar_solicitud_web`. El bot **no lee** la
+  tabla; solo el admin (RLS). Los mismos secretos `BOT_EMAIL`/`BOT_PASSWORD`.
+- **La protección real es la base, no la función:** `registrar_solicitud_web` valida (nombre,
+  10 dígitos, correo), recorta cada campo, pone topes (**60 por hora** en todo el sitio, **5 por día
+  por número**; error `54000` → la función responde 429) y no duplica un reintento (mismo número y
+  mismo contenido en 10 minutos devuelve la misma). Datos inválidos son `22023` → 400 con el mensaje
+  para el cliente. Encima, en la función: campo trampa `sitio_web`, tiempo mínimo de llenado
+  (2.5 s) —los dos contestan 200 sin guardar nada—, cuerpo máximo de 10 KB y CORS solo para
+  `https://powermx.com.mx` y `www` (secreto opcional `SOLICITUD_ORIGENES`). **CORS no es seguridad**:
+  un script lo ignora; por eso los topes viven en la base.
+- **`[functions.solicitud-web] verify_jwt = false`** en `config.toml`: el sitio no tiene sesión.
+- `resolver_solicitud_web(id, estado, nota, cliente)` (solo admin): `nueva` | `atendida` |
+  `descartada`, con quién y cuándo; reabrir borra autor y fecha y conserva la nota.
+- **Pantalla `Solicitudes`** (`src/Solicitudes.jsx`, `src/lib/solicitudesWeb.js`, solo admin): por
+  omisión solo las nuevas; cada tarjeta muestra lo que marcó, avisa "Ya es cliente" si se sugirió
+  uno, "Responder por WhatsApp" (`wa.me` con un saludo ya escrito), nota interna y atender /
+  descartar / reabrir. 7 casos en Node. Sin ver aún en el emulador ni contra la base real.
+- **El sitio** (`cotizar.html`): si la solicitud se registra, se abre WhatsApp como respaldo y se
+  muestra el éxito; si el dato es inválido (400) se corrige sin abrir WhatsApp; si falla otra cosa
+  (429, 500, sin red) **ya no dice "Recibimos tu cotización"**: avisa y abre WhatsApp con el
+  resumen, que es la única vía que queda. Se quitó la promesa de "te enviamos un resumen por
+  WhatsApp", que hacía n8n.
+- **Para ponerlo en marcha, en este orden:** (1) correr `36_solicitudes_web.sql` y luego
+  `36_prueba_solicitudes_web.sql` (11 pasos, todos "ok"); (2) `npx supabase functions deploy
+  solicitud-web` (los secretos del bot ya existen); (3) publicar el CRM (pantalla nueva) y el sitio
+  (`cotizar.html`); (4) mandar una solicitud de verdad desde powermx.com.mx y verla en el CRM.
+  Antes de publicar el sitio, confirmar que ese sea el dominio real: si no, poner el correcto en
+  `SOLICITUD_ORIGENES` o el navegador bloqueará el formulario.
+- **Los rechazos** (nombre vacío, teléfono corto, correo malo, tope) lanzan excepción y no se
+  pueden probar en el editor sin plpgsql: están descritos como pruebas manuales en el encabezado de
+  `36_prueba_solicitudes_web.sql`.
+- **Falta:** un contador de "nuevas" en el menú; crear el cliente desde la solicitud con los datos
+  precargados (hoy manda a Clientes a darlo de alta a mano); y un límite de peticiones por IP en
+  Cloudflare/Supabase si algún día hay abuso (hoy solo hay topes globales y por número).
 
 ## Seguridad — lo más importante
 

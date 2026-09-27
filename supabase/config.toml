@@ -437,3 +437,11 @@ verify_jwt = false
 # ---------------------------------------------------------------------------
 [functions.leer-placa]
 verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# Solicitudes de cotización del sitio público: el sitio no tiene sesión de Supabase,
+# así que "Verify JWT" va apagado. La protege la base (`registrar_solicitud_web`:
+# validación y topes), la cuenta `bot` sin permisos de lectura y un campo trampa.
+# ---------------------------------------------------------------------------
+[functions.solicitud-web]
+verify_jwt = false
