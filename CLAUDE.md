@@ -1268,10 +1268,15 @@ corte ni reordene, y de ahí se guarda como `supabase/sql/00_esquema_base.sql`.
   `ordenes_servicio`, `cotizaciones`, `movimientos_inventario`, `auditoria` y
   `datos_fiscales`. Ese archivo **no se edita a mano**: se vuelve a correr el script y se
   reemplaza entero.
-- **Y a la primera encontró un fallo real:** `catalogo` y `resguardo_por_cliente` estaban en
-  `security_invoker = on`, o sea vacías para quien no fuera admin (ver "El modo SE VOLTEÓ de
-  verdad" en Seguridad). Era invisible en el código, en el diff y en la pantalla. Ese solo
-  hallazgo pagó el trabajo, y es el argumento para volver a tomar la foto cada tanto.
+- **Encontró TRES cosas reales**, ninguna visible en el código, en el diff ni en la pantalla.
+  Es el argumento para volver a tomar la foto cada tanto y no solo cuando algo se rompe:
+  1. `catalogo` y `resguardo_por_cliente` en `security_invoker = on`, o sea vacías para quien
+     no fuera admin (ver "El modo SE VOLTEÓ de verdad" en Seguridad).
+  2. `catalogos` con `insert`/`update` abiertos a cualquier rol, y `auditoria` con el `insert`
+     abierto a cualquier rol — un rastro de auditoría que cualquiera podía alimentar con
+     renglones falsos.
+  3. `anon` con todos los privilegios, incluido `truncate`, sobre las 11 tablas del esquema
+     original. Las dos últimas las arregló `35_cerrar_escritura.sql`.
 - La sección de vistas quedó **auditada** con `31_comparar_modo_vistas.sql`: tres lecturas
   distintas de `reloptions` coinciden en las cinco vistas.
 
@@ -1288,6 +1293,10 @@ cualquier estado libera el apartado; candado real contra sincronizaciones dobles
 Supabase); lint en cero.
 
 1. **Cerrar seguridad de datos** (antes de cualquier portal de cliente)
+   **Cerrado el 27/09/2026**, salvo probar las pantallas con la cuenta de técnico (que es
+   trabajo en la app, no en la base) y la opción a futuro de mover `costo` a
+   `productos_costos`. Lo que se cerró ese día: el rol `cliente` probado de verdad (33), la
+   escritura de `catalogos` y `auditoria` (35) y los privilegios de `anon` (35).
    - ~~Vistas por rol.~~ Hecho y probado el 19/09/2026 (`05_vistas_por_rol.sql`):
      técnico ve 95 en `disponibles` y `catalogo` y 0 en `productos`; una cuenta sin
      rol ve 0 en todo; los modos quedaron definer/invoker como se describe arriba.
@@ -1322,8 +1331,12 @@ Supabase); lint en cero.
      asesor. Toca Inventario, Cotizaciones y el agente: hacerlo con calma.
    - ~~RLS de citas y órdenes del técnico.~~ Hecho con la 13 (1e): se quitaron las
      políticas de escritura. ~~Falta restringir escritura en `catalogos` y `auditoria`.~~
-     Escrito el 27/09/2026 (`35_cerrar_escritura.sql` y su prueba); **falta que Caña lo
-     corra**. Lo que la foto del esquema destapó al ir a arreglarlo:
+     **Aplicada y probada el 27/09/2026** (`35_cerrar_escritura.sql` y
+     `35_prueba_cerrar_escritura.sql`; 10 de 10 "ok": el técnico lee `catalogos` pero no la
+     modifica ni la borra, no ve ni altera `auditoria`, el admin sí mantiene el catálogo y sí
+     lee la auditoría, quedan 0 políticas de escritura con la condición en `true` y 0
+     privilegios de `anon` en el esquema público).
+     Lo que la foto del esquema destapó al ir a arreglarlo:
      · **`catalogos`** tenía tres políticas para `authenticated` sin comprobar rol
        (`select/insert/update` con la condición en `true`), o sea que un técnico, un
        almacenista, un cliente o una cuenta `sin_rol` podían insertar y modificar. Y el
