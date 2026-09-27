@@ -1167,6 +1167,21 @@ El respaldo del `<Suspense>` va sin `<main>` propio: ya está dentro del `<main>
   usuario: `set local role authenticated` + `set_config('request.jwt.claims', ...)`.
   Correr **siempre** el bloque completo: una línea suelta de una prueba puede tocar
   datos reales si el usuario simulado no la frena.
+- **NO usar `select ... into` ni `execute ... into` dentro de un bloque `do $$` (27/09/2026).**
+  El editor de Supabase trae una función que le activa RLS a las "tablas nuevas" de un
+  script, y lee `select id into v_producto from productos` como la **sintaxis vieja de
+  `create table as`**: cree que `v_producto` es una tabla y agrega
+  `ALTER TABLE v_producto ENABLE ROW LEVEL SECURITY` **en medio del bloque `$$`**, que queda
+  sin cerrar y truena con «unterminated dollar-quoted string». Se ve clarísimo en cuáles
+  marca: solo las variables que aparecen como primer destino de un `into`.
+  En su lugar, asignación: `v_n := (select count(*) from catalogo);`. Hace lo mismo y no se
+  puede confundir con crear una tabla. Para insertar, generar el uuid antes
+  (`v_id := gen_random_uuid()`) en vez de `insert ... returning id into`.
+  Una lectura normal (sin `execute`) sigue siendo válida después de `set local role`: Postgres
+  marca los planes que dependen de RLS y los vuelve a planear al cambiar el usuario.
+  **Ojo:** 19 de los archivos `*_prueba_*.sql` del repo traen el patrón viejo. Corrieron sin
+  problema entre el 20 y el 25/09, así que parece una función nueva del dashboard; quedan como
+  minas para quien los vuelva a correr. Se arreglan cuando haga falta repetirlos, no antes.
 
 ## Pruebas (26/09/2026)
 

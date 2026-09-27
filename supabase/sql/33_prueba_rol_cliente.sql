@@ -16,8 +16,8 @@
 -- ES AUTOSUFICIENTE. Al 26/09/2026 el perfil cliente de la base no está ligado a ningún
 -- cliente y no hay ni un movimiento `a_resguardo`, así que la prueba **fabrica lo que le
 -- falta** dentro del `begin/rollback`: un cliente de prueba, el enlace del perfil y resguardo
--- de dos clientes distintos. Así se puede responder la pregunta de seguridad hoy, sin esperar
--- a que alguien decida a qué cliente real corresponde esa cuenta (eso es de `34_...`).
+-- de dos clientes distintos. Así se responde la pregunta de seguridad hoy, sin esperar a que
+-- alguien decida a qué cliente real corresponde esa cuenta (eso es de `34_...`).
 --
 -- CÓMO SE CUIDA EL DATO REAL. La prueba 30 le cambió el rol a una persona real y dependía del
 -- `rollback` para devolverlo; si esa ejecución se hubiera cerrado con un commit, el único
@@ -28,6 +28,18 @@
 -- Si el perfil YA está ligado (después de correr el 34), la prueba lo usa tal cual y no toca
 -- `perfiles` para nada.
 --
+-- ⚠ NI UN `select ... into` NI UN `execute ... into`, A PROPÓSITO. El editor de Supabase trae
+-- una función que le activa RLS a las "tablas nuevas", y lee `select id into v_producto from
+-- productos` como la sintaxis vieja de `create table as`: cree que `v_producto` es una tabla y
+-- mete `ALTER TABLE v_producto ENABLE ROW LEVEL SECURITY` **en medio del bloque $$**, que
+-- queda sin cerrar («unterminated dollar-quoted string»). Pasó el 27/09/2026 con la primera
+-- versión de esta prueba. Aquí se usa asignación (`v := (select ...)`), que hace lo mismo y no
+-- se puede confundir con una creación de tabla.
+--
+-- Las lecturas de abajo son SQL normal, no `execute`, y siguen siendo válidas tras el cambio
+-- de rol: Postgres marca los planes que dependen de RLS y los vuelve a planear cuando cambia
+-- el usuario, así que no se reutiliza el plan sin RLS de la sesión del editor.
+--
 -- Correr el bloque COMPLETO, de `begin;` a `rollback;`.
 -- ---------------------------------------------------------------------------
 
@@ -35,23 +47,22 @@ begin;
 
 do $$
 declare
-  v_perfil       uuid;
-  v_cliente      uuid;
-  v_otro         uuid;
-  v_producto     uuid;
-  v_lo_ligue     boolean := false;
-  v_n            int;
-  v_otros        int;
+  v_perfil   uuid;
+  v_cliente  uuid;
+  v_otro     uuid;
+  v_producto uuid;
+  v_lo_ligue boolean := false;
+  v_n        int;
+  v_otros    int;
 begin
-  select id, cliente_id into v_perfil, v_cliente
-  from perfiles where rol = 'cliente' and coalesce(activo, true) limit 1;
-
+  v_perfil := (select id from perfiles where rol = 'cliente' and coalesce(activo, true) limit 1);
   if v_perfil is null then
     perform set_config('app.p0', 'FALLO: no hay ningún perfil con rol cliente', true);
     return;
   end if;
+  v_cliente  := (select cliente_id from perfiles where id = v_perfil);
+  v_producto := (select id from productos limit 1);
 
-  select id into v_producto from productos limit 1;
   if v_producto is null then
     perform set_config('app.p0', 'FALLO: no hay productos, no se puede fabricar resguardo', true);
     return;
@@ -59,9 +70,9 @@ begin
 
   if v_cliente is null then
     -- Cliente de prueba y enlace temporal. `clientes` exige nombre y teléfono.
+    v_cliente := gen_random_uuid();
     insert into clientes (id, nombre, telefono)
-    values (gen_random_uuid(), 'Cliente de prueba (33)', '9990000033')
-    returning id into v_cliente;
+    values (v_cliente, 'Cliente de prueba (33)', '9990000033');
     update perfiles set cliente_id = v_cliente where id = v_perfil;
     v_lo_ligue := true;
     perform set_config('app.p0', concat('ok — el perfil no estaba ligado, así que se ligó a un ',
@@ -72,11 +83,11 @@ begin
   end if;
 
   -- El otro cliente, para tener con qué comparar. Si no hay, se crea.
-  select id into v_otro from clientes where id is distinct from v_cliente limit 1;
+  v_otro := (select id from clientes where id is distinct from v_cliente limit 1);
   if v_otro is null then
+    v_otro := gen_random_uuid();
     insert into clientes (id, nombre, telefono)
-    values (gen_random_uuid(), 'Otro cliente de prueba (33)', '9990000034')
-    returning id into v_otro;
+    values (v_otro, 'Otro cliente de prueba (33)', '9990000034');
   end if;
 
   -- Resguardo de los dos: 2 piezas en poder del cliente de la prueba, 5 en poder del otro.
@@ -88,45 +99,44 @@ begin
   -- ---- a partir de aquí, todo se lee COMO EL CLIENTE ----
   perform set_config('request.jwt.claims',
                      json_build_object('sub', v_perfil, 'role', 'authenticated')::text, true);
-  execute 'set local role authenticated';
+  set local role authenticated;
 
   -- 1) El catálogo lleva precios: el cliente no lo ve (`catalogo` solo abre a admin y técnico).
-  execute 'select count(*) from catalogo' into v_n;
+  v_n := (select count(*) from catalogo);
   perform set_config('app.p2', concat(case when v_n = 0 then 'ok' else 'FALLO' end,
     ' — el cliente ve ', v_n, ' en catalogo (debe ser 0: ahí están los precios)'), true);
 
   -- 2) Tampoco `productos`, que además trae `costo`.
-  execute 'select count(*) from productos' into v_n;
+  v_n := (select count(*) from productos);
   perform set_config('app.p3', concat(case when v_n = 0 then 'ok' else 'FALLO' end,
     ' — el cliente ve ', v_n, ' en productos (debe ser 0: ahí está el costo)'), true);
 
   -- 3) Ni existencias: cuánto material hay en el almacén no es asunto suyo.
-  execute 'select count(*) from existencias' into v_n;
+  v_n := (select count(*) from existencias);
   perform set_config('app.p4', concat(case when v_n = 0 then 'ok' else 'FALLO' end,
     ' — el cliente ve ', v_n, ' en existencias (debe ser 0)'), true);
 
   -- 4) De `clientes`, solo su propia ficha (política `cliente_ve_lo_suyo`). Ver 0 sería un
   --    filtro roto; ver 2 o más, una fuga.
-  execute 'select count(*) from clientes' into v_n;
+  v_n := (select count(*) from clientes);
   perform set_config('app.p5', concat(case when v_n = 1 then 'ok' else 'FALLO' end,
     ' — el cliente ve ', v_n, ' ficha(s) en clientes (debe ver exactamente 1, la suya)'), true);
 
   -- 5) Las cotizaciones son de la oficina.
-  execute 'select count(*) from cotizaciones' into v_n;
+  v_n := (select count(*) from cotizaciones);
   perform set_config('app.p6', concat(case when v_n = 0 then 'ok' else 'FALLO' end,
     ' — el cliente ve ', v_n, ' en cotizaciones (debe ser 0)'), true);
 
   -- 6) LA QUE FALTABA: su resguardo, y SOLO el suyo. Hay resguardo de dos clientes, así que
   --    ahora sí se distingue "el filtro funciona" de "no hay nada que ver".
-  execute 'select count(*) from resguardo_por_cliente' into v_n;
-  execute format('select count(*) from resguardo_por_cliente where cliente_id is distinct from %L', v_cliente)
-    into v_otros;
+  v_n     := (select count(*) from resguardo_por_cliente);
+  v_otros := (select count(*) from resguardo_por_cliente where cliente_id is distinct from v_cliente);
   perform set_config('app.p7', concat(
     case when v_n = 1 and v_otros = 0 then 'ok' else 'FALLO' end,
     ' — el cliente ve ', v_n, ' renglón(es) en resguardo_por_cliente y ', v_otros,
     ' de otros clientes (debe ver 1, el suyo, y 0 de otros)'), true);
 
-  execute 'reset role';
+  reset role;
 
   -- ---- deshacer a mano lo que se tocó de una fila real ----
   if v_lo_ligue then
