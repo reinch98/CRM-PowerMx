@@ -81,7 +81,7 @@ const redondear = n => Math.round(n * 100) / 100
 //
 // Vive aquí y no dentro de cada cotizador porque la usan el diagnóstico y el preventivo: si
 // cada uno la copiara, el mismo cliente pagaría distinto según el servicio. La misma regla
-// está también en `_precio_traslado` (SQL 36), que es la que usa el agente de WhatsApp porque
+// está también en `_precio_traslado` (SQL 37), que es la que usa el agente de WhatsApp porque
 // el bot no puede leer `tarifas_servicio`; **las dos tienen que dar el mismo número** y eso se
 // comprueba en las pruebas de los dos lados (60 km × 15 = 900).
 export function partidaDeTraslado({ tarifas, cliente }) {

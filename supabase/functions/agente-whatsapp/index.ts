@@ -16,7 +16,7 @@
 //
 // Dos herramientas de escritura, las dos acotadas y las dos dejando trabajo en borrador para
 // que una persona lo revise: pedir una cita `por_programar` y dejar una cotización de
-// mantenimiento preventivo. **El precio lo calcula la base** (SQL 36) y el agente NO lo dice:
+// mantenimiento preventivo. **El precio lo calcula la base** (SQL 37) y el agente NO lo dice:
 // solo avisa que la cotización se está preparando. Así el modelo no puede inventar un número
 // ni comprometer a PowerMx con uno que el admin todavía no revisó.
 //

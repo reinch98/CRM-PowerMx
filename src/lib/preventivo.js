@@ -72,7 +72,7 @@ export function faltantes(paquete, elegidas = {}) {
 // El traslado se agregó el 27/09/2026 por decisión de Caña, cuando se construyó el cotizador
 // del agente de WhatsApp: si solo lo cobrara un canal, el mismo servicio costaría distinto
 // según por dónde entró la solicitud. La regla vive en `tarifas.js` (una sola copia en JS) y
-// en `_precio_traslado` del SQL 36, que es la que usa el bot.
+// en `_precio_traslado` del SQL 37, que es la que usa el bot.
 //
 // `tarifas` y `cliente` son opcionales: sin ellos no se agrega traslado y se avisa, igual que
 // hace el diagnóstico.

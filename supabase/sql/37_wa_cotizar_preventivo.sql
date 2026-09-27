@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- 36_wa_cotizar_preventivo.sql — la segunda (y última) herramienta de escritura del agente
+-- 37_wa_cotizar_preventivo.sql — la segunda (y última) herramienta de escritura del agente
 -- de WhatsApp: dejar una cotización de mantenimiento preventivo en BORRADOR.
 --
 -- Cierra el "Falta: el cotizador de preventivos" del paso (3) del plan de WhatsApp. Se puede

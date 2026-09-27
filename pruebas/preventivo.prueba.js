@@ -176,7 +176,7 @@ test('partidas: el preventivo también cobra traslado, como el diagnóstico', ()
 })
 
 test('partidas: el servicio queda marcado con su tipo', () => {
-  // La marca `servicio` es lo que usa el SQL 36 para no apilar dos borradores del mismo tipo.
+  // La marca `servicio` es lo que usa el SQL 37 para no apilar dos borradores del mismo tipo.
   const partidas = partidasDePreventivo(PAQ, {}, { tarifas: TARIFAS_T, cliente: { distancia_km: 60 } })
   assert.equal(partidas[0].servicio, 'preventivo_menor')
   assert.equal(partidasDePreventivo({ ...PAQ, tipo: 'mayor' })[0].servicio, 'preventivo_mayor')

@@ -819,7 +819,7 @@ y probado** (10 pasos con rollback, todos "ok"). Las dos funciones (`agente-what
   fuerte porque en la burbuja se ven igual que lo ya enviado.
 - **Defecto de diseño encontrado al medir:** `.ayuda` dentro de `.burbuja-mia` daba **2.42**
   de contraste (gris pensado para fondo claro sobre azul noche). Arreglado en `index.css`.
-- **El cotizador de preventivos: construido el 27/09/2026** (`supabase/sql/36_wa_cotizar_preventivo.sql`
+- **El cotizador de preventivos: construido el 27/09/2026** (`supabase/sql/37_wa_cotizar_preventivo.sql`
   y su prueba; `wa_cotizar_preventivo` es la **segunda y última** herramienta de escritura del
   agente). Se pudo hacer ahora porque el precio fijo ya vive en SQL desde la 28 y la 29 lo
   partió en piezas sin precio; cuando se diseñó, la fórmula solo existía en el navegador.

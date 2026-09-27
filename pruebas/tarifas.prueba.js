@@ -235,8 +235,8 @@ test('partidaDeTraslado: rebasado el mínimo cobra TODOS los km, solo ida', () =
 
 test('partidaDeTraslado: el mismo número que da `_precio_traslado` en SQL', () => {
   // Las dos implementaciones de la regla tienen que coincidir: la de aquí la usa el navegador
-  // y la del SQL 36 la usa el agente de WhatsApp, que no puede leer `tarifas_servicio`.
-  // 60 km × 15 = 900 es el caso que también comprueba `36_prueba_wa_cotizar_preventivo.sql`.
+  // y la del SQL 37 la usa el agente de WhatsApp, que no puede leer `tarifas_servicio`.
+  // 60 km × 15 = 900 es el caso que también comprueba `37_prueba_wa_cotizar_preventivo.sql`.
   const { partida } = partidaDeTraslado({ tarifas: TARIFAS, cliente: { distancia_km: 60 } })
   assert.equal(importe(partida.cantidad, partida.precio_unitario), 900)
 })

@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- Prueba de 36_wa_cotizar_preventivo.sql. Correr DESPUÉS del 36, y el bloque COMPLETO.
+-- Prueba de 37_wa_cotizar_preventivo.sql. Correr DESPUÉS del 36, y el bloque COMPLETO.
 -- Todo en begin/rollback. SQL plano, sin bloques plpgsql (ver CLAUDE.md).
 --
 -- OJO: la secuencia de folios NO se revierte con el rollback, así que esta prueba consume
@@ -41,8 +41,10 @@ insert into tarifas_servicio (concepto, km_desde, precio, activo)
 values ('traslado', 40, 15, true);
 
 -- Una refacción con existencia y un paquete que la lleva.
-insert into productos (id, sku, nombre, unidad, precio, costo, activo)
-values (current_setting('app.prod')::uuid, 'PRUEBA36-FIL', 'Filtro de prueba', 'pieza', 300, 120, true);
+-- `categoria` es obligatoria en `productos` (y no tiene default): sin ella el insert truena.
+insert into productos (id, sku, categoria, nombre, unidad, precio, costo, activo)
+values (current_setting('app.prod')::uuid, 'PRUEBA36-FIL', 'refaccion', 'Filtro de prueba',
+        'pieza', 300, 120, true);
 insert into movimientos_inventario (id, tipo, cantidad, producto_id, referencia, created_at)
 values (gen_random_uuid(), 'entrada', 10, current_setting('app.prod')::uuid, 'PRUEBA-36', now());
 
