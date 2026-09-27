@@ -290,6 +290,37 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
   border-color: var(--ambar);
 }
 
+/* ---------------------------------------------------------------------------
+   Dos filas de navegación: las áreas arriba (sobre el azul de la barra) y las pantallas
+   del área abierta debajo, sobre el claro, para que se lean como dos niveles y no como
+   catorce botones sueltos. Solo salen cuando el rol ve más de un área: el técnico y el
+   almacenista siguen viendo una sola fila (ver GRUPOS en App.jsx).
+   --------------------------------------------------------------------------- */
+/* Envuelve en vez de desplazarse: con cinco áreas y el texto a 17 px no caben en 375 px, y
+   encoger la letra no es opción (mínimo 17 px, se lee al sol). Desplazarse escondería un área
+   completa, que es justo lo que se venía a arreglar; envolver no esconde nada. */
+.nav-grupos { padding-bottom: 8px; overflow-x: visible; flex-wrap: wrap; }
+/* El área abierta va en claro sobre el azul: se distingue de la pantalla activa, que es
+   ámbar, sin que dos cosas peleen por el mismo color. */
+.nav-grupos button[aria-pressed='true'],
+.nav-grupos button[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--claro);
+  color: var(--noche);
+  border-color: var(--claro);
+  font-weight: 700;
+}
+
+.nav-pantallas {
+  background: var(--claro);
+  border-bottom: 1px solid var(--linea);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.nav-pantallas button { background: var(--blanco); color: var(--noche); border-color: var(--borde); }
+.nav-pantallas button:hover:not(:disabled) { background: var(--claro); }
+/* `.barra :focus-visible` pinta el foco de blanco, que sobre esta fila clara no se ve. */
+.nav-pantallas :focus-visible { outline-color: var(--noche); box-shadow: 0 0 0 6px var(--claro); }
+
 /* Pantalla de carga, avisos de cuenta, login */
 .centro { max-width: 520px; margin: 0 auto; padding: 24px 16px; }
 

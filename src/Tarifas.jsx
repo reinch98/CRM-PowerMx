@@ -497,7 +497,7 @@ export default function Tarifas() {
 
   return (
     <div className="pagina">
-      <h2>Tarifas de servicio</h2>
+      <h2>Precios de servicio</h2>
       <p className="ayuda" style={{ maxWidth: 680 }}>
         Precios del diagnóstico, del traslado y de los servicios de catálogo. Al cotizar se copian
         a la partida: cambiar una tarifa aquí no altera las cotizaciones que ya hiciste.

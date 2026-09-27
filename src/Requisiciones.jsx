@@ -80,7 +80,7 @@ export default function Requisiciones() {
 
   return (
     <div className="pagina">
-      <h2>Requisiciones de pedido</h2>
+      <h2>Pedidos a proveedor</h2>
       <p className="ayuda" style={{ maxWidth: 680 }}>
         Aquí llega lo que faltó en almacén al aceptar una cotización. Al marcar una
         como <strong>Recibida</strong> el material entra solo al inventario.

@@ -1353,6 +1353,44 @@ y para dar de alta.
   SKU de las 51 refacciones sin precio en lote (una por una sí se puede, incluidas las dos
   pendientes `22676`/`99727` a las que les falta el cero inicial).
 
+## Navegación por áreas (27/09/2026)
+
+Catorce pestañas en una fila se habían vuelto una tira que había que desplazar de lado. El
+dato que cambió el diseño: **esas catorce las ve solo el admin** — el técnico ve dos (Agenda,
+Órdenes) y el almacenista una (Almacén).
+
+- **`GRUPOS` en `App.jsx`**, cinco áreas en el orden del trabajo, no alfabético: **Servicio**
+  (Agenda, Órdenes) · **Clientes** (Solicitudes, WhatsApp, Clientes, Contactos, Equipos) ·
+  **Ventas** (Cotizaciones, Precios) · **Almacén** (Almacén, Inventario, Pedidos) ·
+  **Ajustes** (Usuarios, Agente).
+- **El primer nivel solo aparece si el rol ve más de un área.** Es una regla, no una lista de
+  excepciones por rol: `gruposDe(rol)` filtra las pantallas de cada grupo y tira los vacíos, y
+  si queda uno solo se muestran sus pantallas directas. Comprobado en el emulador: técnico y
+  almacenista siguen con **una sola fila**, sin un toque de más. Arreglarle la tira al admin no
+  puede costarle un toque a quien trabaja bajo el sol.
+- **El grupo abierto se DEDUCE de la pantalla**, no se guarda en su propio estado: así
+  `irA('requisiciones')` desde Cotizaciones abre el área Almacén sin que nadie tenga que
+  acordarse de mover también el grupo. Un estado menos que sincronizar.
+- **Colores:** el área abierta va en `--claro` y la pantalla activa en `--ambar`. Dos niveles,
+  dos tratamientos; si los dos fueran ámbar pelearían por el mismo significado.
+- **La fila de áreas ENVUELVE, no se desplaza** (`flex-wrap: wrap`). Con cinco áreas a 17 px no
+  caben en 375 px, y encoger la letra está prohibido (mínimo 17 px, se lee al sol). Desplazarse
+  escondería un área entera, que es justo lo que se venía a arreglar. **Ojo:** la primera
+  versión les puso `font-size: 16px` para que cupieran — violaba la regla del proyecto y lo
+  atrapó la medición, no la vista.
+- **Foco:** `.barra :focus-visible` pinta el contorno de blanco, invisible sobre la fila clara
+  de pantallas; `.nav-pantallas :focus-visible` lo devuelve a azul noche.
+- **Renombres:** `Requisiciones` → **Pedidos** (y su `<h2>` a "Pedidos a proveedor"), `Tarifas`
+  → **Precios** ("Precios de servicio"). Eran nombres de tabla, no del trabajo. Las **claves**
+  de `PANTALLAS` no cambian (`requisiciones`, `tarifas`), así que ningún `irA()` se rompe.
+- Medido en celular con `pointer: coarse` real: 0 textos < 17 px, 0 contrastes < 4.5, 0 px de
+  desborde, y los 8 botones de la barra a 48 px o más en **los dos lados**. Los 32 objetivos
+  estrechos que salen al medir son de antes y están **fuera** de la barra: las flechas `‹ ›` y
+  las celdas de día del calendario de la Agenda (41 y 46 px de ancho).
+- **Falta de esta tanda** (ver el artefacto "Navegación del CRM PowerMx"): contadores en las
+  pestañas, la pantalla **Compras** (la única que toca la base), un inicio que diga qué atender,
+  y la barra inferior en el celular — en ese orden.
+
 ## Pantallas
 
 `Agenda` (calendario, por programar, empalmes) · `Trabajos` (pestaña "Órdenes"; móvil,

@@ -36,10 +36,39 @@ const PANTALLAS = {
   equipos:      { titulo: 'Equipos',      componente: Equipos,      roles: ['admin'] },
   inventario:   { titulo: 'Inventario',   componente: Inventario,   roles: ['admin'] },
   cotizaciones: { titulo: 'Cotizaciones', componente: Cotizaciones, roles: ['admin'] },
-  requisiciones:{ titulo: 'Requisiciones',componente: Requisiciones,roles: ['admin'] },
-  tarifas:      { titulo: 'Tarifas',      componente: Tarifas,      roles: ['admin'] },
+  requisiciones:{ titulo: 'Pedidos',      componente: Requisiciones,roles: ['admin'] },
+  tarifas:      { titulo: 'Precios',      componente: Tarifas,      roles: ['admin'] },
   usuarios:     { titulo: 'Usuarios',     componente: Tecnicos,     roles: ['admin'] },
   agente:       { titulo: 'Agente',       componente: Agente,       roles: ['admin'] },
+}
+
+// ---------------------------------------------------------------------------
+// Las pantallas repartidas en áreas. Catorce pestañas en una fila se volvían una tira que
+// había que desplazar de lado — pero eso le pasa SOLO al admin: el técnico ve dos pantallas
+// y el almacenista una.
+//
+// Por eso el primer nivel (los grupos) **solo aparece cuando hay más de un grupo visible**.
+// Al técnico y al almacenista se les siguen mostrando sus pantallas directas, sin un toque de
+// más: arreglarle la vista al admin no puede costarle un toque a quien trabaja bajo el sol.
+// La regla es automática, no una lista de excepciones por rol.
+//
+// El orden es el del trabajo, no el alfabético: lo del día primero, lo que se toca una vez al
+// mes al final.
+// ---------------------------------------------------------------------------
+const GRUPOS = [
+  { clave: 'servicio', titulo: 'Servicio', pantallas: ['agenda', 'ordenes'] },
+  { clave: 'clientes', titulo: 'Clientes', pantallas: ['solicitudes', 'whatsapp', 'clientes', 'contactos', 'equipos'] },
+  { clave: 'ventas',   titulo: 'Ventas',   pantallas: ['cotizaciones', 'tarifas'] },
+  { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones'] },
+  { clave: 'ajustes',  titulo: 'Ajustes',  pantallas: ['usuarios', 'agente'] },
+]
+
+// Los grupos que ese rol puede ver, ya con sus pantallas filtradas. Un grupo sin pantallas
+// permitidas no se muestra.
+function gruposDe(rol) {
+  return GRUPOS
+    .map(g => ({ ...g, pantallas: g.pantallas.filter(k => PANTALLAS[k]?.roles.includes(rol)) }))
+    .filter(g => g.pantallas.length > 0)
 }
 
 const ETIQUETA_ROL = {
@@ -151,6 +180,13 @@ export default function App() {
   // Si el rol no alcanza para la pantalla elegida, cae a la primera permitida.
   const clave = PANTALLAS[pantalla]?.roles.includes(rol) ? pantalla : permitidas[0]?.[0]
 
+  // El grupo abierto se deduce de la pantalla, no se guarda aparte: así `irA('requisiciones')`
+  // desde Cotizaciones abre Almacén sin que nadie tenga que acordarse de mover también el grupo.
+  const grupos = gruposDe(rol)
+  const porGrupos = grupos.length > 1
+  const grupoAbierto = grupos.find(g => g.pantallas.includes(clave)) ?? grupos[0]
+  const enElGrupo = porGrupos ? grupoAbierto?.pantallas ?? [] : permitidas.map(([k]) => k)
+
   const barra = (
     <header className="barra">
       <div className="barra-fila">
@@ -161,11 +197,21 @@ export default function App() {
         </div>
         <button onClick={() => supabase.auth.signOut()}>Salir</button>
       </div>
-      {permitidas.length > 0 && (
-        <nav className="nav" aria-label="Pantallas">
-          {permitidas.map(([k, p]) => (
+      {porGrupos && (
+        <nav className="nav nav-grupos" aria-label="Áreas">
+          {grupos.map(g => (
+            <button key={g.clave} aria-pressed={g.clave === grupoAbierto?.clave}
+              onClick={() => setPantalla(g.pantallas[0])}>
+              {g.titulo}
+            </button>
+          ))}
+        </nav>
+      )}
+      {enElGrupo.length > 0 && (
+        <nav className={porGrupos ? 'nav nav-pantallas' : 'nav'} aria-label="Pantallas">
+          {enElGrupo.map(k => (
             <button key={k} onClick={() => setPantalla(k)} aria-current={k === clave ? 'page' : undefined}>
-              {p.titulo}
+              {PANTALLAS[k].titulo}
             </button>
           ))}
         </nav>

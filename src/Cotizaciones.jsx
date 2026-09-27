@@ -494,7 +494,7 @@ export default function Cotizaciones({ irA }) {
           )}
           {irA && (
             <div style={{ marginTop: 8 }}>
-              <button onClick={() => irA('requisiciones')}>Ir a Requisiciones</button>
+              <button onClick={() => irA('requisiciones')}>Ir a Pedidos</button>
             </div>
           )}
         </Alerta>
