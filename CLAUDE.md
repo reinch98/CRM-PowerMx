@@ -931,25 +931,38 @@ No contesta ni agenda nada: eso sigue siendo a mano desde la pantalla WhatsApp.
   **no usar su botón de arreglo**, deja al técnico sin existencias ni catálogo.
   Verificar el modo con `select relname, reloptions from pg_class ...`.
   `create or replace view` no cambia el modo: hace falta `alter view ... set`.
-- **Contradicción sin resolver (26/09/2026) — no dar por buena la sección de vistas de
-  `00_esquema_base.sql` hasta cerrarla.** La foto del esquema, tomada a las 17:55, reportó
-  `catalogo` y `resguardo_por_cliente` en `security_invoker = on` (solo `existencias` en
-  `off`). Poco después, `30_prueba_modo_vistas.sql` contra la misma base dijo lo contrario:
-  `catalogo antes: security_invoker=off` y el técnico viendo **95** filas — que es
-  justamente lo que se midió el 19/09 y lo que `05_vistas_por_rol.sql` deja configurado con
-  `alter view ... set (security_invoker = off)` en las tres.
-  Las dos explicaciones posibles, y ninguna comprobada todavía:
-  1. el modo sí estaba volteado y se corrigió entre las 17:55 y la prueba (correr
-     `30_modo_vistas.sql`, que es idempotente, lo haría);
-  2. **`00_volcar_esquema.sql` reporta mal `reloptions`**, y entonces la sección de vistas
-     del archivo de esquema no es de fiar — que es lo grave, porque ese archivo es el
-     registro del que habría que reconstruir la base.
-  Para distinguirlas está `31_comparar_modo_vistas.sql`: corre lado a lado la expresión del
-  volcado y una lectura directa de `pg_class.reloptions`. Si discrepan, el bug es mío.
-- **Estado comprobado hoy (prueba 30, 8 de 8 "ok"):** el técnico ve 95 en `catalogo`, una
-  cuenta sin rol ve 0, el almacenista ve 0 en `catalogo` (ahí van los precios) y 95 en
-  `existencias`. O sea que el candado `mi_rol()` de las vistas definer funciona y el almacén
-  no ve precios. `30_modo_vistas.sql` deja ese mismo estado y se puede correr sin riesgo.
+- **El modo SE VOLTEÓ de verdad, y la foto del esquema lo agarró (26/09/2026).** El volcado
+  de las 17:55 reportó `catalogo` y `resguardo_por_cliente` en `security_invoker = on`
+  —contra lo que dice el párrafo de arriba y contra lo que deja `05_vistas_por_rol.sql`—
+  mientras `existencias` seguía bien. Con `productos` cerrada a todos menos al admin (tiene
+  UNA política, `admin_productos`), eso deja esas dos vistas **VACÍAS para quien no sea
+  admin**: cero filas, sin error ni permiso denegado, y la rama de `cliente` del resguardo no
+  puede dispararse nunca. **No se notaba** porque ninguna pantalla las lee (el código usa
+  `disponibles` en Cotizaciones e Inventario, las dos de admin, y `existencias` en Almacén y
+  en "Pedir material" del técnico); se habría notado en la función `agente` llamada por un
+  técnico y en el portal del cliente.
+  Arreglado con `30_modo_vistas.sql` (`alter view ... set (security_invoker = off)`, que es
+  idempotente). Comprobado después con `31_comparar_modo_vistas.sql`: las tres lecturas
+  —la expresión del volcado, una lectura directa por nombre de opción y el arreglo crudo—
+  coinciden en las cinco vistas, así que `00_volcar_esquema.sql` **lee bien `reloptions`** y
+  el archivo de esquema es de fiar. Modos correctos hoy: `existencias`, `catalogo` y
+  `resguardo_por_cliente` en `off`; `disponibles` y `por_reordenar` en `on`.
+  **La causa de que se voltearan no se determinó.** El botón "Security Definer View" del
+  asesor de Supabase es el candidato obvio (hace exactamente eso, y por eso está la
+  advertencia de arriba), pero no hay rastro que lo pruebe: el DDL no queda en `auditoria`.
+  **La lección que sí queda:** una propiedad que vive en `reloptions` no se ve en el código,
+  ni en el diff, ni en la pantalla — solo mirando el catálogo. Por eso conviene volver a
+  tomar la foto del esquema de vez en cuando, y no solo cuando algo se rompe.
+- **Estado comprobado (prueba 30, 8 de 8 "ok"):** el técnico ve 95 en `catalogo`, una cuenta
+  sin rol ve 0, el almacenista ve 0 en `catalogo` (ahí van los precios) y 95 en
+  `existencias`. El candado `mi_rol()` de las vistas definer funciona y el almacén no ve
+  precios.
+  **Riesgo de esa prueba, anotado para la próxima:** sus pasos 5 a 7 le cambian el rol a un
+  perfil REAL (la base solo tiene un técnico) y cuentan con el `rollback` para devolverlo.
+  Si esa ejecución se cerrara con un commit, el único técnico quedaría como almacenista y
+  nadie lo sabría hasta que intentara trabajar en campo. `32_comprobar_roles.sql` lo revisa.
+  Una prueba que toca `perfiles` debería crear su propio perfil desechable, como hace la
+  prueba de la 19, en vez de reutilizar a una persona de verdad.
 - La llave anon es pública por diseño; lo que protege es RLS. Nunca usar
   `service_role` ni en el front ni en el agente.
 - El costo no sale nunca al sitio público ni a un técnico.
@@ -1224,11 +1237,12 @@ corte ni reordene, y de ahí se guarda como `supabase/sql/00_esquema_base.sql`.
   `ordenes_servicio`, `cotizaciones`, `movimientos_inventario`, `auditoria` y
   `datos_fiscales`. Ese archivo **no se edita a mano**: se vuelve a correr el script y se
   reemplaza entero.
-- **Ojo con su sección de vistas:** reportó `catalogo` y `resguardo_por_cliente` en
-  `security_invoker = on` y la prueba 30, minutos después, dijo `off`. Hasta que
-  `31_comparar_modo_vistas.sql` diga quién tiene razón, esa parte del archivo está en duda
-  (ver "Contradicción sin resolver" en Seguridad). El resto —tablas, funciones, políticas,
-  restricciones— no depende de `reloptions` y no está en cuestión.
+- **Y a la primera encontró un fallo real:** `catalogo` y `resguardo_por_cliente` estaban en
+  `security_invoker = on`, o sea vacías para quien no fuera admin (ver "El modo SE VOLTEÓ de
+  verdad" en Seguridad). Era invisible en el código, en el diff y en la pantalla. Ese solo
+  hallazgo pagó el trabajo, y es el argumento para volver a tomar la foto cada tanto.
+- La sección de vistas quedó **auditada** con `31_comparar_modo_vistas.sql`: tres lecturas
+  distintas de `reloptions` coinciden en las cinco vistas.
 
 ## Ruta de mejora
 
