@@ -217,8 +217,9 @@ firmar de recibido", firma en el canvas (`Firma` acepta `ayuda` y `etiqueta`), l
 `entregas/<id>.png` del bucket `ordenes` y luego se llama `firmar_entrega`. T2 solo ve que está
 pendiente. Probado en emulador con un Supabase falso (0 textos < 17 px, 0 contrastes < 4.5,
 0 objetivos < 48 px, 0 px de desborde; las reglas puras de `almacen.js` con 17 casos en Node).
-Falta: probar contra la base real con cuentas de almacenista y técnico, y crear la cuenta del
-almacenista (Authentication → Add user, luego rol "Almacenista" en Usuarios).
+~~Crear la cuenta del almacenista~~ hecha: al 26/09/2026 la base tiene cinco perfiles activos,
+uno por rol (`admin`, `tecnico`, `almacenista`, `cliente` y el `bot` de WhatsApp). Falta
+probar las pantallas contra la base real con las cuentas de almacenista y técnico.
 
 **3a: uso de material, cierre y devoluciones — aplicada y probada el 20/09/2026** (`supabase/sql/18_uso_y_devoluciones.sql`
 y `18_prueba_uso_y_devoluciones.sql`; 10 pasos con rollback, todos "ok"). En plpgsql, **no llamar `s` al
@@ -1260,8 +1261,15 @@ Supabase); lint en cero.
    - ~~Vistas por rol.~~ Hecho y probado el 19/09/2026 (`05_vistas_por_rol.sql`):
      técnico ve 95 en `disponibles` y `catalogo` y 0 en `productos`; una cuenta sin
      rol ve 0 en todo; los modos quedaron definer/invoker como se describe arriba.
-     Falta probar con una cuenta de **cliente** real cuando exista el portal; hasta
-     entonces el agente sigue rechazando ese rol.
+     Falta probar con una cuenta de **cliente**, y desde el 26/09/2026 **ya se puede**:
+     la base tiene un perfil con rol `cliente`, así que no hay que esperar al portal.
+     Es la prueba que cierra este punto 1. Hay que comprobar dos cosas: que el cliente
+     vea 0 en `catalogo` (ahí van los precios) y que en `resguardo_por_cliente` vea
+     **solo lo suyo** — esa vista es definer y su rama de cliente
+     (`mi_rol() = 'cliente' and m.cliente_id = mi_cliente()`) **nunca se ha ejecutado**;
+     si al perfil le falta `cliente_id`, `mi_cliente()` no devuelve nada y vería 0 sin
+     que eso pruebe que el filtro funciona. Mientras no esté probado, el agente sigue
+     rechazando ese rol.
    - Opción limpia a futuro: mover `costo` a una tabla solo-admin
      (`productos_costos`) y dar al técnico lectura de `productos`. Así todas las
      vistas quedan en invoker, sin `mi_rol()` en cada una y sin el aviso del
