@@ -75,6 +75,37 @@ export function tarifaTraslado(tarifas) {
 
 const redondear = n => Math.round(n * 100) / 100
 
+// La partida de traslado de un cliente, o null si no aplica. Devuelve `{ partida, aviso }`:
+// `aviso` solo cuando FALTA un dato (distancia o tarifa), no cuando el cliente está cerca —
+// no cobrar traslado a 10 km es lo correcto, no un problema que avisar.
+//
+// Vive aquí y no dentro de cada cotizador porque la usan el diagnóstico y el preventivo: si
+// cada uno la copiara, el mismo cliente pagaría distinto según el servicio. La misma regla
+// está también en `_precio_traslado` (SQL 36), que es la que usa el agente de WhatsApp porque
+// el bot no puede leer `tarifas_servicio`; **las dos tienen que dar el mismo número** y eso se
+// comprueba en las pruebas de los dos lados (60 km × 15 = 900).
+export function partidaDeTraslado({ tarifas, cliente }) {
+  const km = num(cliente?.distancia_km)
+  if (km == null || !Number.isFinite(km)) {
+    return { partida: null, aviso: 'El cliente no tiene la distancia capturada (km). Sin ella no se puede calcular el traslado.' }
+  }
+  const traslado = tarifaTraslado(tarifas)
+  if (!traslado) return { partida: null, aviso: 'No hay tarifa de traslado capturada en Tarifas.' }
+
+  const desde = num(traslado.km_desde) ?? KM_DESDE_POR_DEFECTO
+  if (km < desde) return { partida: null, aviso: null }
+
+  // Rebasado el mínimo se cobran TODOS los km, solo ida (decisión de Caña, 20/09/2026).
+  return {
+    partida: {
+      producto_id: null, sku: '', servicio: 'traslado', unidad: 'km',
+      descripcion: `Servicio de traslado (${km} km, solo ida)`,
+      cantidad: km, precio_unitario: Number(traslado.precio)
+    },
+    aviso: null
+  }
+}
+
 // Arma las partidas de un diagnóstico para ese equipo y cliente. Devuelve
 // { partidas, avisos }: si falta un dato o una tarifa, no inventa un precio; deja la
 // partida (o nada) y explica qué falta.
@@ -103,22 +134,9 @@ export function partidasDeDiagnostico({ tarifas, equipo, cliente }) {
     })
   }
 
-  const km = num(cliente?.distancia_km)
-  const traslado = tarifaTraslado(tarifas)
-  if (km == null || !Number.isFinite(km)) {
-    avisos.push('El cliente no tiene la distancia capturada (km). Sin ella no se puede calcular el traslado.')
-  } else if (!traslado) {
-    avisos.push('No hay tarifa de traslado capturada en Tarifas.')
-  } else {
-    const desde = num(traslado.km_desde) ?? KM_DESDE_POR_DEFECTO
-    if (km >= desde) {
-      partidas.push({
-        producto_id: null, sku: '', servicio: 'traslado', unidad: 'km',
-        descripcion: `Servicio de traslado (${km} km, solo ida)`,
-        cantidad: km, precio_unitario: Number(traslado.precio)
-      })
-    }
-  }
+  const { partida: viaje, aviso } = partidaDeTraslado({ tarifas, cliente })
+  if (aviso) avisos.push(aviso)
+  if (viaje) partidas.push(viaje)
 
   return { partidas, avisos }
 }

@@ -16,6 +16,7 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from './supabase'
+import { partidaDeTraslado } from './tarifas'
 import { explicarError } from './errores'
 
 export const TIPOS_PREVENTIVO = [
@@ -65,13 +66,22 @@ export function faltantes(paquete, elegidas = {}) {
   return salida
 }
 
-// Las partidas que se agregan a la cotización: el servicio con su precio, y cada
-// refacción a cero y marcada como incluida.
-export function partidasDePreventivo(paquete, elegidas = {}) {
+// Las partidas que se agregan a la cotización: el servicio con su precio, cada refacción a
+// cero y marcada como incluida, y el traslado si el cliente está a 40 km o más.
+//
+// El traslado se agregó el 27/09/2026 por decisión de Caña, cuando se construyó el cotizador
+// del agente de WhatsApp: si solo lo cobrara un canal, el mismo servicio costaría distinto
+// según por dónde entró la solicitud. La regla vive en `tarifas.js` (una sola copia en JS) y
+// en `_precio_traslado` del SQL 36, que es la que usa el bot.
+//
+// `tarifas` y `cliente` son opcionales: sin ellos no se agrega traslado y se avisa, igual que
+// hace el diagnóstico.
+export function partidasDePreventivo(paquete, elegidas = {}, { tarifas, cliente } = {}) {
   if (!paquete?.servicio) return []
   const partidas = [{
     producto_id: null,
     sku: paquete.servicio.sku,
+    servicio: `preventivo_${paquete.tipo || 'menor'}`,
     descripcion: paquete.servicio.nombre,
     unidad: 'servicio',
     cantidad: 1,
@@ -92,7 +102,18 @@ export function partidasDePreventivo(paquete, elegidas = {}) {
       incluida: true,
     })
   }
+  const { partida: viaje } = partidaDeTraslado({ tarifas, cliente })
+  if (viaje) partidas.push(viaje)
   return partidas
+}
+
+// Lo que hay que avisar al agregar un preventivo: los problemas del paquete más el del
+// traslado si falta un dato para calcularlo.
+export function avisosDePreventivo(paquete, elegidas = {}, { tarifas, cliente } = {}) {
+  const avisos = problemasDelPaquete(paquete, elegidas)
+  const { aviso } = partidaDeTraslado({ tarifas, cliente })
+  if (aviso) avisos.push(aviso)
+  return avisos
 }
 
 export const esIncluida = p => p?.incluida === true

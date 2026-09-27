@@ -3,8 +3,8 @@ import { supabase } from './lib/supabase'
 import { hoyLocal, sumarDias } from './lib/fechas'
 import { partidasDeDiagnostico, tarifasDeCatalogo } from './lib/tarifas'
 import {
-  TIPOS_PREVENTIVO, cargarPaquete, opcionSugerida, problemasDelPaquete,
-  faltantes, partidasDePreventivo, esIncluida
+  TIPOS_PREVENTIVO, cargarPaquete, opcionSugerida,
+  faltantes, partidasDePreventivo, avisosDePreventivo, esIncluida
 } from './lib/preventivo'
 import { Alerta } from './ui'
 
@@ -70,7 +70,7 @@ const vacio = () => ({
 // Lo que cambia de un equipo a otro no es el precio sino qué código se usa: cada línea
 // trae el original y sus genéricos con lo disponible de cada uno, y aquí se elige.
 // ---------------------------------------------------------------------------
-function PreventivoDeEquipo({ equipoId, onAgregar }) {
+function PreventivoDeEquipo({ equipoId, tarifas, cliente, onAgregar }) {
   const [tipo, setTipo] = useState('menor')
   const [paquete, setPaquete] = useState(null)
   const [elegidas, setElegidas] = useState({})
@@ -87,7 +87,8 @@ function PreventivoDeEquipo({ equipoId, onAgregar }) {
     setPaquete(r.paquete)
   }
 
-  const problemas = paquete ? problemasDelPaquete(paquete, elegidas) : []
+  // Incluye el aviso del traslado: sin la distancia del cliente no se puede calcular.
+  const problemas = paquete ? avisosDePreventivo(paquete, elegidas, { tarifas, cliente }) : []
   const porComprar = paquete ? faltantes(paquete, elegidas) : []
   const sePuede = paquete?.servicio && problemas.length === 0
 
@@ -165,7 +166,7 @@ function PreventivoDeEquipo({ equipoId, onAgregar }) {
           {problemas.length > 0 && <Alerta tipo="aviso" palabra="Falta">{problemas.join(' ')}</Alerta>}
 
           <button type="button" className="btn-primario" disabled={!sePuede}
-            onClick={() => { onAgregar(partidasDePreventivo(paquete, elegidas)); setPaquete(null) }}>
+            onClick={() => { onAgregar(partidasDePreventivo(paquete, elegidas, { tarifas, cliente })); setPaquete(null) }}>
             Agregar a la cotización
           </button>
         </>
@@ -239,7 +240,13 @@ export default function Cotizaciones({ irA }) {
     const equipo = equipos.find(e => e.id === form.equipo_id)
     const { partidas: nuevas, avisos } = partidasDeDiagnostico({ tarifas, equipo, cliente })
     setAvisosDiag(avisos)
-    setPartidas([...partidas.filter(p => !p.servicio), ...nuevas])
+    // Se reemplazan SOLO el diagnóstico y el traslado. Antes se quitaba todo lo que tuviera
+    // `servicio`, y desde que la partida del preventivo lleva esa marca eso habría borrado el
+    // servicio dejando sus refacciones a $0: una cotización en casi cero.
+    setPartidas([
+      ...partidas.filter(p => p.servicio !== 'diagnostico' && p.servicio !== 'traslado'),
+      ...nuevas
+    ])
   }
 
   const dispoPorId = useMemo(
@@ -513,7 +520,16 @@ export default function Cotizaciones({ irA }) {
                     <td>{vence(c)}</td>
                     <td>{c.tipo}{c.requiere_visita && ' · visita'}</td>
                     <td align="right">{pesos(c.total)}</td>
-                    <td><span className={`estado estado-${c.estado}`}>{c.estado}</span></td>
+                    <td>
+                      <span className={`estado estado-${c.estado}`}>{c.estado}</span>
+                      {/* La propuso el agente de WhatsApp: hay que revisarla antes de enviarla.
+                          Va con palabra y no solo con color, como todo estado del proyecto. */}
+                      {c.origen === 'whatsapp' && (
+                        <span className="estado estado-pendiente" style={{ marginLeft: 6 }}>
+                          Por revisar · WhatsApp
+                        </span>
+                      )}
+                    </td>
                     <td>
                       {citaDe[c.id]
                         ? (citaDe[c.id].estado === 'por_programar' ? 'Por programar' : citaDe[c.id].fecha)
@@ -731,7 +747,8 @@ export default function Cotizaciones({ irA }) {
             )}
           </div>
 
-          <PreventivoDeEquipo equipoId={form.equipo_id} onAgregar={ps => {
+          <PreventivoDeEquipo equipoId={form.equipo_id} tarifas={tarifas}
+            cliente={clientes.find(c => c.id === form.cliente_id)} onAgregar={ps => {
             setPartidas([...partidas, ...ps]); setError('')
           }} />
 

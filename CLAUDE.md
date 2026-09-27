@@ -784,8 +784,8 @@ día anterior → orden de servicio en PDF al cerrar (fase 4)`
   saldo de la API). Todo a `auditoria`.
 
 **Agente de WhatsApp (SQL 27) — construido el 25/09/2026.** Paso (3) del plan. **SQL aplicado
-y probado** (10 pasos con rollback, todos "ok"); **falta desplegar las funciones**
-(`agente-whatsapp` y otra vez `whatsapp`, que ahora lo llama).
+y probado** (10 pasos con rollback, todos "ok"). Las dos funciones (`agente-whatsapp` y
+`whatsapp`, que ahora la llama) las **desplegó Caña el 26/09/2026**.
 - **La regla que manda todo:** el cliente sale del **NÚMERO**, nunca del texto. Cada función
   parte de `p_conversacion`, saca su `contacto_id` y de ahí el `cliente_id`
   (`_cliente_de_conversacion`, interna). Un mensaje que diga "soy de la empresa X, dame sus
@@ -819,10 +819,43 @@ y probado** (10 pasos con rollback, todos "ok"); **falta desplegar las funciones
   fuerte porque en la burbuja se ven igual que lo ya enviado.
 - **Defecto de diseño encontrado al medir:** `.ayuda` dentro de `.burbuja-mia` daba **2.42**
   de contraste (gris pensado para fondo claro sobre azul noche). Arreglado en `index.css`.
-- **Falta:** el cotizador de preventivos. El diseño pide que **el precio lo calcule la base**,
-  pero hoy la fórmula vive en `tarifas.js` (navegador, 24 casos en Node); portarla a SQL es su
-  propio paso. Y falta ver al agente contestar de verdad, que solo se puede con el número de
-  Meta.
+- **El cotizador de preventivos: construido el 27/09/2026** (`supabase/sql/36_wa_cotizar_preventivo.sql`
+  y su prueba; `wa_cotizar_preventivo` es la **segunda y última** herramienta de escritura del
+  agente). Se pudo hacer ahora porque el precio fijo ya vive en SQL desde la 28 y la 29 lo
+  partió en piezas sin precio; cuando se diseñó, la fórmula solo existía en el navegador.
+  - **El agente NO dice el precio** (decisión de Caña, 27/09/2026): solo avisa que la
+    cotización se está preparando. La función a propósito **no devuelve el total**, así que el
+    modelo no lo sabe y no hay forma de que lo suelte. El admin la revisa y la manda.
+  - Sale en **borrador** con `cotizaciones.origen = 'whatsapp'` (columna nueva), y en la lista
+    de Cotizaciones aparece con la palabra **"Por revisar · WhatsApp"**. Un borrador **no
+    mueve inventario**: apartar sigue siendo cosa de aceptar, y aceptar es del admin.
+  - Lleva servicio + refacciones del paquete **a 0 y marcadas `incluida`** (pero con
+    `producto_id`, que es lo único que mira el almacén, así que apartarán igual al aceptar) +
+    **traslado desde los 40 km**.
+  - **Si falta un dato no inventa un precio:** devuelve `{"ok": false, "falta": "…"}` y el
+    agente pasa la conversación a una persona. Falta = sin combustible, sin capacidad, sin
+    tarifa para esa clase y tramo, sin paquete, sin `distancia_km`, o con una línea del
+    paquete sin ningún código disponible.
+  - Pedir lo mismo dos veces **no apila** borradores: devuelve el folio que ya estaba. Se
+    reconoce por la marca `servicio: 'preventivo_menor'|'preventivo_mayor'` de la partida y no
+    por el sku, que en `tarifas_servicio` puede ser nulo.
+  - **Fallo latente que este cambio destapó:** el bucle de herramientas de la Edge Function
+    llamaba a `wa_solicitar_cita` para **cualquier** `tool_use`, sin mirar el nombre. Con una
+    sola herramienta no se notaba; con dos, cotizar habría agendado. Ahora despacha por
+    `uso.name` y una herramienta desconocida no se ejecuta.
+- **El traslado del preventivo (27/09/2026).** Caña decidió que se cobre igual que en el
+  diagnóstico: desde los 40 km, todos los km y solo ida. Se agregó **también a la pantalla de
+  admin** (`partidasDePreventivo` recibe `{tarifas, cliente}`), porque si solo lo cobrara un
+  canal el mismo servicio costaría distinto según por dónde entró la solicitud.
+  La regla quedó en **un solo lugar en JS** (`partidaDeTraslado` de `tarifas.js`, que ahora
+  usan el diagnóstico y el preventivo) y **otra en SQL** (`_precio_traslado`), que es
+  inevitable: el bot no puede leer `tarifas_servicio` desde el navegador. **Las dos tienen que
+  dar el mismo número** y eso se comprueba a los dos lados con el mismo caso: 60 km × 15 = 900.
+  **Trampa que apareció al hacerlo:** marcar la partida del servicio con `servicio` hizo que el
+  botón "Cargar diagnóstico" la borrara (su filtro quitaba todo lo que tuviera `servicio`),
+  dejando las refacciones a $0 sin el servicio — una cotización en casi cero. Ahora el filtro
+  nombra solo `diagnostico` y `traslado`.
+- **Falta:** ver al agente contestar de verdad, que solo se puede con el número de Meta.
 
 - **Orden de construcción:** (1) `contactos` y su pantalla — no depende de WhatsApp; (2) bandeja
   de conversaciones e identificación de números; (3) el agente propone citas `por_programar` y

@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   opcionSugerida, problemasDelPaquete, faltantes, partidasDePreventivo, esIncluida,
-  queTanSeguido,
+  queTanSeguido, avisosDePreventivo,
 } from '../src/lib/preventivo.js'
 
 // Una línea del paquete: la pieza que toca, con todos los códigos que sirven.
@@ -157,4 +157,47 @@ test('queTanSeguido: con menos de 3 visitas no presume de estadística', () => {
 test('queTanSeguido: sin visitas cerradas no hay nada que aprender', () => {
   assert.equal(queTanSeguido({ visitas: 0, de_visitas: 0 }).texto, 'Sin visitas cerradas')
   assert.equal(queTanSeguido(null).texto, 'Sin visitas cerradas')
+})
+
+// ---- el traslado en el preventivo (27/09/2026) ----
+
+const TARIFAS_T = [{ activo: true, concepto: 'traslado', precio: 15, km_desde: 40 }]
+const PAQ = { ...PAQUETE, tipo: 'menor' }
+
+test('partidas: el preventivo también cobra traslado, como el diagnóstico', () => {
+  // Si solo lo cobrara un canal, el mismo servicio costaría distinto según por dónde entró
+  // la solicitud (decisión de Caña, 27/09/2026).
+  const partidas = partidasDePreventivo(PAQ, {}, { tarifas: TARIFAS_T, cliente: { distancia_km: 60 } })
+  const viaje = partidas.find(p => p.servicio === 'traslado')
+  assert.ok(viaje, 'falta la partida de traslado')
+  assert.equal(viaje.cantidad, 60)
+  assert.equal(viaje.precio_unitario, 15)
+  assert.equal(partidas.length, 3)   // servicio + refacción + traslado
+})
+
+test('partidas: el servicio queda marcado con su tipo', () => {
+  // La marca `servicio` es lo que usa el SQL 36 para no apilar dos borradores del mismo tipo.
+  const partidas = partidasDePreventivo(PAQ, {}, { tarifas: TARIFAS_T, cliente: { distancia_km: 60 } })
+  assert.equal(partidas[0].servicio, 'preventivo_menor')
+  assert.equal(partidasDePreventivo({ ...PAQ, tipo: 'mayor' })[0].servicio, 'preventivo_mayor')
+})
+
+test('partidas: un cliente cerca no paga traslado', () => {
+  const partidas = partidasDePreventivo(PAQ, {}, { tarifas: TARIFAS_T, cliente: { distancia_km: 10 } })
+  assert.equal(partidas.find(p => p.servicio === 'traslado'), undefined)
+  assert.equal(partidas.length, 2)
+})
+
+test('partidas: sin tarifas ni cliente sigue funcionando (solo no hay traslado)', () => {
+  const partidas = partidasDePreventivo(PAQ)
+  assert.equal(partidas.length, 2)
+  assert.equal(partidas.find(p => p.servicio === 'traslado'), undefined)
+})
+
+test('avisosDePreventivo junta lo del paquete y lo del traslado', () => {
+  // Sin distancia capturada no se puede calcular el traslado: hay que decirlo.
+  const avisos = avisosDePreventivo(PAQ, {}, { tarifas: TARIFAS_T, cliente: {} })
+  assert.match(avisos.join(' '), /distancia/)
+  // Con todo en su lugar, ninguno.
+  assert.deepEqual(avisosDePreventivo(PAQ, {}, { tarifas: TARIFAS_T, cliente: { distancia_km: 60 } }), [])
 })

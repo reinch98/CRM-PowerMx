@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import {
   claseDeEquipo, capacidadDeEquipo, tarifaDiagnostico, tarifaTraslado,
   partidasDeDiagnostico, importe, esConceptoCatalogo, nombreTarifaCatalogo,
-  tarifasDeCatalogo, sugerirSkuTarifa,
+  tarifasDeCatalogo, sugerirSkuTarifa, partidaDeTraslado,
 } from '../src/lib/tarifas.js'
 
 const diag = (clase, kw_desde, kw_hasta, precio) =>
@@ -219,4 +219,46 @@ test('sugerirSkuTarifa propone, y menor y mayor no chocan', () => {
   assert.equal(sugerirSkuTarifa('correctivo', null), 'SRV-COR')
   assert.notEqual(sugerirSkuTarifa('preventivo_menor', 'diesel'), sugerirSkuTarifa('preventivo_mayor', 'diesel'))
   assert.equal(sugerirSkuTarifa('otro', null), 'SRV-SERV')
+})
+
+// ---- la partida de traslado, ahora compartida por el diagnóstico y el preventivo ----
+
+test('partidaDeTraslado: rebasado el mínimo cobra TODOS los km, solo ida', () => {
+  const { partida, aviso } = partidaDeTraslado({ tarifas: TARIFAS, cliente: { distancia_km: 60 } })
+  assert.equal(partida.cantidad, 60)
+  assert.equal(partida.precio_unitario, 15)
+  assert.equal(importe(partida.cantidad, partida.precio_unitario), 900)
+  assert.equal(partida.servicio, 'traslado')
+  assert.equal(partida.producto_id, null)   // partida libre: no mueve inventario
+  assert.equal(aviso, null)
+})
+
+test('partidaDeTraslado: el mismo número que da `_precio_traslado` en SQL', () => {
+  // Las dos implementaciones de la regla tienen que coincidir: la de aquí la usa el navegador
+  // y la del SQL 36 la usa el agente de WhatsApp, que no puede leer `tarifas_servicio`.
+  // 60 km × 15 = 900 es el caso que también comprueba `36_prueba_wa_cotizar_preventivo.sql`.
+  const { partida } = partidaDeTraslado({ tarifas: TARIFAS, cliente: { distancia_km: 60 } })
+  assert.equal(importe(partida.cantidad, partida.precio_unitario), 900)
+})
+
+test('partidaDeTraslado: cerca no se cobra, y eso NO es un aviso', () => {
+  // No cobrar traslado a 10 km es lo correcto, no un dato que falte.
+  const r = partidaDeTraslado({ tarifas: TARIFAS, cliente: { distancia_km: 10 } })
+  assert.equal(r.partida, null)
+  assert.equal(r.aviso, null)
+})
+
+test('partidaDeTraslado: a los 40 justos ya aplica', () => {
+  assert.equal(partidaDeTraslado({ tarifas: TARIFAS, cliente: { distancia_km: 40 } }).partida.cantidad, 40)
+  assert.equal(partidaDeTraslado({ tarifas: TARIFAS, cliente: { distancia_km: 39.9 } }).partida, null)
+})
+
+test('partidaDeTraslado: lo que SÍ es aviso es un dato que falta', () => {
+  const sinKm = partidaDeTraslado({ tarifas: TARIFAS, cliente: {} })
+  assert.equal(sinKm.partida, null)
+  assert.match(sinKm.aviso, /distancia/)
+
+  const sinTarifa = partidaDeTraslado({ tarifas: [], cliente: { distancia_km: 60 } })
+  assert.equal(sinTarifa.partida, null)
+  assert.match(sinTarifa.aviso, /traslado/)
 })
