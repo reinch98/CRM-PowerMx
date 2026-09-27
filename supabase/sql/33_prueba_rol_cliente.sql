@@ -1,151 +1,139 @@
 -- ---------------------------------------------------------------------------
 -- 33_prueba_rol_cliente.sql — lo que ve (y lo que no) una cuenta con rol `cliente`.
+-- Lo que falta probar es la rama de cliente de `resguardo_por_cliente`, que nunca se ha
+-- ejecutado. El razonamiento completo está en CLAUDE.md ("Cerrar seguridad de datos").
 --
--- POR QUÉ. `05_vistas_por_rol.sql` se probó el 19/09/2026 con admin, técnico y una cuenta sin
--- rol, pero **nunca con un cliente**: no había ninguno. Es lo último que falta del punto 1 de
--- la ruta de mejora.
+-- SIN BLOQUE plpgsql, A PROPÓSITO: el editor de Supabase mutila los bloques con comillas de
+-- dólar (ver "Pruebas en el editor SQL" en CLAUDE.md). Todo es SQL plano y los resultados se
+-- cargan en `app.*` con `set_config`, que es el patrón que ya usa el proyecto. En este archivo
+-- no aparece ni una comilla de dólar, ni siquiera en los comentarios.
 --
--- LO QUE DE VERDAD FALTA PROBAR es la rama de cliente de `resguardo_por_cliente`:
---
---   where ... or (mi_rol() = 'cliente' and m.cliente_id = mi_cliente())
---
--- Esa condición **nunca se ha ejecutado**. Y tiene una trampa: si al perfil le falta
--- `cliente_id`, `mi_cliente()` devuelve null y el cliente ve 0 filas — exactamente lo mismo
--- que se vería si el filtro estuviera mal escrito. Un 0 ahí no prueba nada.
---
--- ES AUTOSUFICIENTE. Al 26/09/2026 el perfil cliente de la base no está ligado a ningún
--- cliente y no hay ni un movimiento `a_resguardo`, así que la prueba **fabrica lo que le
--- falta** dentro del `begin/rollback`: un cliente de prueba, el enlace del perfil y resguardo
--- de dos clientes distintos. Así se responde la pregunta de seguridad hoy, sin esperar a que
--- alguien decida a qué cliente real corresponde esa cuenta (eso es de `34_...`).
---
--- CÓMO SE CUIDA EL DATO REAL. La prueba 30 le cambió el rol a una persona real y dependía del
--- `rollback` para devolverlo; si esa ejecución se hubiera cerrado con un commit, el único
--- técnico habría quedado como almacenista sin que nadie lo supiera. Aquí:
---   · lo único que se toca de una fila real es `perfiles.cliente_id`, que hoy está en null;
---   · y se **deshace explícitamente al final**, además del `rollback`. Nada que toque una fila
---     real depende de una sola red de seguridad.
--- Si el perfil YA está ligado (después de correr el 34), la prueba lo usa tal cual y no toca
--- `perfiles` para nada.
---
--- ⚠ NI UN `select ... into` NI UN `execute ... into`, A PROPÓSITO. El editor de Supabase trae
--- una función que le activa RLS a las "tablas nuevas", y lee `select id into v_producto from
--- productos` como la sintaxis vieja de `create table as`: cree que `v_producto` es una tabla y
--- mete `ALTER TABLE v_producto ENABLE ROW LEVEL SECURITY` **en medio del bloque $$**, que
--- queda sin cerrar («unterminated dollar-quoted string»). Pasó el 27/09/2026 con la primera
--- versión de esta prueba. Aquí se usa asignación (`v := (select ...)`), que hace lo mismo y no
--- se puede confundir con una creación de tabla.
---
--- Las lecturas de abajo son SQL normal, no `execute`, y siguen siendo válidas tras el cambio
--- de rol: Postgres marca los planes que dependen de RLS y los vuelve a planear cuando cambia
--- el usuario, así que no se reutiliza el plan sin RLS de la sesión del editor.
---
--- Correr el bloque COMPLETO, de `begin;` a `rollback;`.
+-- Fabrica lo que le falta (el cliente de prueba, el enlace del perfil y resguardo de dos
+-- clientes) y lo DESHACE al final, además del `rollback`. Correr el bloque COMPLETO.
 -- ---------------------------------------------------------------------------
 
 begin;
 
-do $$
-declare
-  v_perfil   uuid;
-  v_cliente  uuid;
-  v_otro     uuid;
-  v_producto uuid;
-  v_lo_ligue boolean := false;
-  v_n        int;
-  v_otros    int;
-begin
-  v_perfil := (select id from perfiles where rol = 'cliente' and coalesce(activo, true) limit 1);
-  if v_perfil is null then
-    perform set_config('app.p0', 'FALLO: no hay ningún perfil con rol cliente', true);
-    return;
-  end if;
-  v_cliente  := (select cliente_id from perfiles where id = v_perfil);
-  v_producto := (select id from productos limit 1);
+-- El perfil cliente y un producto cualquiera. Vacío = no hay.
+select set_config('app.perfil',
+         coalesce((select id::text from perfiles where rol = 'cliente' and coalesce(activo, true) limit 1), ''), true),
+       set_config('app.producto',
+         coalesce((select id::text from productos limit 1), ''), true);
 
-  if v_producto is null then
-    perform set_config('app.p0', 'FALLO: no hay productos, no se puede fabricar resguardo', true);
-    return;
-  end if;
+-- Su cliente actual (puede venir vacío: es justo el caso que hay hoy).
+select set_config('app.cliente',
+         coalesce((select cliente_id::text from perfiles
+                   where id = nullif(current_setting('app.perfil'), '')::uuid), ''), true);
 
-  if v_cliente is null then
-    -- Cliente de prueba y enlace temporal. `clientes` exige nombre y teléfono.
-    v_cliente := gen_random_uuid();
-    insert into clientes (id, nombre, telefono)
-    values (v_cliente, 'Cliente de prueba (33)', '9990000033');
-    update perfiles set cliente_id = v_cliente where id = v_perfil;
-    v_lo_ligue := true;
-    perform set_config('app.p0', concat('ok — el perfil no estaba ligado, así que se ligó a un ',
-      'cliente de prueba solo durante esta transacción (se deshace al final)'), true);
-  else
-    perform set_config('app.p0', concat('ok — el perfil ya estaba ligado al cliente ',
-      v_cliente::text, '; no se toca nada'), true);
-  end if;
+select set_config('app.ligue',
+         case when nullif(current_setting('app.perfil'), '') is null then 'no'
+              when current_setting('app.cliente') = '' then 'si' else 'no' end, true);
 
-  -- El otro cliente, para tener con qué comparar. Si no hay, se crea.
-  v_otro := (select id from clientes where id is distinct from v_cliente limit 1);
-  if v_otro is null then
-    v_otro := gen_random_uuid();
-    insert into clientes (id, nombre, telefono)
-    values (v_otro, 'Otro cliente de prueba (33)', '9990000034');
-  end if;
+select set_config('app.p0',
+         case when nullif(current_setting('app.perfil'), '') is null
+                then 'FALLO: no hay ningún perfil con rol cliente'
+              when nullif(current_setting('app.producto'), '') is null
+                then 'FALLO: no hay productos, no se puede fabricar resguardo'
+              when current_setting('app.ligue') = 'si'
+                then 'ok — el perfil no estaba ligado: se liga a un cliente de prueba solo en esta transacción'
+              else concat('ok — ya estaba ligado al cliente ', current_setting('app.cliente'),
+                          '; no se toca nada') end, true);
 
-  -- Resguardo de los dos: 2 piezas en poder del cliente de la prueba, 5 en poder del otro.
-  insert into movimientos_inventario (id, tipo, cantidad, cliente_id, producto_id, referencia, notas, created_at)
-  values (gen_random_uuid(), 'a_resguardo', 2, v_cliente, v_producto, 'PRUEBA-33', 'prueba del rol cliente', now()),
-         (gen_random_uuid(), 'a_resguardo', 5, v_otro,    v_producto, 'PRUEBA-33', 'prueba del rol cliente', now());
-  perform set_config('app.p1', 'escenario listo — resguardo de 2 clientes distintos', true);
+-- Si no estaba ligado, se inventa el cliente de prueba y se liga.
+select set_config('app.cliente',
+         case when current_setting('app.ligue') = 'si' then gen_random_uuid()::text
+              else current_setting('app.cliente') end, true);
 
-  -- ---- a partir de aquí, todo se lee COMO EL CLIENTE ----
-  perform set_config('request.jwt.claims',
-                     json_build_object('sub', v_perfil, 'role', 'authenticated')::text, true);
-  set local role authenticated;
+insert into clientes (id, nombre, telefono)
+select current_setting('app.cliente')::uuid, 'Cliente de prueba (33)', '9990000033'
+where current_setting('app.ligue') = 'si';
 
-  -- 1) El catálogo lleva precios: el cliente no lo ve (`catalogo` solo abre a admin y técnico).
-  v_n := (select count(*) from catalogo);
-  perform set_config('app.p2', concat(case when v_n = 0 then 'ok' else 'FALLO' end,
-    ' — el cliente ve ', v_n, ' en catalogo (debe ser 0: ahí están los precios)'), true);
+update perfiles set cliente_id = current_setting('app.cliente')::uuid
+where current_setting('app.ligue') = 'si'
+  and id = nullif(current_setting('app.perfil'), '')::uuid;
 
-  -- 2) Tampoco `productos`, que además trae `costo`.
-  v_n := (select count(*) from productos);
-  perform set_config('app.p3', concat(case when v_n = 0 then 'ok' else 'FALLO' end,
-    ' — el cliente ve ', v_n, ' en productos (debe ser 0: ahí está el costo)'), true);
+-- El OTRO cliente: sin él, un 0 no distingue "el filtro funciona" de "no hay nada que ver".
+select set_config('app.otro',
+         coalesce((select id::text from clientes
+                   where id is distinct from nullif(current_setting('app.cliente'), '')::uuid
+                   limit 1), ''), true);
+select set_config('app.otro',
+         case when current_setting('app.otro') = '' then gen_random_uuid()::text
+              else current_setting('app.otro') end, true);
 
-  -- 3) Ni existencias: cuánto material hay en el almacén no es asunto suyo.
-  v_n := (select count(*) from existencias);
-  perform set_config('app.p4', concat(case when v_n = 0 then 'ok' else 'FALLO' end,
-    ' — el cliente ve ', v_n, ' en existencias (debe ser 0)'), true);
+insert into clientes (id, nombre, telefono)
+select current_setting('app.otro')::uuid, 'Otro cliente de prueba (33)', '9990000034'
+where not exists (select 1 from clientes where id = nullif(current_setting('app.otro'), '')::uuid);
 
-  -- 4) De `clientes`, solo su propia ficha (política `cliente_ve_lo_suyo`). Ver 0 sería un
-  --    filtro roto; ver 2 o más, una fuga.
-  v_n := (select count(*) from clientes);
-  perform set_config('app.p5', concat(case when v_n = 1 then 'ok' else 'FALLO' end,
-    ' — el cliente ve ', v_n, ' ficha(s) en clientes (debe ver exactamente 1, la suya)'), true);
+-- Resguardo de los dos: 2 piezas en poder del cliente de la prueba, 5 en poder del otro.
+insert into movimientos_inventario
+  (id, tipo, cantidad, cliente_id, producto_id, referencia, notas, created_at)
+select gen_random_uuid(), 'a_resguardo', d.cantidad, d.cliente,
+       nullif(current_setting('app.producto'), '')::uuid, 'PRUEBA-33', 'prueba del rol cliente', now()
+from (values (2::numeric, nullif(current_setting('app.cliente'), '')::uuid),
+             (5::numeric, nullif(current_setting('app.otro'), '')::uuid)) as d(cantidad, cliente)
+where d.cliente is not null
+  and nullif(current_setting('app.producto'), '') is not null;
 
-  -- 5) Las cotizaciones son de la oficina.
-  v_n := (select count(*) from cotizaciones);
-  perform set_config('app.p6', concat(case when v_n = 0 then 'ok' else 'FALLO' end,
-    ' — el cliente ve ', v_n, ' en cotizaciones (debe ser 0)'), true);
+select set_config('app.p1', 'escenario listo — resguardo de 2 clientes distintos', true);
 
-  -- 6) LA QUE FALTABA: su resguardo, y SOLO el suyo. Hay resguardo de dos clientes, así que
-  --    ahora sí se distingue "el filtro funciona" de "no hay nada que ver".
-  v_n     := (select count(*) from resguardo_por_cliente);
-  v_otros := (select count(*) from resguardo_por_cliente where cliente_id is distinct from v_cliente);
-  perform set_config('app.p7', concat(
-    case when v_n = 1 and v_otros = 0 then 'ok' else 'FALLO' end,
-    ' — el cliente ve ', v_n, ' renglón(es) en resguardo_por_cliente y ', v_otros,
-    ' de otros clientes (debe ver 1, el suyo, y 0 de otros)'), true);
+-- ---- de aquí en adelante se lee COMO EL CLIENTE ----
+select set_config('request.jwt.claims',
+         json_build_object('sub', current_setting('app.perfil'), 'role', 'authenticated')::text, true);
 
-  reset role;
+set local role authenticated;
 
-  -- ---- deshacer a mano lo que se tocó de una fila real ----
-  if v_lo_ligue then
-    update perfiles set cliente_id = null where id = v_perfil;
-    perform set_config('app.p8', 'ok — el enlace temporal del perfil se deshizo a mano (además del rollback)', true);
-  else
-    perform set_config('app.p8', 'ok — no se tocó ninguna fila real', true);
-  end if;
-end $$;
+-- El catálogo lleva precios: solo abre a admin y técnico.
+select set_config('app.p2', concat(
+         case when (select count(*) from catalogo) = 0 then 'ok' else 'FALLO' end,
+         ' — el cliente ve ', (select count(*) from catalogo),
+         ' en catalogo (debe ser 0: ahí están los precios)'), true);
+
+-- `productos` además trae `costo`.
+select set_config('app.p3', concat(
+         case when (select count(*) from productos) = 0 then 'ok' else 'FALLO' end,
+         ' — el cliente ve ', (select count(*) from productos),
+         ' en productos (debe ser 0: ahí está el costo)'), true);
+
+-- Cuánto material hay en el almacén no es asunto suyo.
+select set_config('app.p4', concat(
+         case when (select count(*) from existencias) = 0 then 'ok' else 'FALLO' end,
+         ' — el cliente ve ', (select count(*) from existencias), ' en existencias (debe ser 0)'), true);
+
+-- De `clientes`, solo su ficha: 0 sería un filtro roto y 2 o más una fuga.
+select set_config('app.p5', concat(
+         case when (select count(*) from clientes) = 1 then 'ok' else 'FALLO' end,
+         ' — el cliente ve ', (select count(*) from clientes),
+         ' ficha(s) en clientes (debe ver exactamente 1, la suya)'), true);
+
+-- Las cotizaciones son de la oficina.
+select set_config('app.p6', concat(
+         case when (select count(*) from cotizaciones) = 0 then 'ok' else 'FALLO' end,
+         ' — el cliente ve ', (select count(*) from cotizaciones), ' en cotizaciones (debe ser 0)'), true);
+
+-- LA QUE FALTABA: su resguardo, y solo el suyo.
+select set_config('app.p7', concat(
+         case when (select count(*) from resguardo_por_cliente) = 1
+               and (select count(*) from resguardo_por_cliente
+                    where cliente_id is distinct from nullif(current_setting('app.cliente'), '')::uuid) = 0
+              then 'ok' else 'FALLO' end,
+         ' — el cliente ve ', (select count(*) from resguardo_por_cliente),
+         ' renglón(es) en resguardo_por_cliente y ',
+         (select count(*) from resguardo_por_cliente
+          where cliente_id is distinct from nullif(current_setting('app.cliente'), '')::uuid),
+         ' de otros clientes (debe ver 1, el suyo, y 0 de otros)'), true);
+
+reset role;
+
+-- ---- deshacer a mano lo que se tocó de una fila real ----
+update perfiles set cliente_id = null
+where current_setting('app.ligue') = 'si'
+  and id = nullif(current_setting('app.perfil'), '')::uuid;
+
+select set_config('app.p8',
+         case when current_setting('app.ligue') = 'si'
+              then 'ok — el enlace temporal se deshizo a mano (además del rollback)'
+              else 'ok — no se tocó ninguna fila real' end, true);
 
 select current_setting('app.p0', true) as resultado
 union all select current_setting('app.p1', true)

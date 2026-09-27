@@ -1167,11 +1167,26 @@ El respaldo del `<Suspense>` va sin `<main>` propio: ya está dentro del `<main>
   usuario: `set local role authenticated` + `set_config('request.jwt.claims', ...)`.
   Correr **siempre** el bloque completo: una línea suelta de una prueba puede tocar
   datos reales si el usuario simulado no la frena.
-- **NO usar `select ... into` ni `execute ... into` dentro de un bloque `do $$` (27/09/2026).**
+- **El editor de Supabase MUTILA los bloques plpgsql (27/09/2026). Para una prueba nueva,
+  escribirla en SQL plano.** Dos formas distintas de romperse, las dos vistas el mismo día con
+  `33_prueba_rol_cliente.sql`:
+  1. inyectó `ALTER TABLE <variable> ENABLE ROW LEVEL SECURITY` en medio del bloque (ver abajo);
+  2. quitada esa causa, **truncó el script** justo después de un comentario a mitad del bloque
+     y pegó sus propios `-- source: dashboard` / `-- user:` / `-- date:`, dejando las comillas
+     de dólar sin cerrar («unterminated dollar-quoted string»).
+  **No es un límite de tamaño:** `00_volcar_esquema.sql` tiene 15,952 bytes y 340 líneas y
+  corre completo, y `30_prueba_modo_vistas.sql` sí tiene bloque plpgsql y corrió. La causa del
+  truncado no se determinó, y no vale seguir adivinando.
+  **La salida:** escribir la prueba **sin bloque plpgsql**. Se puede: los valores intermedios
+  van en `app.*` con `set_config(...)`, lo condicional se hace con `insert ... select ... where`
+  y `update ... where`, y los uuid con `nullif(current_setting('app.x'), '')::uuid` para que un
+  valor vacío no truene el cast. `33_prueba_rol_cliente.sql` quedó así y no tiene ni una comilla
+  de dólar, ni en los comentarios.
+- **NO usar `select ... into` ni `execute ... into` dentro de un bloque plpgsql (27/09/2026).**
   El editor de Supabase trae una función que le activa RLS a las "tablas nuevas" de un
   script, y lee `select id into v_producto from productos` como la **sintaxis vieja de
   `create table as`**: cree que `v_producto` es una tabla y agrega
-  `ALTER TABLE v_producto ENABLE ROW LEVEL SECURITY` **en medio del bloque `$$`**, que queda
+  `ALTER TABLE v_producto ENABLE ROW LEVEL SECURITY` **en medio del bloque**, que queda
   sin cerrar y truena con «unterminated dollar-quoted string». Se ve clarísimo en cuáles
   marca: solo las variables que aparecen como primer destino de un `into`.
   En su lugar, asignación: `v_n := (select count(*) from catalogo);`. Hace lo mismo y no se
