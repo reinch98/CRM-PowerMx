@@ -1291,21 +1291,22 @@ Supabase); lint en cero.
    - ~~Vistas por rol.~~ Hecho y probado el 19/09/2026 (`05_vistas_por_rol.sql`):
      técnico ve 95 en `disponibles` y `catalogo` y 0 en `productos`; una cuenta sin
      rol ve 0 en todo; los modos quedaron definer/invoker como se describe arriba.
-     **Probado a medias con una cuenta de cliente el 26/09/2026**
-     (`33_prueba_rol_cliente.sql`). Concluyente y en verde: el cliente ve **0** en
-     `catalogo` (precios), `productos` (costo), `existencias` y `cotizaciones`. Esas
-     cuatro no dependen de `cliente_id`, así que valen como están.
-     **Sin concluir todavía:** su propia ficha en `clientes` y —la que importa— la rama
-     de cliente de `resguardo_por_cliente`
-     (`mi_rol() = 'cliente' and m.cliente_id = mi_cliente()`), que **nunca se ha
-     ejecutado**. Dos razones: el perfil cliente de la base no tenía `cliente_id`, y no
-     hay ningún movimiento `a_resguardo` en toda la base. Lo primero se arregla en
-     Usuarios; lo segundo lo resuelve la propia prueba, que ahora **fabrica el escenario**
-     (resguardo de dos clientes distintos) dentro del `begin/rollback`.
-     Ojo con la trampa que la prueba distingue a propósito: sin `cliente_id`,
-     `mi_cliente()` devuelve null y el cliente ve 0 — lo mismo que se vería con el filtro
-     mal escrito. Un 0 ahí no prueba nada.
-     Mientras no esté probado, el agente sigue rechazando ese rol.
+     ~~Falta probar con una cuenta de cliente.~~ **Probado el 27/09/2026 con
+     `33_prueba_rol_cliente.sql`: 9 de 9 "ok".** El cliente ve **0** en `catalogo`
+     (precios), `productos` (costo), `existencias` y `cotizaciones`; **1** ficha en
+     `clientes`, la suya; y **1** renglón en `resguardo_por_cliente`, el suyo, **0 de otros
+     clientes**. Con eso la rama de cliente de esa vista
+     (`mi_rol() = 'cliente' and m.cliente_id = mi_cliente()`) **se ejecutó por primera vez**
+     y filtra bien.
+     La prueba **fabrica su escenario** (cliente de prueba, enlace temporal del perfil y
+     resguardo de dos clientes) porque la base no tenía ni `cliente_id` en el perfil ni un
+     solo movimiento `a_resguardo`; deshace el enlace **a mano** además del `rollback`.
+     Ojo con la trampa que distingue a propósito: sin `cliente_id`, `mi_cliente()` devuelve
+     null y el cliente ve 0 — lo mismo que se vería con el filtro mal escrito. Un 0 ahí no
+     prueba nada, y por eso la primera corrida se detuvo en vez de dar siete "ok" falsos.
+     **Lo que ya no bloquea al rol `cliente` en el agente es RLS**, que quedó comprobada; lo
+     que queda es que no existe el portal y que el agente se limita a admin por el saldo de
+     la API.
    - **`rol = 'cliente'` sin `cliente_id` era posible** y había un perfil así. La pantalla
      Usuarios ya lo impedía ("Un usuario con rol cliente necesita tener un cliente
      asignado"), pero la validación vivía solo en el navegador y ese perfil se creó desde
@@ -1320,7 +1321,35 @@ Supabase); lint en cero.
      vistas quedan en invoker, sin `mi_rol()` en cada una y sin el aviso del
      asesor. Toca Inventario, Cotizaciones y el agente: hacerlo con calma.
    - ~~RLS de citas y órdenes del técnico.~~ Hecho con la 13 (1e): se quitaron las
-     políticas de escritura. Falta restringir escritura en `catalogos` y `auditoria`.
+     políticas de escritura. ~~Falta restringir escritura en `catalogos` y `auditoria`.~~
+     Escrito el 27/09/2026 (`35_cerrar_escritura.sql` y su prueba); **falta que Caña lo
+     corra**. Lo que la foto del esquema destapó al ir a arreglarlo:
+     · **`catalogos`** tenía tres políticas para `authenticated` sin comprobar rol
+       (`select/insert/update` con la condición en `true`), o sea que un técnico, un
+       almacenista, un cliente o una cuenta `sin_rol` podían insertar y modificar. Y el
+       código **no usa esa tabla** (no aparece en `src/` ni en las Edge Functions): era
+       superficie de ataque sin nada a cambio. Ahora leer sigue abierto y escribir pide
+       `es_admin()`.
+     · **`auditoria`** tenía `todos_escriben_auditoria` (`insert with check (true)`):
+       cualquier cuenta autenticada podía **inventar renglones de auditoría**. No hacía
+       falta para nada, porque lo único que escribe ahí es `_apunta`, que es security
+       definer y ya está revocada a PUBLIC. Leer ya era solo del admin y no había update ni
+       delete, que es lo que más importa: un rastro que se puede editar no es rastro.
+     · **`anon` tenía TODOS los privilegios sobre las 11 tablas del esquema original**
+       (auditoria, catalogos, citas, clientes, cotizaciones, datos_fiscales, equipos,
+       movimientos_inventario, ordenes_servicio, perfiles, productos). Las tablas creadas
+       desde la 14 sí llevan su revoke, y las vistas también (04): estas once se quedaron
+       atrás. **Con precisión: hoy no es una puerta abierta** — `select`, `insert`, `update`
+       y `delete` sí pasan por RLS y ninguna política es `to anon`, así que una petición
+       anónima no toca una fila. Pero **`truncate` no pasa por RLS** (es la única operación
+       que se le escapa) y `references`/`trigger` no son cosa de un rol público. No es
+       alcanzable por la API (PostgREST nunca emite un `truncate`) ni se puede abrir sesión
+       como `anon`, que es `nologin`: es un privilegio de más, no un agujero. Se quita
+       porque contradice la doctrina del proyecto — si lo que protege es RLS, entonces lo
+       que RLS no cubre no puede estar concedido.
+     **Ojo con las tablas futuras:** Supabase tiene `alter default privileges` que vuelve a
+     conceder a `anon` en cada tabla nueva, así que el script de cada tabla nueva tiene que
+     traer su propio revoke.
    - Probar las pantallas con una cuenta de técnico (Agenda, Órdenes) y, cuando
      exista el portal, con una de cliente. El agente es solo de admin.
 2. **Confiabilidad del campo**
