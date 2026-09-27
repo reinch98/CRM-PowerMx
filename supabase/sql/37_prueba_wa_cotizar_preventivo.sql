@@ -60,7 +60,27 @@ values (current_setting('app.ctc')::uuid, current_setting('app.cli')::uuid,
 insert into conversaciones (id, telefono, contacto_id)
 values (current_setting('app.con')::uuid, '9990000036', current_setting('app.ctc')::uuid);
 
-select set_config('app.p0', 'ok — escenario listo: 2 clientes (60 y 10 km), tarifas, paquete y conversación', true);
+-- QUIÉN LLAMA. `wa_cotizar_preventivo` exige `_es_bot_o_admin()`, que se resuelve con
+-- `mi_rol()`, que a su vez lee `auth.uid()` de `request.jwt.claims`. En el editor SQL no hay
+-- claims, así que `mi_rol()` devuelve null y la función rechaza la llamada — es lo que debe
+-- hacer. Se simula el **bot**, que es quien la llama en producción.
+--
+-- NO se hace `set local role authenticated`: solo hacen falta las claims para que `mi_rol()`
+-- sepa quién es, y dejando el rol de base intacto la siembra de arriba y el `update` del paso
+-- 9 siguen saltándose RLS, que es lo que se quiere en una prueba.
+select set_config('app.bot',
+         coalesce((select id::text from perfiles where rol = 'bot' and coalesce(activo, true) limit 1),
+                  (select id::text from perfiles where rol = 'admin' and coalesce(activo, true) limit 1),
+                  ''), true);
+
+select set_config('request.jwt.claims',
+         json_build_object('sub', current_setting('app.bot'), 'role', 'authenticated')::text, true);
+
+select set_config('app.p0', concat(
+  case when nullif(current_setting('app.bot'), '') is null then 'FALLO: no hay cuenta bot ni admin'
+       else 'ok' end,
+  ' — escenario listo (2 clientes a 60 y 10 km, tarifas, paquete y conversación), llamando como ',
+  coalesce((select rol from perfiles where id = nullif(current_setting('app.bot'), '')::uuid), 'nadie')), true);
 
 -- ---- 1) el camino feliz: cotiza el lejano ----
 select set_config('app.r1', wa_cotizar_preventivo(current_setting('app.con')::uuid,
@@ -135,7 +155,8 @@ select set_config('app.p8', concat(
   ' — equipo de otro cliente: ', current_setting('app.r8')), true);
 
 -- ---- 9) sin tarifa no inventa un precio ----
-update tarifas_servicio set activo = false where sku = 'PRUEBA36-PMEN';
+-- Solo se capturó la tarifa de mantenimiento MENOR, así que pedir el mayor tiene que
+-- devolver un motivo y ninguna cotización. No hace falta apagar nada.
 select set_config('app.r9', wa_cotizar_preventivo(current_setting('app.con')::uuid,
                                                   current_setting('app.eq')::uuid, 'mayor')::text, true);
 select set_config('app.p9', concat(
