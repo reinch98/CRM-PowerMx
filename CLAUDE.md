@@ -931,21 +931,25 @@ No contesta ni agenda nada: eso sigue siendo a mano desde la pantalla WhatsApp.
   **no usar su botón de arreglo**, deja al técnico sin existencias ni catálogo.
   Verificar el modo con `select relname, reloptions from pg_class ...`.
   `create or replace view` no cambia el modo: hace falta `alter view ... set`.
-- **El botón del asesor SÍ se usó, y se notó el 26/09/2026.** La foto del esquema
-  (`00_volcar_esquema.sql`) destapó que `catalogo` y `resguardo_por_cliente` estaban en
-  `security_invoker = on`, contra lo que dice el párrafo de arriba; solo `existencias`
-  seguía en definer. Con `productos` cerrada a todos menos al admin (tiene UNA política,
-  `admin_productos`), eso deja esas dos vistas **VACÍAS para quien no sea admin**: cero
-  filas, sin error ni permiso denegado, y la rama de `cliente` del resguardo no puede
-  dispararse nunca. **No se notaba** porque ninguna pantalla las lee (el código usa
-  `disponibles` en Cotizaciones e Inventario, las dos de admin, y `existencias` en Almacén
-  y en "Pedir material" del técnico); se habría notado en la función `agente` llamada por un
-  técnico y en el portal del cliente. Arreglado con `30_modo_vistas.sql` y su prueba, que
-  además comprueba que el candado `mi_rol()` sigue puesto (una cuenta sin rol y el
-  almacenista siguen viendo 0 en `catalogo`: ahí van los precios).
-  **Lección:** una propiedad que vive en `reloptions` no se ve en el código ni en el diff, y
-  un botón de la consola la puede voltear sin que nadie se entere. Si el aviso "Security
-  Definer View" vuelve a aparecer para esas tres, es esperado.
+- **Contradicción sin resolver (26/09/2026) — no dar por buena la sección de vistas de
+  `00_esquema_base.sql` hasta cerrarla.** La foto del esquema, tomada a las 17:55, reportó
+  `catalogo` y `resguardo_por_cliente` en `security_invoker = on` (solo `existencias` en
+  `off`). Poco después, `30_prueba_modo_vistas.sql` contra la misma base dijo lo contrario:
+  `catalogo antes: security_invoker=off` y el técnico viendo **95** filas — que es
+  justamente lo que se midió el 19/09 y lo que `05_vistas_por_rol.sql` deja configurado con
+  `alter view ... set (security_invoker = off)` en las tres.
+  Las dos explicaciones posibles, y ninguna comprobada todavía:
+  1. el modo sí estaba volteado y se corrigió entre las 17:55 y la prueba (correr
+     `30_modo_vistas.sql`, que es idempotente, lo haría);
+  2. **`00_volcar_esquema.sql` reporta mal `reloptions`**, y entonces la sección de vistas
+     del archivo de esquema no es de fiar — que es lo grave, porque ese archivo es el
+     registro del que habría que reconstruir la base.
+  Para distinguirlas está `31_comparar_modo_vistas.sql`: corre lado a lado la expresión del
+  volcado y una lectura directa de `pg_class.reloptions`. Si discrepan, el bug es mío.
+- **Estado comprobado hoy (prueba 30, 8 de 8 "ok"):** el técnico ve 95 en `catalogo`, una
+  cuenta sin rol ve 0, el almacenista ve 0 en `catalogo` (ahí van los precios) y 95 en
+  `existencias`. O sea que el candado `mi_rol()` de las vistas definer funciona y el almacén
+  no ve precios. `30_modo_vistas.sql` deja ese mismo estado y se puede correr sin riesgo.
 - La llave anon es pública por diseño; lo que protege es RLS. Nunca usar
   `service_role` ni en el front ni en el agente.
 - El costo no sale nunca al sitio público ni a un técnico.
@@ -1220,9 +1224,11 @@ corte ni reordene, y de ahí se guarda como `supabase/sql/00_esquema_base.sql`.
   `ordenes_servicio`, `cotizaciones`, `movimientos_inventario`, `auditoria` y
   `datos_fiscales`. Ese archivo **no se edita a mano**: se vuelve a correr el script y se
   reemplaza entero.
-- **Y encontró un fallo de seguridad que llevaba días escondido** en el modo de dos vistas
-  (ver "Modo de las vistas" en Seguridad, y `30_modo_vistas.sql`). Ese solo hallazgo ya pagó
-  el trabajo: era invisible en el código, en el diff y en la pantalla.
+- **Ojo con su sección de vistas:** reportó `catalogo` y `resguardo_por_cliente` en
+  `security_invoker = on` y la prueba 30, minutos después, dijo `off`. Hasta que
+  `31_comparar_modo_vistas.sql` diga quién tiene razón, esa parte del archivo está en duda
+  (ver "Contradicción sin resolver" en Seguridad). El resto —tablas, funciones, políticas,
+  restricciones— no depende de `reloptions` y no está en cuestión.
 
 ## Ruta de mejora
 
