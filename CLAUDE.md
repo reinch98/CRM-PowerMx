@@ -1261,15 +1261,30 @@ Supabase); lint en cero.
    - ~~Vistas por rol.~~ Hecho y probado el 19/09/2026 (`05_vistas_por_rol.sql`):
      técnico ve 95 en `disponibles` y `catalogo` y 0 en `productos`; una cuenta sin
      rol ve 0 en todo; los modos quedaron definer/invoker como se describe arriba.
-     Falta probar con una cuenta de **cliente**, y desde el 26/09/2026 **ya se puede**:
-     la base tiene un perfil con rol `cliente`, así que no hay que esperar al portal.
-     Es la prueba que cierra este punto 1. Hay que comprobar dos cosas: que el cliente
-     vea 0 en `catalogo` (ahí van los precios) y que en `resguardo_por_cliente` vea
-     **solo lo suyo** — esa vista es definer y su rama de cliente
-     (`mi_rol() = 'cliente' and m.cliente_id = mi_cliente()`) **nunca se ha ejecutado**;
-     si al perfil le falta `cliente_id`, `mi_cliente()` no devuelve nada y vería 0 sin
-     que eso pruebe que el filtro funciona. Mientras no esté probado, el agente sigue
-     rechazando ese rol.
+     **Probado a medias con una cuenta de cliente el 26/09/2026**
+     (`33_prueba_rol_cliente.sql`). Concluyente y en verde: el cliente ve **0** en
+     `catalogo` (precios), `productos` (costo), `existencias` y `cotizaciones`. Esas
+     cuatro no dependen de `cliente_id`, así que valen como están.
+     **Sin concluir todavía:** su propia ficha en `clientes` y —la que importa— la rama
+     de cliente de `resguardo_por_cliente`
+     (`mi_rol() = 'cliente' and m.cliente_id = mi_cliente()`), que **nunca se ha
+     ejecutado**. Dos razones: el perfil cliente de la base no tenía `cliente_id`, y no
+     hay ningún movimiento `a_resguardo` en toda la base. Lo primero se arregla en
+     Usuarios; lo segundo lo resuelve la propia prueba, que ahora **fabrica el escenario**
+     (resguardo de dos clientes distintos) dentro del `begin/rollback`.
+     Ojo con la trampa que la prueba distingue a propósito: sin `cliente_id`,
+     `mi_cliente()` devuelve null y el cliente ve 0 — lo mismo que se vería con el filtro
+     mal escrito. Un 0 ahí no prueba nada.
+     Mientras no esté probado, el agente sigue rechazando ese rol.
+   - **`rol = 'cliente'` sin `cliente_id` era posible** y había un perfil así. La pantalla
+     Usuarios ya lo impedía ("Un usuario con rol cliente necesita tener un cliente
+     asignado"), pero la validación vivía solo en el navegador y ese perfil se creó desde
+     el Table Editor. Con la columna en null la cuenta **no ve nada**: falla cerrada, que
+     para la seguridad está bien, pero el día del portal sería una pantalla en blanco y el
+     error no estaría donde se busca. `34_cliente_necesita_cliente_id.sql` lo vuelve un
+     `check` de la base, en los dos sentidos (y suelta el `cliente_id` de quien no es
+     cliente). **Lección:** una regla que solo vive en el formulario no existe para quien
+     entra por el Table Editor o por la API.
    - Opción limpia a futuro: mover `costo` a una tabla solo-admin
      (`productos_costos`) y dar al técnico lectura de `productos`. Así todas las
      vistas quedan en invoker, sin `mi_rol()` en cada una y sin el aviso del
