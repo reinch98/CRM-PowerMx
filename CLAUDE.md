@@ -986,6 +986,14 @@ No contesta ni agenda nada: eso sigue siendo a mano desde la pantalla WhatsApp.
   `supabase/.temp/project-ref`). La función se despliega con
   `npx supabase functions deploy agente`, ya no pegándola en el editor web. Aun así,
   el archivo del repo es el que manda: un deploy **pisa** lo que esté en Supabase.
+  El `WARNING: Docker is not running` del deploy **no importa**: Docker solo hace falta para
+  la copia local de Supabase, y el deploy sube directo al proyecto real.
+- **Los registros de una Edge Function NO se ven por CLI** (comprobado el 27/09/2026 con la
+  v2.117.0: `functions` solo tiene `list`, `delete`, `download`, `deploy`, `new` y `serve`, y
+  no hay un `logs` de primer nivel). Van en el dashboard:
+  `https://supabase.com/dashboard/project/<ref>/functions` → la función → **Logs**. Ahí es
+  donde aparece lo que el webhook se tragó, porque `whatsapp` **siempre responde 200** y los
+  errores no salen por ningún otro lado.
 - `supabase/config.toml` (de `supabase init`) describe una copia **local** de Supabase que
   aquí no se usa; el deploy de funciones no la aplica. **Nunca correr
   `npx supabase config push`**: eso sí empujaría esos ajustes al proyecto real y pondría
