@@ -1006,6 +1006,109 @@ solicitudes llegan solo al CRM**; n8n ya no interviene. Primer puente real entre
   precargados (hoy manda a Clientes a darlo de alta a mano); y un límite de peticiones por IP en
   Cloudflare/Supabase si algún día hay abuso (hoy solo hay topes globales y por número).
 
+## Catálogo público del sitio desde el CRM (SQL 38–39, 27/09/2026) — SQL aplicado y probado; falta publicar el sitio
+
+Paso 3 de "unir CRM y sitio". Antes de tocar código se comparó `productos` (CRM) contra el Excel
+del sitio con `38_comparar_catalogo.sql` (de solo lectura, se puede repetir): los 95 productos de
+las seis categorías (generador, batería, panel, refacción, renta, paquete_solar) tienen el **mismo
+SKU y el mismo precio** en los dos lados, incluidas las tarifas de renta (24h/48h/semana) y los dos
+precios de cada paquete (estándar/híbrido) — nada se ha desincronizado desde la carga inicial
+(`02_catalogo.sql`). El problema real sigue siendo el ya conocido: **51 de 52 refacciones no tienen
+precio**; `0663860SRV` es la única con precio y costo capturados en el CRM (350) aunque el Excel
+siga en 0 — un pendiente ya resuelto ahí sin que se notara. `productos.publicar` (por omisión
+`true`) y `productos.moneda` ya existían en el esquema desde el principio pero ninguna pantalla los
+tocaba; ahora `publicar` es lo que decide si un producto sale al catálogo público.
+
+**Decisión de Caña (27/09/2026):** `convertir.js` (el mismo script de siempre, en modo nuevo) lee el
+CRM en vez del Excel — no un endpoint público que el navegador de un visitante llame en vivo. Así no
+hace falta abrir ninguna puerta nueva a `anon`: el script corre con la cuenta `bot`, igual de
+confiable que el webhook de WhatsApp o `solicitud-web`. Las fotos y fichas técnicas se siguen
+sirviendo desde `POWERMX-sitio/Inventario` como siempre — el CRM no las tiene.
+
+**Decisión de Caña, el mismo 27/09/2026, tras ver la primera corrida:** "todo el catálogo debe
+publicarse; lo que no tenga stock debe decir sobre pedido". Antes, `catalogo_publico()` y
+`convertir.js` excluían lo que no tenía precio (49 de 52 refacciones no se publicaban), y el sitio
+decía "No disponible" cuando el disponible daba 0. Se sentía mal esconder una refacción del
+catálogo solo porque le faltaba capturar el precio — existe, se puede pedir, y "no disponible"
+suena a que no se puede conseguir cuando en realidad solo no está en el estante ahora mismo.
+
+- **`catalogo_publico()`** (`supabase/sql/39_catalogo_publico.sql`, **re-aplicada y re-probada el
+  27/09/2026 tras quitarle el filtro de precio**: `39_prueba_catalogo_publico.sql`, 9 de 9 "ok",
+  incluido el `p4` invertido: el producto sin precio ahora SÍ sale, con `precio` en `null`).
+  Mismo patrón que `registrar_solicitud_web`: security definer, solo `_es_bot_o_admin()`, revocada
+  a `anon`. Devuelve sku, categoría, nombre, marca, modelo, descripción, precio, `precios` jsonb
+  (rentas y paquetes), moneda, unidad, atributos, claves SAT y **`disponible` en booleano** — nunca
+  el costo ni el físico exacto, y nunca un producto con `publicar=false`. **Ahora SÍ publica sin
+  precio** (con `precio` en `null`); lo único que sigue vetando la fila es `activo`/`publicar`.
+  **Ojo con la fórmula de disponible:** son TRES sumas por separado (físico, apartado, resguardo) y
+  luego se restan, igual que la vista `existencias` — juntarlas en una sola suma da un número
+  equivocado, porque `salida_venta` resta de físico Y de apartado a la vez. La función no puede
+  apoyarse en las vistas `existencias`/`disponibles` (son invoker: llamadas desde una función de la
+  cuenta bot se verían vacías, el mismo aviso de "Modo de las vistas" de más abajo), así que calcula
+  la fórmula directo contra `movimientos_inventario`. La prueba `39` incluye ese caso cruzado
+  (entrada + apartado + venta) para no repetir el error, y ahora comprueba que el producto sin
+  precio SÍ sale (antes comprobaba lo contrario).
+- **`convertir.js`** (`POWERMX-sitio/Inventario/convertir.js`) ahora tiene dos fuentes:
+  `node convertir.js` (Excel, como siempre, sin cambios de comportamiento — comprobado que produce
+  el mismo JSON byte por byte) y `FUENTE_CATALOGO=crm node convertir.js` (nuevo: pide
+  `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `BOT_EMAIL`, `BOT_PASSWORD` del entorno — las mismas
+  credenciales del bot que ya usa `whatsapp`). `filasDesdeCRM()` traduce cada producto del CRM al
+  mismo formato de fila que producía el Excel (un mapeo por categoría, comentado en el archivo:
+  la mayoría sale de `atributos`, que ya usa los mismos nombres de columna del Excel porque el
+  catálogo se sembró una vez desde ahí; rentas y paquetes sacan sus precios de `precios` jsonb; el
+  "incluye" de un paquete sale de `descripcion`, pipe-separado, igual que en el Excel) — así el
+  resto del pipeline (imágenes, comparación con lo anterior, escritura del JSON, quitar columnas
+  privadas) no cambia una línea. `disponible` (booleano) se manda como `stock: 1 | 0`.
+  **Probado de punta a punta en la compu de Caña, dos veces**, con `SUPABASE_URL`,
+  `SUPABASE_ANON_KEY`, `BOT_EMAIL`, `BOT_PASSWORD` como variables de entorno: la primera corrida
+  encontró "Invalid API key" (la llave que se puso al principio quedó vacía/corta — se resolvió
+  volviendo a pegarla completa, todo en la misma ventana de PowerShell) y luego un eco de un solo
+  ciclo (`RENT-GEN-4KVA-GASOLINA` marcado como "cambio de precio $400 → $400", por un campo
+  `precio` de más que la primera versión de `filasDesdeCRM` le agregaba a las rentas sin que el
+  Excel lo hubiera tenido nunca; se corrigió quitándolo del mapeo de renta, y desapareció al
+  volver a correr). **"Paneles-Solares" no tiene equivalente en el CRM** (es costeo interno de
+  paneles sueltos, nunca se publicó) y en modo `crm` simplemente no se toca.
+  **Bug real atrapado antes de tocar la base:** la primera versión de `filasDesdeCRM` olvidaba el
+  campo `precio` plano para generador/batería/refacción (esas categorías lo llevan aparte de
+  `atributos`) — con eso, `procesarCatalogo()` habría marcado a TODOS como "sin precio" y no se
+  habría publicado nada. Lo encontró una prueba en seco con datos falsos
+  (`filasDesdeCRM` + el normalizador, sin tocar disco ni red) antes de escribirlo contra la base;
+  quedó como lección de por qué probar el mapeo entero, no solo que compile.
+  Se agregó `@supabase/supabase-js` a `Inventario/package.json` (única dependencia nueva; `npm
+  install` ya corrido). Las otras dos vulnerabilidades que reporta `npm audit` (`sharp`, `xlsx`) ya
+  estaban antes, sin relación con este cambio.
+- **El sitio, tras "todo el catálogo debe publicarse":** en `catalogo-generadores.html`,
+  `catalogo-solar-baterias.html` (paquetes y baterías), `catalogo-refacciones.html` y `renta.html`,
+  `textoStock()` pasó de "Consulta disponibilidad"/"No disponible" a **"Disponible"/"Sobre
+  pedido"** (ya no hace falta cubrirse con "consulta": el disponible es real, viene del CRM), y el
+  color del que no tiene stock pasó de rojo a ámbar — "sobre pedido" no es un error. Cada tarjeta
+  (`crearTarjeta`/`buildCard`/`buildBatCard`) revisa si `precio` es válido (`> 0`, no null/vacío);
+  sin precio muestra **"Precio a consultar"** en vez de "$0" y cambia "Comprar ahora / Agregar al
+  carrito" por un solo botón **"Cotizar por WhatsApp"** con un mensaje ya escrito. `renta.html`
+  todavía mostraba el número crudo ("Quedan 3 disponibles") porque se quedó fuera del parche del
+  20/09 que ya había limpiado los otros tres catálogos — parejo ahora.
+  **De paso, un bug de antes se corrigió:** `catalogo-refacciones.html` tenía
+  `WHATSAPP_NUMBER = "529990000000"`, un número de plantilla que nunca se reemplazó por el real
+  (`529994755275`) — el botón de "¿Está disponible?" llevaba semanas apuntando a un número que no
+  existe.
+- **El CRM ya es la fuente por omisión (27/09/2026), pedido de Caña.** Probado dos veces a mano y
+  con el SQL aplicado, seguir por omisión en Excel era justo el riesgo que se quería evitar: una
+  ventana nueva sin las variables puestas habría publicado datos viejos sin que nadie se diera
+  cuenta. Ahora `node convertir.js` **sin nada** lee el CRM, y si faltan `SUPABASE_URL`,
+  `SUPABASE_ANON_KEY`, `BOT_EMAIL` o `BOT_PASSWORD` en el entorno, **se detiene** con el error de
+  cuáles faltan — nunca cae en silencio al Excel. `FUENTE_CATALOGO=excel node convertir.js` queda
+  como la opción explícita, para el costeo interno de "Paneles-Solares" (que no vive en el CRM) o
+  si el CRM no responde y hace falta publicar algo de emergencia.
+- **Falta:** publicar el sitio con estos cambios (commit + push, y el `productos-refacciones.json`
+  regenerado con las 49 refacciones nuevas). Lo del robot de GitHub Actions es aparte: hoy sigue
+  publicando desde el commit del Excel más el disparador cada 30 min, sin tocar el CRM directo —
+  cambiarlo (que el propio robot corra en modo `crm`, con las 4 credenciales como secretos del
+  repo) es la siguiente decisión, no parte de este cambio.
+- **Ya no urge, pero sigue pendiente:** capturar las 49 refacciones sin precio (ver "Pendientes de
+  datos") — ahora se publican igual con "Precio a consultar", así que no bloquea nada, pero cada
+  una que se capture deja de mandar al cliente a WhatsApp y le muestra el precio y el botón de
+  compra directo.
+
 ## Seguridad — lo más importante
 
 - Storage: bucket `ordenes` (**minúscula**, privado; Storage distingue mayúsculas).
@@ -1198,6 +1301,58 @@ motor y su foto, y el combustible intacto.
 
 Medido en celular en las dos pantallas, lista y edición: 0 textos < 17 px, 0 contrastes <
 4.5, 0 objetivos < 48 px, 0 px de desborde.
+
+## Editar y dar de alta productos completos en Inventario (27/09/2026)
+
+Con el CRM como fuente del catálogo del sitio, hacía falta poder editar y crear productos
+**sin abrir el editor SQL de Supabase**. Hasta hoy, "Catálogo" solo dejaba tocar precio, costo,
+mínimo y grupo equivalente por renglón; nombre, marca, atributos (kw, kwh, garantía…) y las
+tarifas de rentas/paquetes (`precios` jsonb) solo se podían cambiar con SQL a mano.
+
+Mismo patrón que **Editar clientes y equipos** (25/09/2026): un solo formulario para alta y
+edición (`aFormulario`/`paraGuardar` de `src/lib/formularios.js`), con un botón "Editar" por
+renglón en la tabla del Catálogo. La captura rápida de precio/costo/mínimo/grupo **se queda
+igual**, para no perder lo más usado del día a día; el formulario grande es para todo lo demás
+y para dar de alta.
+
+- **Atributos por categoría** (`ATRIBUTOS`, igual idea que `ATRIBUTOS` de `Equipos.jsx`): cada
+  categoría muestra sus propios campos, con los MISMOS nombres de columna que ya usa el
+  catálogo (generador: segmento, combustible, kw, arranque, fase, voltaje, garantia_anios,
+  ats; batería: segmento, kwh, quimica, ciclos, voltaje, dod, garantia_anios; panel:
+  potencia_w; refacción: subcategoria; renta: kva, combustible; paquete: paneles, kw,
+  ahorro_mensual, popular). `ats` y `popular` son casillas que se guardan como **"si"/"no"**
+  (no `true`/`false`), porque así los dejó la carga original y así los lee `aBooleano()` del
+  lado del sitio — si algún día se guardaran como booleano real tampoco se rompería nada
+  (`aBooleano` reconoce las dos formas), pero se mantuvo la forma existente para no generar un
+  diff artificial en todo el catálogo.
+- **`precios` jsonb (tarifas) solo para renta y paquete_solar**, en su propio recuadro
+  ("Tarifas"): 24h/48h/semana para renta, estándar/híbrido para paquete. **El campo "Precio"
+  plano se oculta para estas dos categorías** (con un aviso de dónde sale) y se sincroniza
+  solo al guardar (`precio = precios['24hr']` o `precios.estandar`) — si se dejara editable
+  aparte, cambiar solo la tarifa habría dejado el precio plano desactualizado sin que nadie lo
+  notara (ese campo lo siguen leyendo `convertir.js` y el conteo de "sin precio" de esta misma
+  pantalla, aunque el sitio ya no lo usa directo para estas dos categorías).
+- **"Qué incluye" de un paquete** es la columna `descripcion`, pipe-separada (`|`) — así la
+  guardó la carga original, no hay columna aparte. El formulario la muestra como una lista,
+  una línea por elemento, y la vuelve a unir con " | " al guardar. Por eso paquete_solar
+  tampoco muestra marca, modelo ni claves SAT: son combos, no productos con ficha propia.
+- **Igual que en Equipos: al editar se conservan las claves de `atributos` que este
+  formulario no maneja** (por si algún día se guarda algo más ahí), y **cambiar la categoría
+  durante la edición reinicia atributos y tarifas** (los de la categoría anterior ya no
+  aplican).
+- Probado en el emulador (`VITE_SUPABASE_URL=http://127.0.0.1:9`, con `cache_perfil` de admin
+  sembrado a mano): el formulario cambia los campos correctos al cambiar de categoría en las
+  cinco categorías con atributos propios (Precio se oculta y aparece el aviso en renta y
+  paquete; SAT/marca/modelo desaparecen solo en paquete; "Qué incluye" reemplaza a
+  "Descripción" solo en paquete). No se probó el guardado real (necesita la base), pero la
+  lógica de fusión de `atributos` es la misma, ya probada, de `Equipos.jsx`. `npm test`
+  (249, sin nuevas pruebas: la lógica queda dentro del componente, igual que en Equipos,
+  no se extrajo a un `lib/*.js`), `npm run lint` y `npm run build` en verde.
+- **Sigue sin poder desde aquí:** borrar un producto (no hay botón; se desactiva bajándole
+  `activo` a mano en Supabase, o se agrega un botón después si hace falta) y renombrar el
+  SKU de las 51 refacciones sin precio en lote (una por una sí se puede, incluidas las dos
+  pendientes `22676`/`99727` a las que les falta el cero inicial).
+
 ## Pantallas
 
 `Agenda` (calendario, por programar, empalmes) · `Trabajos` (pestaña "Órdenes"; móvil,

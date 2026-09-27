@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { Alerta } from './ui'
+import { aFormulario, paraGuardar } from './lib/formularios'
 
 const CATEGORIAS = [
   ['generador', 'Generadores'],
@@ -10,6 +11,48 @@ const CATEGORIAS = [
   ['refaccion', 'Refacciones'],
   ['renta', 'Rentas']
 ]
+
+// Campos que cambian según la categoría. Se guardan dentro de `atributos` (jsonb) con
+// el MISMO nombre que ya usa el catálogo de siempre (así el sitio y `convertir.js`,
+// que leen `atributos` tal cual, no necesitan tocarse). `bool: true` = casilla que se
+// guarda como "si"/"no" — así lo grabó la carga original y así lo espera aBooleano()
+// del lado del sitio.
+const ATRIBUTOS = {
+  generador: [
+    ['segmento', 'Segmento'], ['combustible', 'Combustible'], ['kw', 'Potencia (kW)'],
+    ['arranque', 'Arranque'], ['fase', 'Fase'], ['voltaje', 'Voltaje'],
+    ['garantia_anios', 'Garantía'], ['ats', 'Incluye ATS', 'bool']
+  ],
+  bateria: [
+    ['segmento', 'Segmento'], ['kwh', 'Capacidad (kWh)'], ['quimica', 'Química'],
+    ['ciclos', 'Ciclos'], ['voltaje', 'Voltaje'], ['dod', 'DoD'], ['garantia_anios', 'Garantía']
+  ],
+  panel: [
+    ['potencia_w', 'Potencia (W)']
+  ],
+  refaccion: [
+    ['subcategoria', 'Subcategoría']
+  ],
+  renta: [
+    ['kva', 'KVA'], ['combustible', 'Combustible']
+  ],
+  paquete_solar: [
+    ['paneles', 'Número de paneles'], ['kw', 'kW instalados'],
+    ['ahorro_mensual', 'Ahorro mensual estimado (texto, ej. "$600–$900")'],
+    ['popular', 'Marcarlo como "Más popular"', 'bool']
+  ]
+}
+
+// Las tarifas de rentas y paquetes no van en `atributos`: van en `precios` (jsonb),
+// que es justo la columna pensada para "más de un precio" (ver CLAUDE.md).
+const PRECIOS = {
+  renta: [
+    ['24hr', 'Precio 24 horas'], ['48hr', 'Precio 48 horas'], ['semana', 'Precio por semana']
+  ],
+  paquete_solar: [
+    ['estandar', 'Precio con inversor estándar'], ['hibrido', 'Precio con inversor híbrido']
+  ]
+}
 
 // Cada tipo de movimiento y a qué bolsa pega. El texto de ayuda es el que
 // aparece debajo del selector para que nadie tenga que acordarse.
@@ -26,10 +69,13 @@ const TIPOS = [
 
 const NECESITAN_CLIENTE = ['a_resguardo', 'consumo_resguardo']
 
+const NUMERICAS_PRODUCTO = ['precio', 'costo', 'minimo']
+
 const vacioProducto = {
   sku: '', categoria: 'refaccion', nombre: '', marca: '', modelo: '',
   descripcion: '', precio: '', costo: '', minimo: '', unidad: 'pieza',
-  clave_producto_sat: '', clave_unidad_sat: 'H87'
+  clave_producto_sat: '', clave_unidad_sat: '', grupo_equivalente: '',
+  activo: true, publicar: true
 }
 
 const vacioMovimiento = {
@@ -38,6 +84,11 @@ const vacioMovimiento = {
 }
 
 const num = v => (v === '' || v == null ? null : Number(v))
+
+// atributos.ats/popular se guardan como "si"/"no" (la carga original los dejó así).
+// Al abrir para editar los leemos como boolean para la casilla; al guardar los
+// devolvemos a "si"/"no".
+const boolDeAtributo = v => v === true || v === 'si' || v === 'sí' || v === 'true'
 
 export default function Inventario() {
   const [vista, setVista] = useState('existencias')
@@ -49,9 +100,15 @@ export default function Inventario() {
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
 
-  const [nuevo, setNuevo] = useState(vacioProducto)
+  const [form, setForm] = useState(vacioProducto)
+  const [atributos, setAtributos] = useState({})
+  const [precios, setPrecios] = useState({})
+  const [editando, setEditando] = useState(null)   // el producto completo, para el formulario grande
+  const [abierto, setAbierto] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+
   const [mov, setMov] = useState(vacioMovimiento)
-  const [editando, setEditando] = useState({})  // { [id]: { precio, costo, minimo } }
+  const [edicionRapida, setEdicionRapida] = useState({})  // { [id]: { precio, costo, minimo, grupo_equivalente } }
 
   useEffect(() => { cargar() }, [])
 
@@ -86,18 +143,20 @@ export default function Inventario() {
   const sinCosto = productos.filter(p => p.costo == null).length
 
   // -------------------------------------------------------------------------
-  // Captura rápida: edita precio, costo y mínimo directo en la lista. Es lo
-  // que hace falta ahora mismo, no una pantalla de edición por producto.
+  // Captura rápida: edita precio, costo, mínimo y grupo directo en la lista,
+  // sin abrir el formulario grande. Sigue siendo lo más rápido para lo de todos
+  // los días; el formulario de abajo es para lo demás (nombre, atributos, tarifas,
+  // publicar) y para dar de alta.
   // -------------------------------------------------------------------------
-  function editar(id, campo, valor) {
-    setEditando({ ...editando, [id]: { ...(editando[id] || {}), [campo]: valor } })
+  function editarRapido(id, campo, valor) {
+    setEdicionRapida({ ...edicionRapida, [id]: { ...(edicionRapida[id] || {}), [campo]: valor } })
   }
 
   async function guardarFila(p) {
-    const cambios = editando[p.id]
+    const cambios = edicionRapida[p.id]
     if (!cambios) return
     const payload = {}
-    for (const campo of ['precio', 'costo', 'minimo']) {
+    for (const campo of NUMERICAS_PRODUCTO) {
       if (campo in cambios) payload[campo] = num(cambios[campo])
     }
     // Texto, no número: la etiqueta vacía se guarda como null para no dejar equivalencias
@@ -107,29 +166,112 @@ export default function Inventario() {
     }
     const { error } = await supabase.from('productos').update(payload).eq('id', p.id)
     if (error) return setError(error.message)
-    const { [p.id]: _, ...resto } = editando
-    setEditando(resto)
+    const { [p.id]: _, ...resto } = edicionRapida
+    setEdicionRapida(resto)
     setMensaje(`${p.sku} actualizado.`)
     cargar()
+  }
+
+  // -------------------------------------------------------------------------
+  // Formulario grande: alta y edición completas. Mismo formulario para las dos,
+  // igual que Clientes y Equipos — así un campo nuevo no se olvida en la edición.
+  // -------------------------------------------------------------------------
+  function cambiar(campo, valor) {
+    setForm({ ...form, [campo]: valor })
+  }
+
+  function cambiarCategoria(nuevaCategoria) {
+    setForm({ ...form, categoria: nuevaCategoria })
+    setAtributos({})  // los atributos y tarifas de la categoría anterior ya no aplican
+    setPrecios({})
+  }
+
+  function cambiarAtributo(campo, valor) {
+    setAtributos({ ...atributos, [campo]: valor })
+  }
+
+  function cambiarPrecio(campo, valor) {
+    setPrecios({ ...precios, [campo]: valor })
+  }
+
+  function nuevoProducto() {
+    setForm(vacioProducto)
+    setAtributos({})
+    setPrecios({})
+    setEditando(null)
+    setAbierto(true)
+    setError('')
+  }
+
+  function editarProducto(p) {
+    setForm(aFormulario(p, vacioProducto))
+    setAtributos(Object.fromEntries(
+      (ATRIBUTOS[p.categoria] || []).map(([clave, , tipo]) =>
+        [clave, tipo === 'bool' ? boolDeAtributo(p.atributos?.[clave]) : (p.atributos?.[clave] ?? '')])
+    ))
+    setPrecios(Object.fromEntries(
+      (PRECIOS[p.categoria] || []).map(([clave]) => [clave, p.precios?.[clave] ?? ''])
+    ))
+    setEditando(p)
+    setAbierto(true)
+    setError('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function cancelar() {
+    setForm(vacioProducto); setAtributos({}); setPrecios({}); setEditando(null); setAbierto(false); setError('')
   }
 
   async function guardarProducto(e) {
     e.preventDefault()
     setError(''); setMensaje('')
-    if (!nuevo.sku.trim()) return setError('El SKU es obligatorio')
-    if (!nuevo.nombre.trim()) return setError('El nombre es obligatorio')
+    if (!form.sku.trim()) return setError('El SKU es obligatorio')
+    if (!form.nombre.trim()) return setError('El nombre es obligatorio')
 
-    const payload = {
-      ...nuevo,
-      sku: nuevo.sku.trim(),
-      precio: num(nuevo.precio),
-      costo: num(nuevo.costo),
-      minimo: num(nuevo.minimo) ?? 0
-    }
-    const { error } = await supabase.from('productos').insert([payload])
+    const payload = paraGuardar(form, { numericas: NUMERICAS_PRODUCTO })
+    payload.sku = form.sku.trim()
+    payload.grupo_equivalente = form.grupo_equivalente.trim() || null
+    payload.minimo = payload.minimo ?? 0
+
+    // Los atributos vacíos no se guardan; los booleanos se devuelven a "si"/"no",
+    // como los dejó la carga original.
+    const camposAtributos = (ATRIBUTOS[form.categoria] || [])
+    const limpiosAtr = Object.fromEntries(
+      camposAtributos
+        .map(([clave, , tipo]) => [clave, tipo === 'bool' ? (atributos[clave] ? 'si' : 'no') : atributos[clave]])
+        .filter(([, v]) => v !== '' && v != null)
+    )
+    // Al editar hay que conservar lo que este formulario no maneja (por si algún día
+    // `atributos` guarda algo más, como pasa en equipos con las placas).
+    const clavesFormulario = camposAtributos.map(([clave]) => clave)
+    const ajenos = Object.fromEntries(
+      Object.entries(editando?.atributos || {}).filter(([k]) => !clavesFormulario.includes(k))
+    )
+    payload.atributos = { ...ajenos, ...limpiosAtr }
+
+    // `precios`: solo rentas y paquetes lo usan; en las demás categorías se queda vacío.
+    const camposPrecios = PRECIOS[form.categoria] || []
+    payload.precios = Object.fromEntries(
+      camposPrecios
+        .map(([clave]) => [clave, num(precios[clave])])
+        .filter(([, v]) => v != null)
+    )
+    // El `precio` plano de rentas y paquetes es el que se muestra "de entrada" (24 h /
+    // estándar): se sincroniza con la tarifa correspondiente para que no quede viejo si
+    // solo se editan las tarifas. El formulario ni siquiera muestra el campo Precio para
+    // estas dos categorías, justo para que no se pueda desincronizar a mano.
+    if (form.categoria === 'renta') payload.precio = payload.precios['24hr'] ?? null
+    if (form.categoria === 'paquete_solar') payload.precio = payload.precios.estandar ?? null
+
+    setGuardando(true)
+    const { error } = editando
+      ? await supabase.from('productos').update(payload).eq('id', editando.id)
+      : await supabase.from('productos').insert([payload])
+    setGuardando(false)
+
     if (error) return setError(error.message)
-    setNuevo(vacioProducto)
-    setMensaje('Producto agregado.')
+    setMensaje(editando ? `${payload.sku} actualizado.` : 'Producto agregado.')
+    cancelar()
     cargar()
   }
 
@@ -165,6 +307,10 @@ export default function Inventario() {
   }
 
   const ayudaTipo = TIPOS.find(t => t[0] === mov.tipo)?.[2]
+  const esPaquete = form.categoria === 'paquete_solar'
+  const esRentaOPaquete = form.categoria === 'renta' || esPaquete
+  const atributosDeLaCategoria = ATRIBUTOS[form.categoria] || []
+  const preciosDeLaCategoria = PRECIOS[form.categoria] || []
 
   return (
     <div className="pagina">
@@ -254,12 +400,12 @@ export default function Inventario() {
                 <tr>
                   <th>SKU</th><th>Producto</th><th>Marca</th>
                   <th>Precio</th><th>Costo</th><th>Margen</th><th>Mínimo</th>
-                  <th>Grupo equivalente</th><th></th>
+                  <th>Grupo equivalente</th><th>Publicado</th><th></th>
                 </tr>
               </thead>
               <tbody>
                 {visibles.map(p => {
-                  const ed = editando[p.id] || {}
+                  const ed = edicionRapida[p.id] || {}
                   const precio = 'precio' in ed ? num(ed.precio) : p.precio
                   const costo = 'costo' in ed ? num(ed.costo) : p.costo
                   const margen = precio && costo ? Math.round(((precio - costo) / precio) * 100) : null
@@ -275,14 +421,14 @@ export default function Inventario() {
                         <input
                           type="number" style={{ width: 110, textAlign: 'right' }} aria-label={`Precio de ${p.sku}`}
                           value={'precio' in ed ? ed.precio : (p.precio ?? '')}
-                          onChange={e => editar(p.id, 'precio', e.target.value)}
+                          onChange={e => editarRapido(p.id, 'precio', e.target.value)}
                         />
                       </td>
                       <td>
                         <input
                           type="number" style={{ width: 110, textAlign: 'right' }} aria-label={`Costo de ${p.sku}`}
                           value={'costo' in ed ? ed.costo : (p.costo ?? '')}
-                          onChange={e => editar(p.id, 'costo', e.target.value)}
+                          onChange={e => editarRapido(p.id, 'costo', e.target.value)}
                         />
                       </td>
                       <td align="right">{margen == null ? '—' : `${margen}%`}</td>
@@ -290,7 +436,7 @@ export default function Inventario() {
                         <input
                           type="number" style={{ width: 90, textAlign: 'right' }} aria-label={`Mínimo de ${p.sku}`}
                           value={'minimo' in ed ? ed.minimo : (p.minimo ?? '')}
-                          onChange={e => editar(p.id, 'minimo', e.target.value)}
+                          onChange={e => editarRapido(p.id, 'minimo', e.target.value)}
                         />
                       </td>
                       <td>
@@ -301,47 +447,140 @@ export default function Inventario() {
                           style={{ width: 150 }} aria-label={`Grupo equivalente de ${p.sku}`}
                           placeholder="p. ej. FILTRO-ACEITE-P554407"
                           value={'grupo_equivalente' in ed ? ed.grupo_equivalente : (p.grupo_equivalente ?? '')}
-                          onChange={e => editar(p.id, 'grupo_equivalente', e.target.value)}
+                          onChange={e => editarRapido(p.id, 'grupo_equivalente', e.target.value)}
                         />
                       </td>
+                      <td>{p.publicar ? 'Sí' : <span className="estado estado-rechazada">No</span>}</td>
                       <td>
-                        {editando[p.id] && <button className="btn-primario" onClick={() => guardarFila(p)}>Guardar</button>}
+                        <div className="fila" style={{ gap: 6 }}>
+                          {edicionRapida[p.id] && <button className="btn-primario" onClick={() => guardarFila(p)}>Guardar</button>}
+                          <button onClick={() => editarProducto(p)}>Editar</button>
+                        </div>
                       </td>
                     </tr>
                   )
                 })}
+                {visibles.length === 0 && (
+                  <tr><td colSpan={9} className="ayuda">No hay productos con esos filtros.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
 
-          <details className="tarjeta">
-            <summary className="resumen">＋ Agregar producto</summary>
-            <form onSubmit={guardarProducto} style={{ maxWidth: 520, marginTop: 12 }}>
+          <details className="tarjeta" open={abierto}>
+            <summary className="resumen" onClick={e => { if (!abierto) { e.preventDefault(); nuevoProducto() } }}>
+              {editando ? `Editando ${editando.sku}` : '＋ Agregar producto'}
+            </summary>
+
+            <form onSubmit={guardarProducto} style={{ maxWidth: 560, marginTop: 12, display: 'grid', gap: 12 }}>
               <label className="campo"><span>SKU *</span>
-                <input value={nuevo.sku} onChange={e => setNuevo({ ...nuevo, sku: e.target.value })} /></label>
+                <input value={form.sku} onChange={e => cambiar('sku', e.target.value)} /></label>
+
               <label className="campo"><span>Categoría</span>
-                <select value={nuevo.categoria} onChange={e => setNuevo({ ...nuevo, categoria: e.target.value })}>
+                <select value={form.categoria} onChange={e => cambiarCategoria(e.target.value)}>
                   {CATEGORIAS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-                </select></label>
+                </select>
+              </label>
+
               <label className="campo"><span>Nombre *</span>
-                <input value={nuevo.nombre} onChange={e => setNuevo({ ...nuevo, nombre: e.target.value })} /></label>
-              <label className="campo"><span>Marca</span>
-                <input value={nuevo.marca} onChange={e => setNuevo({ ...nuevo, marca: e.target.value })} /></label>
-              <label className="campo"><span>Modelo</span>
-                <input value={nuevo.modelo} onChange={e => setNuevo({ ...nuevo, modelo: e.target.value })} /></label>
-              <label className="campo"><span>Precio</span>
-                <input type="number" value={nuevo.precio} onChange={e => setNuevo({ ...nuevo, precio: e.target.value })} /></label>
+                <input value={form.nombre} onChange={e => cambiar('nombre', e.target.value)} /></label>
+
+              {!esPaquete && (
+                <>
+                  <label className="campo"><span>Marca</span>
+                    <input value={form.marca} onChange={e => cambiar('marca', e.target.value)} /></label>
+                  <label className="campo"><span>Modelo</span>
+                    <input value={form.modelo} onChange={e => cambiar('modelo', e.target.value)} /></label>
+                </>
+              )}
+
+              <label className="campo"><span>Unidad</span>
+                <input value={form.unidad} onChange={e => cambiar('unidad', e.target.value)}
+                  placeholder="pieza, servicio…" /></label>
+
+              {!esRentaOPaquete && (
+                <label className="campo"><span>Precio</span>
+                  <input type="number" value={form.precio} onChange={e => cambiar('precio', e.target.value)} /></label>
+              )}
+              {esRentaOPaquete && (
+                <p className="ayuda">
+                  El precio se toma solo de las tarifas, más abajo ({form.categoria === 'renta' ? 'la de 24 horas' : 'la del inversor estándar'}).
+                </p>
+              )}
               <label className="campo"><span>Costo</span>
-                <input type="number" value={nuevo.costo} onChange={e => setNuevo({ ...nuevo, costo: e.target.value })} /></label>
+                <input type="number" value={form.costo} onChange={e => cambiar('costo', e.target.value)} /></label>
               <label className="campo"><span>Mínimo</span>
-                <input type="number" value={nuevo.minimo} onChange={e => setNuevo({ ...nuevo, minimo: e.target.value })} /></label>
-              <label className="campo"><span>Clave producto SAT</span>
-                <input value={nuevo.clave_producto_sat} onChange={e => setNuevo({ ...nuevo, clave_producto_sat: e.target.value })} /></label>
-              <label className="campo"><span>Clave unidad SAT</span>
-                <input value={nuevo.clave_unidad_sat} onChange={e => setNuevo({ ...nuevo, clave_unidad_sat: e.target.value })} /></label>
-              <label className="campo"><span>Descripción</span>
-                <textarea rows={2} value={nuevo.descripcion} onChange={e => setNuevo({ ...nuevo, descripcion: e.target.value })} /></label>
-              <button type="submit" className="btn-primario">Agregar</button>
+                <input type="number" value={form.minimo} onChange={e => cambiar('minimo', e.target.value)} /></label>
+
+              {!esPaquete && (
+                <>
+                  <label className="campo"><span>Clave producto SAT</span>
+                    <input value={form.clave_producto_sat} onChange={e => cambiar('clave_producto_sat', e.target.value)} /></label>
+                  <label className="campo"><span>Clave unidad SAT</span>
+                    <input value={form.clave_unidad_sat} onChange={e => cambiar('clave_unidad_sat', e.target.value)} /></label>
+                </>
+              )}
+
+              <label className="campo"><span>Grupo equivalente</span>
+                <input value={form.grupo_equivalente} onChange={e => cambiar('grupo_equivalente', e.target.value)}
+                  placeholder="p. ej. FILTRO-ACEITE-P554407" /></label>
+
+              <label className="campo">
+                <span>{esPaquete ? 'Qué incluye (una línea por elemento)' : 'Descripción'}</span>
+                <textarea rows={esPaquete ? 4 : 2}
+                  value={esPaquete ? form.descripcion.split('|').map(s => s.trim()).filter(Boolean).join('\n') : form.descripcion}
+                  onChange={e => cambiar('descripcion', esPaquete
+                    ? e.target.value.split('\n').map(s => s.trim()).filter(Boolean).join(' | ')
+                    : e.target.value)} />
+              </label>
+
+              <label className="casilla">
+                <input type="checkbox" checked={form.activo} onChange={e => cambiar('activo', e.target.checked)} />
+                Activo
+              </label>
+              <label className="casilla">
+                <input type="checkbox" checked={form.publicar} onChange={e => cambiar('publicar', e.target.checked)} />
+                Publicar en el sitio (si tiene precio o tarifas)
+              </label>
+
+              {atributosDeLaCategoria.length > 0 && (
+                <fieldset className="conjunto">
+                  <legend>Datos de {CATEGORIAS.find(([v]) => v === form.categoria)?.[1].toLowerCase()}</legend>
+                  {atributosDeLaCategoria.map(([campo, etiqueta, tipo]) => (
+                    tipo === 'bool' ? (
+                      <label key={campo} className="casilla">
+                        <input type="checkbox" checked={!!atributos[campo]}
+                          onChange={e => cambiarAtributo(campo, e.target.checked)} />
+                        {etiqueta}
+                      </label>
+                    ) : (
+                      <label key={campo} className="campo">
+                        <span>{etiqueta}</span>
+                        <input value={atributos[campo] || ''} onChange={e => cambiarAtributo(campo, e.target.value)} />
+                      </label>
+                    )
+                  ))}
+                </fieldset>
+              )}
+
+              {preciosDeLaCategoria.length > 0 && (
+                <fieldset className="conjunto">
+                  <legend>Tarifas</legend>
+                  {preciosDeLaCategoria.map(([campo, etiqueta]) => (
+                    <label key={campo} className="campo">
+                      <span>{etiqueta}</span>
+                      <input type="number" value={precios[campo] ?? ''} onChange={e => cambiarPrecio(campo, e.target.value)} />
+                    </label>
+                  ))}
+                </fieldset>
+              )}
+
+              <div className="fila">
+                <button type="submit" className="btn-primario" disabled={guardando}>
+                  {editando ? 'Guardar cambios' : 'Agregar'}
+                </button>
+                {editando && <button type="button" onClick={cancelar}>Cancelar</button>}
+              </div>
             </form>
           </details>
         </>
