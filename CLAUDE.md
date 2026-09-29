@@ -1438,9 +1438,67 @@ el menú"). Sin esto agrupar solo **acomoda**; con esto la barra **avisa**.
   área `16px` — las dos veces por debajo del mínimo de 17, y las dos las atrapó la medición, no
   la vista. **Al agregar cualquier adorno chico a la interfaz, medir antes de darlo por bueno.**
 
-- **Falta de esta tanda** (ver el artefacto "Navegación del CRM PowerMx"): la pantalla
-  **Compras** (la única que toca la base), un inicio que diga qué atender, y la barra inferior
-  en el celular — en ese orden.
+- **Falta de esta tanda** (ver el artefacto "Navegación del CRM PowerMx"): un inicio que diga
+  qué atender, y la barra inferior en el celular — en ese orden.
+
+## Compras (SQL 41, 27/09/2026) — SQL escrito, falta correrlo
+
+La mitad que le faltaba al inventario. Se sabía qué salió y por qué; lo que **entraba**
+aparecía sin proveedor, sin costo real y sin respaldo, y `productos.costo` era un número
+escrito a mano. Pedido de Caña al ver la propuesta de interfaz: "un área de compras, después
+de requisiciones, donde se agreguen las refacciones y se liguen las facturas".
+
+**CÓMO NO SE CUENTA DOBLE — y aquí leer el código cambió el plan.** La propuesta inicial era
+que la factura fuera lo único que mueve inventario y quitarle esa tarea a la requisición. **No
+hizo falta: el candado ya existía.** `cambiar_estado_requisicion` se niega a tocar una
+requisición que ya está `recibida` o `cancelada`, y la tabla guarda el `movimiento_id` de su
+entrada. Así que las dos puertas conviven y cada una cubre un caso real:
+
+| lo que pasa | quién mete la entrada |
+|---|---|
+| Llega el material **con** factura | la compra (`COMPRA-n`), y marca el pedido `recibida` |
+| Llega **sin** factura todavía | la requisición, como siempre (`REQ-n`) |
+| La factura llega **después** de recibir | **nadie**: la compra solo liga y guarda el costo |
+| Compra directa, sin pedido | la compra (reponer el estante, el caso común) |
+
+`cambiar_estado_requisicion` **no se tocó** (aplicada y probada desde la 08).
+
+- **Tablas `compras` y `compra_lineas`**, solo admin (aquí vive el costo: ni el técnico ni el
+  almacenista entran), con su `revoke` a `anon` como toda tabla desde la 14. Índice único por
+  proveedor + factura: una factura no se captura dos veces (solo sobre las no canceladas).
+- **`registrar_compra(datos, lineas)`** calcula el subtotal **de las líneas**: un total
+  capturado a mano que no cuadre con sus renglones es un error esperando a que lo descubran.
+  El IVA es 16% salvo que se capture otro (exento, retenciones).
+- **El costo del catálogo no se pisa solo.** Cada línea guarda lo que costó de verdad, y
+  `productos.costo` se actualiza **solo si la línea lo pide** (`actualizar_costo`, una casilla
+  por pieza). Una compra de urgencia a sobreprecio no debe reescribir el costo de referencia
+  sin que alguien lo decida. El cambio queda en `auditoria` con el valor anterior.
+- **`cancelar_compra` no borra:** mete `ajuste` en negativo —el único tipo que lo acepta— con
+  la referencia de la compra. El inventario se corrige con otro movimiento, regla del
+  proyecto. Cancelar dos veces devuelve `sin_cambio`. **Deuda anotada:** los pedidos ligados
+  siguen marcados como recibidos; la función lo avisa por escrito en vez de deshacerlo sola.
+- **La factura va a un bucket propio `compras`**, privado y **solo admin**. En `ordenes` la
+  leerían los técnicos (su política es admin + técnico) y ahí van costos.
+- **Pantalla `Compras`** (`src/Compras.jsx`, `src/lib/compras.js`, área Almacén, solo admin):
+  "Pedidos por recibir" como botones que precargan pieza, cantidad y costo de referencia;
+  buscador del catálogo; aviso **"El costo de esta pieza subió de 285 a 310 pesos"** con la
+  casilla para actualizarlo; totales en vivo; XML y PDF del CFDI. En la lista, cada renglón
+  dice **"Entró" o "Ya había entrado"** — con palabra, que es la diferencia entre mover
+  inventario y solo guardar el costo.
+- **Los totales se calculan en los dos lados y tienen que coincidir.** `totalesDeCompra` de
+  `compras.js` reproduce lo que hace el SQL, y la prueba en Node usa **el mismo caso** que la
+  prueba SQL (10×310 + 4×310 + 3×300 = 5,240 / 838.40 / 6,078.40). Si se separaran, la
+  pantalla prometería un total y la base guardaría otro, y nadie se enteraría hasta cuadrar
+  con el proveedor.
+- **Los archivos se suben DESPUÉS de registrar**, porque la ruta cuelga del id de la compra.
+  Si la subida falla, la compra ya quedó bien y el mensaje lo dice: se vuelve a adjuntar.
+- 18 casos en Node. Medido en celular: 0 textos < 17 px, 0 contrastes < 4.5, 0 px de desborde.
+  **Tres objetivos por debajo de 48 px** —la casilla de actualizar costo (26) y los dos
+  `input[type=file]` (21 de alto)— pero los tres van **envueltos en su `<label>`**, de 61 y
+  53 px, que es lo que de verdad se toca: hacer clic en la etiqueta marca la casilla y abre el
+  selector de archivo.
+- **Falta:** correr `41_compras.sql` y `41_prueba_compras.sql` (13 pasos), y dar de alta una
+  pieza nueva desde la propia compra (hoy manda a Inventario y de regreso).
 
 ## Pantallas
 

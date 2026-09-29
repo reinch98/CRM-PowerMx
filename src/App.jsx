@@ -19,6 +19,7 @@ const Almacen = lazy(() => import('./Almacen'))
 const Inventario = lazy(() => import('./Inventario'))
 const Cotizaciones = lazy(() => import('./Cotizaciones'))
 const Requisiciones = lazy(() => import('./Requisiciones'))
+const Compras = lazy(() => import('./Compras'))
 const Tarifas = lazy(() => import('./Tarifas'))
 const Tecnicos = lazy(() => import('./Tecnicos'))
 const Agente = lazy(() => import('./Agente'))
@@ -37,6 +38,7 @@ const PANTALLAS = {
   inventario:   { titulo: 'Inventario',   componente: Inventario,   roles: ['admin'] },
   cotizaciones: { titulo: 'Cotizaciones', componente: Cotizaciones, roles: ['admin'] },
   requisiciones:{ titulo: 'Pedidos',      componente: Requisiciones,roles: ['admin'] },
+  compras:      { titulo: 'Compras',      componente: Compras,      roles: ['admin'] },
   tarifas:      { titulo: 'Precios',      componente: Tarifas,      roles: ['admin'] },
   usuarios:     { titulo: 'Usuarios',     componente: Tecnicos,     roles: ['admin'] },
   agente:       { titulo: 'Agente',       componente: Agente,       roles: ['admin'] },
@@ -59,7 +61,7 @@ const GRUPOS = [
   { clave: 'servicio', titulo: 'Servicio', pantallas: ['agenda', 'ordenes'] },
   { clave: 'clientes', titulo: 'Clientes', pantallas: ['solicitudes', 'whatsapp', 'clientes', 'contactos', 'equipos'] },
   { clave: 'ventas',   titulo: 'Ventas',   pantallas: ['cotizaciones', 'tarifas'] },
-  { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones'] },
+  { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones', 'compras'] },
   { clave: 'ajustes',  titulo: 'Ajustes',  pantallas: ['usuarios', 'agente'] },
 ]
 
