@@ -1005,6 +1005,24 @@ solicitudes llegan solo al CRM**; n8n ya no interviene. Primer puente real entre
 - **Falta:** un contador de "nuevas" en el menú; crear el cliente desde la solicitud con los datos
   precargados (hoy manda a Clientes a darlo de alta a mano); y un límite de peticiones por IP en
   Cloudflare/Supabase si algún día hay abuso (hoy solo hay topes globales y por número).
+- **`calculadora-consumo.html` tenía el MISMO problema, en su propio formulario** — se encontró el
+  28/09/2026 al revisar "que la calculadora y el carrito sigan funcionando bien" tras publicar el
+  cambio de arriba. Dos fallas juntas, las dos de antes de esta sesión:
+  1. Mandaba su lead al mismo webhook de **prueba** de n8n (`webhook-test/...`) que ya se había
+     corregido en `cotizar.html` — sus solicitudes también se perdían. Se conectó al mismo
+     `solicitud-web`, con el mismo campo trampa y el mismo manejo de error (400 corrige sin abrir
+     WhatsApp; cualquier otra falla abre WhatsApp con el resumen como respaldo).
+  2. **Rompía el carrito de TODA la página**: declaraba su propia `const WA_NUMBER`, y `carrito.js`
+     declara una constante con el mismo nombre — dos `const` iguales en scripts normales (no
+     módulos) comparten el mismo scope global y truenan con «Identifier has already been
+     declared». El error ocurre al **cargar** `carrito.js` (es la última línea del archivo), así
+     que absolutamente nada de `carrito.js` se ejecutaba en esta página: sin `window.PowerMxCart`,
+     sin carrito flotante, nada. El resto de las páginas usan `WA` para lo mismo y nunca chocan;
+     aquí se renombró igual. Comprobado en el emulador: antes del cambio, la consola marcaba el
+     error al entrar a la página; después, `window.PowerMxCart` existe y el carrito (agregar,
+     cantidad, total, nota de "Mercado Pago aún no está configurado", confirmar por WhatsApp)
+     funciona igual que en los catálogos. La calculadora de ahorro solar (`calculadora.html`) no
+     tenía ninguno de los dos problemas.
 
 ## Catálogo público del sitio desde el CRM (SQL 38–39, 27/09/2026) — SQL aplicado y probado; falta publicar el sitio
 
