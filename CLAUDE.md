@@ -1387,9 +1387,42 @@ dato que cambió el diseño: **esas catorce las ve solo el admin** — el técni
   desborde, y los 8 botones de la barra a 48 px o más en **los dos lados**. Los 32 objetivos
   estrechos que salen al medir son de antes y están **fuera** de la barra: las flechas `‹ ›` y
   las celdas de día del calendario de la Agenda (41 y 46 px de ancho).
-- **Falta de esta tanda** (ver el artefacto "Navegación del CRM PowerMx"): contadores en las
-  pestañas, la pantalla **Compras** (la única que toca la base), un inicio que diga qué atender,
-  y la barra inferior en el celular — en ese orden.
+### Contadores en las pestañas (SQL 40, 27/09/2026) — SQL escrito, falta correrlo
+
+Era el paso 2 de la propuesta y ya estaba anotado como pendiente ("indicador de pendientes en
+el menú"). Sin esto agrupar solo **acomoda**; con esto la barra **avisa**.
+
+- **`pendientes_admin()`** devuelve un jsonb con el conteo por pantalla, con las mismas claves
+  que `PANTALLAS`. **Una sola llamada, no ocho**: la barra se dibuja en todas las pantallas.
+  Cuenta solo lo que alguien tiene que **atender**, no el tamaño de las tablas — un contador
+  que siempre marca 40 deja de leerse a la semana. `agenda` junta citas `por_programar` +
+  avisos sin mandar (las dos se atienden ahí; `avisos` no tiene pestaña propia), `almacen`
+  junta entregas por firmar + pendientes de devolución + solicitudes de material + adicionales
+  por conciliar, y `requisiciones` cuenta solo las `pendiente` (una `pedida` está con el
+  proveedor, no es trabajo del admin).
+- **Solo para el admin**, y no solo por diseño: `App.jsx` documenta que una consulta con el
+  token vencido y sin señal se queda esperando la renovación (medido, 5.5 s), así que **no se
+  le agrega una al arranque del técnico por un adorno**. Si la llamada falla —sin señal, o el
+  SQL 40 sin correr— se queda en `{}` y la barra se dibuja sin globos.
+- Se vuelve a pedir **al cambiar de pantalla**: después de atender algo y salir de ahí, el
+  número baja solo. El globo de un área es la **suma** de sus pantallas.
+- El filtro por rol va en el render (`rol === 'admin' ? …`) y no borrando el estado dentro del
+  efecto: `react-hooks/set-state-in-effect` marca el `setState` síncrono en un efecto.
+- **Un fallo que lint, build y las 249 pruebas no podían ver:** `perfilServidor?.id === uid ?
+  perfilServidor.datos : copia` — al arrancar, `perfilServidor` y `uid` son los dos
+  `undefined`, y `undefined === undefined` es **cierto**, así que leía `.datos` de null y **la
+  app no arrancaba para nadie**. Lo atrapó abrirla en el emulador, nada más. Va con `?.`.
+- Medido en celular: 0 textos < 17 px, 0 contrastes < 4.5, 0 botones < 48 px, 0 px de desborde,
+  y los globos suman bien (Servicio 5 = agenda 4 + órdenes 1; Almacén 9 = 7 + 2). El área sin
+  pendientes no dibuja globo. `aria-label` dice la frase completa ("Ventas: 1 pendiente",
+  singular incluido) y el globo va `aria-hidden` para que el lector no lea "Almacén 9" suelto.
+- **Segunda vez con el mismo tropiezo:** al globo le puse `font-size: 15px` y a los botones de
+  área `16px` — las dos veces por debajo del mínimo de 17, y las dos las atrapó la medición, no
+  la vista. **Al agregar cualquier adorno chico a la interfaz, medir antes de darlo por bueno.**
+
+- **Falta de esta tanda** (ver el artefacto "Navegación del CRM PowerMx"): la pantalla
+  **Compras** (la única que toca la base), un inicio que diga qué atender, y la barra inferior
+  en el celular — en ese orden.
 
 ## Pantallas
 

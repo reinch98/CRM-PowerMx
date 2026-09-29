@@ -63,6 +63,18 @@ const GRUPOS = [
   { clave: 'ajustes',  titulo: 'Ajustes',  pantallas: ['usuarios', 'agente'] },
 ]
 
+// El número de cosas que esperan en una pestaña. Sin nada pendiente no se dibuja: un globo en
+// cero es ruido. Va con número y no con un punto de color, como todo estado del proyecto.
+function Globo({ n }) {
+  if (!n) return null
+  return <span className="globo" aria-hidden="true">{n > 99 ? '99+' : n}</span>
+}
+
+// El globo es `aria-hidden` para que el lector no lea "Almacén 3" sin contexto; el botón lleva
+// la frase completa.
+const etiquetaConPendientes = (titulo, n) =>
+  n ? `${titulo}: ${n} ${n === 1 ? 'pendiente' : 'pendientes'}` : titulo
+
 // Los grupos que ese rol puede ver, ya con sus pantallas filtradas. Un grupo sin pantallas
 // permitidas no se muestra.
 function gruposDe(rol) {
@@ -95,6 +107,10 @@ export default function App() {
   // Sin señal el técnico llega a lo que puede usar: la agenda no funciona
   // desconectada, las órdenes sí.
   const [pantalla, setPantalla] = useState(() => (navigator.onLine ? 'agenda' : 'ordenes'))
+  // Cuántas cosas esperan en cada pantalla. Sin esto, agrupar las catorce pantallas solo
+  // acomoda; con esto la barra avisa. `{}` mientras no se sepa: un globo que no está no
+  // estorba, y si la consulta falla la barra se dibuja igual.
+  const [pendientes, setPendientes] = useState({})
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -147,6 +163,34 @@ export default function App() {
     return () => { vigente = false }
   }, [uid, intento])
 
+  // El rol, antes de los returns de abajo, para poder decidir aquí si se piden los contadores.
+  // OJO con el `?.` de `perfilServidor?.datos`: al arrancar, `perfilServidor` y `uid` son los
+  // dos `undefined`, y `undefined === undefined` es CIERTO — sin él se leía `.datos` de null y
+  // la app no arrancaba para nadie. Lint, build y las pruebas pasaban; lo atrapó abrirla.
+  const rolTemprano = (perfilServidor?.id === uid ? perfilServidor?.datos : copia)?.rol
+
+  // ---------------------------------------------------------------------------
+  // Los contadores de la barra. UNA sola llamada (`pendientes_admin`), y **solo para el
+  // admin**: es el único rol con áreas, y `App.jsx` ya documenta que una consulta con el
+  // token vencido y sin señal se queda esperando la renovación —medido, 5.5 s—, así que no se
+  // le agrega una al arranque del técnico por un adorno.
+  //
+  // Si falla (sin señal, o el SQL 40 todavía sin correr) se queda en `{}` y la barra se dibuja
+  // sin globos. Un contador es un aviso, nunca un dato del que dependa el trabajo.
+  //
+  // Se vuelve a pedir al cambiar de pantalla: así, después de atender algo y salir de ahí, el
+  // número baja solo.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (rolTemprano !== 'admin') return
+    let vigente = true
+    supabase.rpc('pendientes_admin').then(({ data, error }) => {
+      if (!vigente) return
+      setPendientes(!error && data && typeof data === 'object' ? data : {})
+    })
+    return () => { vigente = false }
+  }, [rolTemprano, pantalla])
+
   if (cargando) return <Cargando />
   if (!sesion) return <Login />
 
@@ -187,6 +231,12 @@ export default function App() {
   const grupoAbierto = grupos.find(g => g.pantallas.includes(clave)) ?? grupos[0]
   const enElGrupo = porGrupos ? grupoAbierto?.pantallas ?? [] : permitidas.map(([k]) => k)
 
+  // El globo de un área es la suma de sus pantallas. Se filtra por rol aquí y no borrando el
+  // estado dentro del efecto: los contadores son del admin, y si alguien cambia de cuenta sin
+  // recargar, los de la anterior no se asoman.
+  const pendientesDe = k => (rol === 'admin' ? pendientes[k] : 0) || 0
+  const pendientesDelGrupo = g => g.pantallas.reduce((n, k) => n + pendientesDe(k), 0)
+
   const barra = (
     <header className="barra">
       <div className="barra-fila">
@@ -201,8 +251,9 @@ export default function App() {
         <nav className="nav nav-grupos" aria-label="Áreas">
           {grupos.map(g => (
             <button key={g.clave} aria-pressed={g.clave === grupoAbierto?.clave}
+              aria-label={etiquetaConPendientes(g.titulo, pendientesDelGrupo(g))}
               onClick={() => setPantalla(g.pantallas[0])}>
-              {g.titulo}
+              {g.titulo}<Globo n={pendientesDelGrupo(g)} />
             </button>
           ))}
         </nav>
@@ -210,8 +261,9 @@ export default function App() {
       {enElGrupo.length > 0 && (
         <nav className={porGrupos ? 'nav nav-pantallas' : 'nav'} aria-label="Pantallas">
           {enElGrupo.map(k => (
-            <button key={k} onClick={() => setPantalla(k)} aria-current={k === clave ? 'page' : undefined}>
-              {PANTALLAS[k].titulo}
+            <button key={k} onClick={() => setPantalla(k)} aria-current={k === clave ? 'page' : undefined}
+              aria-label={etiquetaConPendientes(PANTALLAS[k].titulo, pendientesDe(k))}>
+              {PANTALLAS[k].titulo}<Globo n={pendientesDe(k)} />
             </button>
           ))}
         </nav>

@@ -321,6 +321,30 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
 /* `.barra :focus-visible` pinta el foco de blanco, que sobre esta fila clara no se ve. */
 .nav-pantallas :focus-visible { outline-color: var(--noche); box-shadow: 0 0 0 6px var(--claro); }
 
+/* El globo de pendientes. Ámbar de fondo con el azul noche encima: el ámbar nunca es texto
+   sobre claro (2.1 de contraste), y así funciona sobre azul noche o sobre blanco.
+   **17 px como todo lo demás**: la primera versión le puso 15 y la medición lo marcó. Un
+   número que avisa de trabajo pendiente no es adorno; se lee al sol igual que el resto. */
+.globo {
+  display: inline-block;
+  min-width: 24px;
+  margin-left: 7px;
+  padding: 0 6px;
+  border-radius: 12px;
+  background: var(--ambar);
+  color: var(--noche);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+/* Sobre la pestaña activa (que ya es ámbar) el globo se invierte para no desaparecer. */
+.nav button[aria-current='page'] .globo,
+.nav-grupos button[aria-pressed='true'] .globo {
+  background: var(--noche);
+  color: var(--blanco);
+}
+
 /* Pantalla de carga, avisos de cuenta, login */
 .centro { max-width: 520px; margin: 0 auto; padding: 24px 16px; }
 
