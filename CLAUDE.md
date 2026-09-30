@@ -1515,6 +1515,28 @@ publica ninguno.
   solar (paneles, baterías/controladores/generadores, inversores y microinversores, monitoreo/
   suministros/montaje/kits). `convertir.js` solo lee las categorías que conoce, así que lo nuevo
   queda fuera del sitio hasta esa tarea.
+- **Sitio dividido en Generación y Energía solar (30/09/2026, repo `POWERMX-sitio`).** El inicio
+  tiene dos grupos: **Generación** (generadores, refacciones, renta) y **Energía solar** (sistemas
+  completos y **componentes**). Página nueva `catalogo-solar.html` con cuatro secciones —paneles;
+  baterías, controladores y generadores; inversores y microinversores; monitoreo, suministros, montaje
+  y kits—, buscador, subsecciones, "mostrar más" de 24 en 24 y enlace directo (`#paneles`). Sin
+  componentes publicados todavía ofrece cotizar por WhatsApp en vez de quedar vacía. **`convertir.js`:**
+  catálogo nuevo `solar` (`productos-solar.json`, **solo en modo CRM**) con las categorías `panel`,
+  `inversor`, `accesorio_solar` y la `bateria` que trae `atributos.origen = 'proveedor'`; esas baterías
+  **salen** del catálogo `baterias` de siempre para no mezclarse con las propias. **Convención para la
+  tarea de descargar imágenes y documentos:** `imagenes-productos/Solar/<SKU>.<ext>` y
+  `documentos-productos/Solar/<SKU>-ficha-tecnica.pdf` (también `-manual.pdf`), con el SKU = código de
+  XLStore; sin archivo, la tarjeta muestra un ícono y `convertir.js` avisa en UNA línea cuántas faltan.
+  Probado con los 908 productos reales del Excel como muestra (sección, subsección, búsqueda, "mostrar
+  más", nombres con comillas y `<` sin romper la tarjeta, carrito) en escritorio y celular. **SQL 46**
+  (`46_publicar_al_aprobar_precio.sql`, **aplicado y probado en Supabase, 4 de 4 "ok"**): aprobar el
+  **primer precio** de un producto del proveedor lo publica (`_aplicar_precio`); uno retirado con
+  precio no se republica solo y uno de PowerMx de siempre nunca se publica desde ahí. Sin el 46,
+  nada del proveedor llegaría al sitio. **Ojo:** el robot de GitHub Actions
+  (`actualizar-catalogo.yml`) no tiene credenciales y `convertir.js` lee del CRM por omisión, así que
+  **se detiene con error en cada corrida** desde que el CRM pasó a ser la fuente (27/09/2026): hacen
+  falta los secretos `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `BOT_EMAIL` y `BOT_PASSWORD` en el repo y un
+  bloque `env:` en ese paso. Hoy el sitio solo se actualiza corriendo `convertir.js` a mano.
 - **Supabase corta toda consulta a 1,000 filas en silencio** (dato que este cambio volvió real:
   el catálogo pasa de ~95 a ~1,000 productos). `src/lib/paginar.js` (`todasLasFilas`, 5 pruebas) pide
   de mil en mil y ahora lo usan Inventario, Cotizaciones, Tarifas, Compras y Almacén; **cualquier
