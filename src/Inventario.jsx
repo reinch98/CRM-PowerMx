@@ -125,6 +125,19 @@ export default function Inventario() {
     setClientes(c.data || [])
   }
 
+  // Borrar de verdad solo si nunca se movió; con historia se desactiva (lo decide la base).
+  async function quitarProducto(p) {
+    const ok = window.confirm(`¿Quitar ${p.sku} · ${p.nombre || ''}? Si nunca se movió se borra; si tiene historia solo se desactiva y deja de salir en el catálogo y el sitio.`)
+    if (!ok) return
+    setError(''); setMensaje('')
+    const { data, error: e } = await supabase.rpc('quitar_producto', { p_producto: p.id })
+    if (e) return setError(e.message)
+    setMensaje(data === 'eliminado'
+      ? `${p.sku} se eliminó.`
+      : `${p.sku} tiene historia, así que se desactivó: ya no sale en el catálogo ni en el sitio.`)
+    await cargar()
+  }
+
   // Los productos filtrados alimentan las tres vistas.
   const visibles = useMemo(() => {
     const t = busqueda.trim().toLowerCase()
@@ -455,6 +468,7 @@ export default function Inventario() {
                         <div className="fila" style={{ gap: 6 }}>
                           {edicionRapida[p.id] && <button className="btn-primario" onClick={() => guardarFila(p)}>Guardar</button>}
                           <button onClick={() => editarProducto(p)}>Editar</button>
+                          <button className="btn-peligro" onClick={() => quitarProducto(p)}>Quitar</button>
                         </div>
                       </td>
                     </tr>

@@ -1366,7 +1366,7 @@ y para dar de alta.
   lógica de fusión de `atributos` es la misma, ya probada, de `Equipos.jsx`. `npm test`
   (249, sin nuevas pruebas: la lógica queda dentro del componente, igual que en Equipos,
   no se extrajo a un `lib/*.js`), `npm run lint` y `npm run build` en verde.
-- **Sigue sin poder desde aquí:** borrar un producto (no hay botón; se desactiva bajándole
+- **Borrar un producto: ya se puede (ver SQL 43 abajo).** Antes: borrar un producto (no hay botón; se desactiva bajándole
   `activo` a mano en Supabase, o se agrega un botón después si hace falta) y renombrar el
   SKU de las 51 refacciones sin precio en lote (una por una sí se puede, incluidas las dos
   pendientes `22676`/`99727` a las que les falta el cero inicial).
@@ -1521,6 +1521,8 @@ entrada. Así que las dos puertas conviven y cada una cubre un caso real:
   selector de archivo.
 - **Falta:** correr `41_compras.sql` y `41_prueba_compras.sql` (13 pasos), y dar de alta una
   pieza nueva desde la propia compra (hoy manda a Inventario y de regreso).
+
+- **Quitar un producto (SQL 43, 29/09/2026):** botón "Quitar" en Inventario → Catálogo, que llama a `quitar_producto(id)` (solo admin, queda en `auditoria`). **Borra de verdad solo si el producto nunca se movió** (ningún movimiento, entrega, surtido, paquete, pedido, solicitud ni compra lo toca); con historia lo **desactiva** (`activo` y `publicar` en false) porque las llaves foráneas impiden borrarlo y el inventario es un libro de movimientos. Se reactiva editando el producto. SQL escrito, falta correr `43_quitar_producto.sql` y su prueba.
 
 ## Pantallas
 
