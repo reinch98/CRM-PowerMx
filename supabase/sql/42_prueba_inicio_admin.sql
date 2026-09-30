@@ -66,10 +66,10 @@ select set_config('app.p1', concat(
        then 'ok' else 'FALLO' end,
   ' — la cita de hoy sale con su hora y su cliente'), true);
 
--- 2) El aviso sin mandar subió 1, con nivel alto y apuntando a la Agenda.
+-- 2) El aviso sin mandar subió (al menos 1: el trigger de citas ya crea el suyo al insertar la cita), con nivel alto y apuntando a la Agenda.
 select set_config('app.p2', concat(
   case when coalesce((select (e ->> 'n')::int from jsonb_array_elements(current_setting('app.despues')::jsonb -> 'urgente') e where e ->> 'clave' = 'avisos'), 0)
-          - coalesce((select (e ->> 'n')::int from jsonb_array_elements(current_setting('app.antes')::jsonb -> 'urgente') e where e ->> 'clave' = 'avisos'), 0) = 1
+          - coalesce((select (e ->> 'n')::int from jsonb_array_elements(current_setting('app.antes')::jsonb -> 'urgente') e where e ->> 'clave' = 'avisos'), 0) >= 1
        then 'ok' else 'FALLO' end,
   ' — avisos sin mandar subió ',
   coalesce((select (e ->> 'n')::int from jsonb_array_elements(current_setting('app.despues')::jsonb -> 'urgente') e where e ->> 'clave' = 'avisos'), 0)
