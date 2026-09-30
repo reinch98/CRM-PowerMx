@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   ordenarCola, contarPorTipo, detalleDeCambio, esAprobable, explicacion, alcanceDeRegla, textoDeRegla,
-  ordenarReglas, validarRegla, reglaVacia, estadoDeVinculo, patronDeBusqueda, totalPorTraer, nombreCategoriaCRM, faltanConPrecioAuto,
+  ordenarReglas, validarRegla, reglaVacia, reglaInicial, MARGEN_INICIAL_PCT, estadoDeVinculo, patronDeBusqueda, totalPorTraer, nombreCategoriaCRM, faltanConPrecioAuto,
   textoDeCorrida, pesos,
 } from '../src/lib/proveedor.js'
 
@@ -116,4 +116,12 @@ test('textoDeCorrida: una lectura fallida se dice fuerte, con su motivo', () => 
   assert.equal(mal.tipo, 'error')
   assert.match(mal.texto, /no se aplicó nada: Lectura sospechosa/)
   assert.equal(textoDeCorrida({ ...base, estado: 'leida' }).tipo, 'aviso')
+})
+
+test('la regla inicial es el 35 % general: sin mínimo, al peso, y pasa la validación', () => {
+  assert.equal(MARGEN_INICIAL_PCT, 35)
+  const v = validarRegla(reglaInicial)
+  assert.deepEqual(v, { ok: true, regla: { categoria: null, marca: null, margen_pct: 35, margen_minimo_mxn: 0, redondeo: 1 } })
+  assert.equal(alcanceDeRegla(v.regla), 'Todos los productos (regla general)')
+  assert.match(textoDeRegla(v.regla), /^35 % de margen · redondeo hacia arriba a /)
 })

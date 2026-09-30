@@ -123,6 +123,12 @@ export function ordenarReglas(lista) {
 
 export const reglaVacia = { categoria: '', marca: '', margen_pct: '', margen_minimo_mxn: '0', redondeo: '1' }
 
+// La regla con la que se arranca (pedido de Caña, 30/09/2026): 35 % a todos los productos, sin mínimo
+// y al peso. Es un punto de partida, no una decisión: se edita o se apaga desde la misma pantalla, y
+// una regla más específica (por marca o categoría) le gana.
+export const MARGEN_INICIAL_PCT = 35
+export const reglaInicial = { ...reglaVacia, margen_pct: String(MARGEN_INICIAL_PCT) }
+
 // Convierte lo escrito en el formulario a lo que acepta la tabla. Un texto vacío va como null:
 // null significa "cualquiera", y una cadena vacía nunca coincidiría con nada.
 export function validarRegla(f) {

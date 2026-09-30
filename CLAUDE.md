@@ -1490,7 +1490,9 @@ publica ninguno.
   primeros precios" con confirmación; "Retirar del sitio" va en rojo, no como botón principal;
   `sin_regla` y `sin_costo` no se aprueban, solo se dan por vistos), **Vínculos** (busca en
   `proveedor_productos`; vincular NO activa el precio automático, es un segundo paso) y **Reglas de
-  margen** (alta, edición y apagar; avisa si falta la regla general). Arriba, el resultado de la
+  margen** (alta, edición y apagar; avisa si falta la regla general y ofrece **"Crear regla general del
+  35 %"**, un clic, pedido de Caña el 30/09/2026 como punto de partida: sin mínimo, al peso, editable
+  y una regla por marca o categoría le gana). Arriba, el resultado de la
   última lectura, con el motivo si falló. Aquí no se calcula ningún precio: lo muestra la base.
   11 casos en Node (`pruebas/proveedor-pantalla.prueba.js`); medida en celular con un Supabase
   falso: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde. **Falta:**

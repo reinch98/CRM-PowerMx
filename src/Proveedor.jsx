@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alerta } from './ui'
 import {
   ETIQUETA_TIPO, esAprobable, ordenarCola, contarPorTipo, detalleDeCambio, explicacion,
-  CATEGORIAS, alcanceDeRegla, textoDeRegla, ordenarReglas, reglaVacia, validarRegla,
+  CATEGORIAS, alcanceDeRegla, textoDeRegla, ordenarReglas, reglaVacia, reglaInicial, MARGEN_INICIAL_PCT, validarRegla,
   estadoDeVinculo, ETIQUETA_VINCULO, textoDeCorrida, pesos, totalPorTraer, nombreCategoriaCRM, faltanConPrecioAuto,
   cargarCola, resolverRevision, resolverEnLote, cargarUltimaCorrida, cargarReglas, guardarRegla,
   cambiarActivaRegla, buscarProductosCRM, buscarEnProveedor, vincularProducto,
@@ -487,6 +487,17 @@ function PestanaReglas() {
     setEditando(null); cargar()
   }
 
+  // Un clic para arrancar: crea la regla general con el margen inicial. Se puede editar después.
+  async function crearInicial() {
+    const v = validarRegla(reglaInicial)
+    setOcupado(true); setError(''); setMensaje('')
+    const r = await guardarRegla(null, v.regla)
+    setOcupado(false)
+    if (!r.ok) { setError(r.texto); return }
+    setMensaje(`Listo: margen general de ${MARGEN_INICIAL_PCT} %. Si no te parece, edítalo abajo; se usa en la próxima sincronización.`)
+    cargar()
+  }
+
   async function alternar(r) {
     setError(''); setMensaje('')
     const res = await cambiarActivaRegla(r.id, !r.activo)
@@ -510,6 +521,19 @@ function PestanaReglas() {
         <Alerta tipo="aviso" palabra="Falta la general">
           No hay una regla general activa: los productos sin regla propia no tendrán precio.
         </Alerta>
+      )}
+      {reglas && !hayGeneral && (
+        <section className="tarjeta">
+          <h3>Empezar con {MARGEN_INICIAL_PCT} % de margen</h3>
+          <p className="ayuda">
+            Crea una regla general del {MARGEN_INICIAL_PCT} % sobre el costo, redondeada al peso, para todos los
+            productos. Es solo el punto de partida: después la editas, o agregas reglas por marca o por
+            categoría que le ganan.
+          </p>
+          <button className="btn-primario" disabled={ocupado} onClick={crearInicial}>
+            Crear regla general del {MARGEN_INICIAL_PCT} %
+          </button>
+        </section>
       )}
       {reglas === null && !error && <p>Cargando…</p>}
 
