@@ -1496,6 +1496,31 @@ publica ninguno.
   falso: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde. **Falta:**
   verla contra la base real, y el globo de pendientes en la pestaña (habría que ampliar
   `pendientes_admin` e `inicio_admin` para contar `cola_revision`).
+- **Traer los productos del proveedor al catálogo (SQL 45, 29/09/2026) — aplicado y probado en
+  Supabase, 11 de 11 "ok" (también en PGlite)** (`45_importar_productos_proveedor.sql` y su
+  prueba). Caña notó que el sync no dejaba nada visible en Inventario: solo llena
+  `proveedor_productos`. `importar_productos_proveedor(proveedor, categorias)` crea el producto en
+  `productos` con **SKU = código de XLStore**, ya vinculado, **sin publicar y sin precio**
+  (decisión de Caña: se publica cuando tenga precio). No duplica (salta por SKU o por vínculo) y una
+  categoría sin equivalente no se importa. Mapeo (`_categoria_crm`): paneles → `panel`; baterías,
+  controladores y generadores → `bateria` **sin subdividir** (el nombre los mezcla y adivinar por
+  palabras se equivocaba); inversores y microinversores → `inversor` (subcategoría en `atributos`);
+  monitoreo, suministros, montaje y kits → `accesorio_solar` (subcategoría en `atributos`). Imagen y
+  documentos del proveedor quedan en `atributos.imagen_proveedor` / `documentos_proveedor`, para la
+  tarea de descargarlos. `activar_precio_automatico(proveedor, categoria)` lo enciende por categoría
+  (con 900 productos, uno por uno no es un flujo) y **no publica nada**. `proveedor_resumen` alimenta
+  la pestaña nueva **Traer productos** de la pantalla Proveedor. Categorías nuevas también en
+  Inventario y en las reglas de margen.
+  **El sitio todavía no las muestra:** Caña quiere dividirlo en refacciones de generación y producto
+  solar (paneles, baterías/controladores/generadores, inversores y microinversores, monitoreo/
+  suministros/montaje/kits). `convertir.js` solo lee las categorías que conoce, así que lo nuevo
+  queda fuera del sitio hasta esa tarea.
+- **Supabase corta toda consulta a 1,000 filas en silencio** (dato que este cambio volvió real:
+  el catálogo pasa de ~95 a ~1,000 productos). `src/lib/paginar.js` (`todasLasFilas`, 5 pruebas) pide
+  de mil en mil y ahora lo usan Inventario, Cotizaciones, Tarifas, Compras y Almacén; **cualquier
+  consulta nueva al catálogo completo debe usarlo**, con un orden que no se repita (SKU o id). La
+  pestaña Vínculos busca en el servidor (60 por vez, con conteo exacto). `catalogo_publico()` no se
+  afecta: devuelve un solo jsonb.
 - **Límite conocido:** el login de XLStore lleva reCAPTCHA v3, así que **no hay cron posible**
   hasta que Exel Solar dé un feed; hoy el archivo sale de una lectura hecha con la sesión de Caña
   en el navegador. Pendiente: pantalla para vincular y aprobar la cola, paquetes solares

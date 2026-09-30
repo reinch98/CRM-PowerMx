@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   ordenarCola, contarPorTipo, detalleDeCambio, esAprobable, explicacion, alcanceDeRegla, textoDeRegla,
-  ordenarReglas, validarRegla, reglaVacia, estadoDeVinculo, patronDeBusqueda, filtrarProductos,
+  ordenarReglas, validarRegla, reglaVacia, estadoDeVinculo, patronDeBusqueda, totalPorTraer, nombreCategoriaCRM, faltanConPrecioAuto,
   textoDeCorrida, pesos,
 } from '../src/lib/proveedor.js'
 
@@ -80,17 +80,30 @@ test('la búsqueda quita lo que rompería el filtro de PostgREST', () => {
   assert.equal(patronDeBusqueda(null), '')
 })
 
-test('filtrarProductos busca en varios campos y puede dejar solo los sin vincular', () => {
-  const lista = [
-    { sku: 'P-1', nombre: 'Panel 630', marca: 'JA SOLAR', modelo: 'M66', proveedor_sku: 'PSO1' },
-    { sku: 'P-2', nombre: 'Panel 700', marca: 'LONGI', modelo: 'LR', proveedor_sku: null },
-    { sku: 'B-1', nombre: 'Batería', marca: 'JA SOLAR', modelo: null, proveedor_sku: null },
+test('totalPorTraer suma solo lo marcado y solo lo que tiene categoría equivalente en el CRM', () => {
+  const resumen = [
+    { categoria: 'Paneles solares', total: 23, por_traer: 23, equivale: true },
+    { categoria: 'Inversores', total: 87, por_traer: 80, equivale: true },
+    { categoria: 'Kits', total: 18, por_traer: 0, equivale: true },
+    { categoria: 'Servicios', total: 5, por_traer: 5, equivale: false },
   ]
-  assert.equal(filtrarProductos(lista, 'ja solar').length, 2)
-  assert.equal(filtrarProductos(lista, 'ja solar', true).length, 1)
-  assert.equal(filtrarProductos(lista, 'pso1').length, 1)
-  assert.equal(filtrarProductos(lista, '', true).length, 2)
-  assert.deepEqual(filtrarProductos(null, ''), [])
+  assert.equal(totalPorTraer(resumen, ['Paneles solares', 'Inversores']), 103)
+  assert.equal(totalPorTraer(resumen, ['Paneles solares', 'Servicios']), 23)   // Servicios no equivale: no cuenta
+  assert.equal(totalPorTraer(resumen, []), 0)
+  assert.equal(totalPorTraer(null, ['Kits']), 0)
+})
+
+test('las categorías nuevas del CRM tienen nombre y lo desconocido se muestra tal cual', () => {
+  assert.equal(nombreCategoriaCRM('inversor'), 'Inversores')
+  assert.equal(nombreCategoriaCRM('accesorio_solar'), 'Accesorios solares')
+  assert.equal(nombreCategoriaCRM('otra_cosa'), 'otra_cosa')
+})
+
+test('faltanConPrecioAuto: cuántos vinculados no siguen aún el precio del proveedor', () => {
+  assert.equal(faltanConPrecioAuto({ total: 23, con_auto: 3 }), 20)
+  assert.equal(faltanConPrecioAuto({ total: 5, con_auto: 5 }), 0)
+  assert.equal(faltanConPrecioAuto({ total: 5, con_auto: 9 }), 0)   // nunca negativo
+  assert.equal(faltanConPrecioAuto(null), 0)
 })
 
 test('textoDeCorrida: una lectura fallida se dice fuerte, con su motivo', () => {

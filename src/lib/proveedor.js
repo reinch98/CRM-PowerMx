@@ -94,6 +94,7 @@ export function explicacion(tipo) {
 export const CATEGORIAS = [
   ['generador', 'Generadores'], ['panel', 'Paneles'], ['bateria', 'Baterías'],
   ['refaccion', 'Refacciones'], ['paquete_solar', 'Paquetes solares'], ['renta', 'Rentas'],
+  ['inversor', 'Inversores'], ['accesorio_solar', 'Accesorios solares'],
 ]
 const NOMBRE_CATEGORIA = Object.fromEntries(CATEGORIAS)
 
@@ -158,15 +159,18 @@ export function patronDeBusqueda(texto) {
   return String(texto || '').replace(/[%,()*\\]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-export function filtrarProductos(lista, texto, soloSinVincular) {
-  const t = patronDeBusqueda(texto).toLowerCase()
-  return (lista || []).filter(p => {
-    if (soloSinVincular && p.proveedor_sku) return false
-    if (!t) return true
-    return [p.sku, p.nombre, p.marca, p.modelo, p.proveedor_sku]
-      .some(v => String(v || '').toLowerCase().includes(t))
-  })
+// Lo que se puede traer del proveedor, y cuántos productos serían. Solo cuenta lo marcado y lo que
+// tiene categoría equivalente en el CRM: lo demás no se importa.
+export function totalPorTraer(resumen, marcadas) {
+  return (resumen || [])
+    .filter(c => c.equivale && marcadas.includes(c.categoria))
+    .reduce((suma, c) => suma + Number(c.por_traer || 0), 0)
 }
+
+export const nombreCategoriaCRM = cat => NOMBRE_CATEGORIA[cat] || cat
+
+// Cuántos de los vinculados de una categoría todavía no siguen el precio del proveedor.
+export const faltanConPrecioAuto = c => Math.max(0, Number(c?.total || 0) - Number(c?.con_auto || 0))
 
 export function textoDeCorrida(c) {
   if (!c) return null
@@ -194,7 +198,7 @@ async function llamar(fn) {
   try {
     const r = await fn()
     if (r.error) return { ok: false, texto: textoDeError(r.error) }
-    return { ok: true, datos: r.data }
+    return { ok: true, datos: r.data, total: r.count }
   } catch (e) {
     return { ok: false, texto: textoDeError(e) }
   }
@@ -222,10 +226,20 @@ export const guardarRegla = (id, regla) => llamar(() => id
 export const cambiarActivaRegla = (id, activo) =>
   llamar(() => supabase.from('reglas_margen').update({ activo }).eq('id', id))
 
-export const cargarProductosYCostos = async () => {
-  const p = await llamar(() => supabase.from('productos')
-    .select('id, sku, nombre, categoria, marca, modelo, precio, costo, proveedor, proveedor_sku, precio_auto')
-    .eq('activo', true).order('sku').limit(2000))
+// El catálogo del CRM ya pasa de mil productos y Supabase corta en mil: se busca en el servidor y se
+// traen solo los primeros 60. El total viene del conteo exacto, no de lo mostrado.
+export const LIMITE_VINCULOS = 60
+
+export async function buscarProductosCRM({ texto, soloSin }) {
+  const t = patronDeBusqueda(texto)
+  const p = await llamar(() => {
+    let q = supabase.from('productos')
+      .select('id, sku, nombre, categoria, marca, modelo, precio, costo, proveedor, proveedor_sku, precio_auto', { count: 'exact' })
+      .eq('activo', true)
+    if (soloSin) q = q.is('proveedor_sku', null)
+    if (t) q = q.or(['sku', 'nombre', 'marca', 'modelo', 'proveedor_sku'].map(c => `${c}.ilike.%${t}%`).join(','))
+    return q.order('sku').limit(LIMITE_VINCULOS)
+  })
   if (!p.ok) return p
   const skus = [...new Set(p.datos.map(x => x.proveedor_sku).filter(Boolean))]
   let lecturas = []
@@ -236,8 +250,18 @@ export const cargarProductosYCostos = async () => {
     if (!l.ok) return l
     lecturas = l.datos
   }
-  return { ok: true, productos: p.datos, lecturas: Object.fromEntries(lecturas.map(x => [x.sku_proveedor, x])) }
+  return { ok: true, productos: p.datos, total: p.total ?? p.datos.length,
+    lecturas: Object.fromEntries(lecturas.map(x => [x.sku_proveedor, x])) }
 }
+
+export const cargarResumenProveedor = () =>
+  llamar(() => supabase.rpc('proveedor_resumen', { p_proveedor: PROVEEDOR }))
+
+export const importarProductos = categorias =>
+  llamar(() => supabase.rpc('importar_productos_proveedor', { p_proveedor: PROVEEDOR, p_categorias: categorias }))
+
+export const activarPrecioAutomatico = categoria =>
+  llamar(() => supabase.rpc('activar_precio_automatico', { p_proveedor: PROVEEDOR, p_categoria: categoria }))
 
 export const buscarEnProveedor = texto => {
   const t = patronDeBusqueda(texto)

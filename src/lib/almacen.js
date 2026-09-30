@@ -9,6 +9,7 @@
 
 import { supabase } from './supabase'
 import { explicarError } from './errores'
+import { todasLasFilas } from './paginar'
 
 const BUCKET = 'ordenes'
 
@@ -71,8 +72,8 @@ export async function cargarPorSurtir() {
 // Piezas para agregar a mano a una lista: existencias no lleva precios ni costos.
 export async function cargarExistencias() {
   try {
-    const { data, error } = await supabase.from('existencias')
-      .select('id, sku, nombre, unidad, fisico').order('nombre')
+    const { data, error } = await todasLasFilas(() => supabase.from('existencias')
+      .select('id, sku, nombre, unidad, fisico').order('nombre').order('id'))
     if (error) return { ok: false, texto: textoDe(error) }
     return { ok: true, piezas: data || [] }
   } catch (e) {

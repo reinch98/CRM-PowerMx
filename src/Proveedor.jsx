@@ -3,9 +3,10 @@ import { Alerta } from './ui'
 import {
   ETIQUETA_TIPO, esAprobable, ordenarCola, contarPorTipo, detalleDeCambio, explicacion,
   CATEGORIAS, alcanceDeRegla, textoDeRegla, ordenarReglas, reglaVacia, validarRegla,
-  estadoDeVinculo, ETIQUETA_VINCULO, filtrarProductos, textoDeCorrida, pesos,
+  estadoDeVinculo, ETIQUETA_VINCULO, textoDeCorrida, pesos, totalPorTraer, nombreCategoriaCRM, faltanConPrecioAuto,
   cargarCola, resolverRevision, resolverEnLote, cargarUltimaCorrida, cargarReglas, guardarRegla,
-  cambiarActivaRegla, cargarProductosYCostos, buscarEnProveedor, vincularProducto,
+  cambiarActivaRegla, buscarProductosCRM, buscarEnProveedor, vincularProducto,
+  cargarResumenProveedor, importarProductos, activarPrecioAutomatico,
 } from './lib/proveedor'
 
 // Precios del proveedor (XLStore). Aquí no se calcula ningún precio: lo calcula la base al
@@ -262,47 +263,180 @@ function PestanaVinculos() {
   const [soloSin, setSoloSin] = useState(true)
 
   const cargar = useCallback(async () => {
-    const r = await cargarProductosYCostos()
+    const r = await buscarProductosCRM({ texto, soloSin })
     if (r.ok) { setDatos(r); setError('') } else setError(r.texto)
+  }, [texto, soloSin])
+
+  // Se busca en el servidor (el catálogo pasa de mil productos); una pausa corta al escribir
+  // evita una consulta por letra.
+  useEffect(() => {
+    const espera = setTimeout(cargar, texto ? 300 : 0)
+    return () => clearTimeout(espera)
+  }, [cargar, texto])
+
+  return (
+    <>
+      <p className="ayuda">
+        Un producto solo sigue al proveedor si está vinculado. Vincular no cambia ningún precio: el
+        precio cambia hasta que activas el precio automático. Los productos que trajiste del
+        proveedor ya vienen vinculados; aquí se liga uno que ya tenías de antes.
+      </p>
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {datos === null && !error && <p>Cargando…</p>}
+
+      <label className="campo">
+        <span>Buscar producto del CRM</span>
+        <input value={texto} onChange={e => setTexto(e.target.value)} placeholder="SKU, nombre, marca o modelo" />
+      </label>
+      <label className="casilla">
+        <input type="checkbox" checked={soloSin} onChange={e => setSoloSin(e.target.checked)} />
+        Mostrar solo los que no están vinculados
+      </label>
+
+      {datos && (
+        <>
+          {datos.productos.length === 0 && <p className="ayuda">No hay productos con ese filtro.</p>}
+          {datos.productos.map(p => (
+            <FilaProducto key={p.id} p={p} lectura={datos.lecturas[p.proveedor_sku]} onCambio={cargar} />
+          ))}
+          {datos.total > datos.productos.length && (
+            <p className="ayuda">
+              Se muestran {datos.productos.length} de {datos.total}. Escribe en el buscador para acotar.
+            </p>
+          )}
+        </>
+      )}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Traer productos: crear en el CRM lo que el proveedor tiene y aquí todavía no. Entran sin
+// publicar y sin precio, ya vinculados; se publican cuando su precio se aprueba.
+// ---------------------------------------------------------------------------
+function PestanaTraer({ irA }) {
+  const [resumen, setResumen] = useState(null)
+  const [error, setError] = useState('')
+  const [mensaje, setMensaje] = useState('')
+  const [marcadas, setMarcadas] = useState(null)   // null = todavía no se eligió: se marca todo lo que se puede
+  const [confirmando, setConfirmando] = useState(false)
+  const [ocupado, setOcupado] = useState(false)
+
+  const cargar = useCallback(async () => {
+    const r = await cargarResumenProveedor()
+    if (r.ok) { setResumen(r.datos); setError('') } else setError(r.texto)
   }, [])
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     cargar()
   }, [cargar])
 
-  const visibles = useMemo(
-    () => filtrarProductos(datos?.productos, texto, soloSin),
-    [datos, texto, soloSin])
-  const vinculados = (datos?.productos || []).filter(p => p.proveedor_sku).length
+  const porTraer = resumen?.por_traer || []
+  const vinculados = resumen?.vinculados || []
+  const elegidas = marcadas ?? porTraer.filter(c => c.equivale && c.por_traer > 0).map(c => c.categoria)
+  const total = totalPorTraer(porTraer, elegidas)
+
+  function alternar(categoria) {
+    setConfirmando(false)
+    setMarcadas(elegidas.includes(categoria) ? elegidas.filter(c => c !== categoria) : [...elegidas, categoria])
+  }
+
+  async function traer() {
+    setOcupado(true); setError(''); setMensaje('')
+    const r = await importarProductos(elegidas)
+    setOcupado(false); setConfirmando(false)
+    if (!r.ok) { setError(r.texto); return }
+    const d = r.datos
+    setMensaje(`Se crearon ${d.creados} producto${d.creados === 1 ? '' : 's'}` +
+      (d.ya_existian ? `; ${d.ya_existian} ya existían` : '') + '. Están sin publicar y sin precio.')
+    setMarcadas(null); cargar()
+  }
+
+  async function activar(categoria) {
+    setOcupado(true); setError(''); setMensaje('')
+    const r = await activarPrecioAutomatico(categoria)
+    setOcupado(false)
+    if (!r.ok) { setError(r.texto); return }
+    setMensaje(`Precio automático activado en ${r.datos} producto${r.datos === 1 ? '' : 's'} de ${nombreCategoriaCRM(categoria).toLowerCase()}. ` +
+      'Su primer precio aparece en "Por aprobar" la próxima vez que sincronices.')
+    cargar()
+  }
 
   return (
     <>
       <p className="ayuda">
-        Un producto solo sigue al proveedor si lo vinculas aquí. Vincular no cambia ningún precio:
-        el precio cambia hasta que activas el precio automático.
+        Lo que el proveedor tiene y todavía no está en tu catálogo. Al traerlo, el producto queda en
+        Inventario con el código de XLStore, sin precio y <strong>sin publicar</strong>.
       </p>
       {error && <Alerta tipo="error">{error}</Alerta>}
-      {datos === null && !error && <p>Cargando…</p>}
+      {mensaje && <Alerta tipo="ok">{mensaje}</Alerta>}
+      {resumen === null && !error && <p>Cargando…</p>}
 
-      {datos && (
-        <>
-          <p className="ayuda">{vinculados} de {datos.productos.length} productos vinculados.</p>
-          <label className="campo">
-            <span>Buscar producto del CRM</span>
-            <input value={texto} onChange={e => setTexto(e.target.value)} placeholder="SKU, nombre, marca o modelo" />
-          </label>
-          <label className="casilla">
-            <input type="checkbox" checked={soloSin} onChange={e => setSoloSin(e.target.checked)} />
-            Mostrar solo los que no están vinculados
-          </label>
-          {visibles.length === 0 && <p className="ayuda">No hay productos con ese filtro.</p>}
-          {visibles.slice(0, 60).map(p => (
-            <FilaProducto key={p.id} p={p} lectura={datos.lecturas[p.proveedor_sku]} onCambio={cargar} />
+      {resumen && porTraer.length === 0 && (
+        <Alerta tipo="info">
+          Todavía no hay una lectura del proveedor. Corre la sincronización con tu archivo primero.
+        </Alerta>
+      )}
+
+      {porTraer.length > 0 && (
+        <section className="tarjeta">
+          <h3>Productos por traer</h3>
+          {porTraer.map(c => (
+            <label key={c.categoria} className="casilla">
+              <input type="checkbox" disabled={!c.equivale || c.por_traer === 0}
+                checked={elegidas.includes(c.categoria) && c.equivale && c.por_traer > 0}
+                onChange={() => alternar(c.categoria)} />
+              <span>
+                {c.categoria}: <strong>{c.por_traer}</strong> por traer de {c.total}
+                {!c.equivale && ' · sin categoría equivalente en el CRM'}
+                {c.equivale && c.por_traer === 0 && ' · ya están todos'}
+              </span>
+            </label>
           ))}
-          {visibles.length > 60 && (
-            <p className="ayuda">Se muestran 60 de {visibles.length}. Escribe en el buscador para acotar.</p>
+
+          {!confirmando ? (
+            <button className="btn-primario" disabled={total === 0 || ocupado} onClick={() => setConfirmando(true)}>
+              {total === 0 ? 'Nada por traer' : `Traer ${total} producto${total === 1 ? '' : 's'}`}
+            </button>
+          ) : (
+            <>
+              <Alerta tipo="aviso" palabra="Confirma">
+                Se van a crear {total} productos en el catálogo. No se publican: siguen fuera del sitio
+                hasta que tengan precio.
+              </Alerta>
+              <div className="fila" style={{ gap: 8 }}>
+                <button className="btn-primario" disabled={ocupado} onClick={traer}>Sí, traer los {total}</button>
+                <button disabled={ocupado} onClick={() => setConfirmando(false)}>No</button>
+              </div>
+            </>
           )}
-        </>
+        </section>
+      )}
+
+      {vinculados.length > 0 && (
+        <section className="tarjeta">
+          <h3>Precio automático</h3>
+          <p className="ayuda">
+            Con el precio automático, el sync calcula el precio con tus reglas de margen. Activarlo no
+            publica nada: el primer precio de cada producto pasa por &quot;Por aprobar&quot;. Captura antes
+            las reglas de margen, o quedarán como &quot;falta regla&quot;.
+          </p>
+          {vinculados.map(c => (
+            <div key={c.categoria} className="fila" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+              <span>
+                <strong>{nombreCategoriaCRM(c.categoria)}</strong>: {c.total} vinculados, {c.con_auto} con precio automático
+              </span>
+              {faltanConPrecioAuto(c) > 0 ? (
+                <button disabled={ocupado} onClick={() => activar(c.categoria)}>
+                  Activar en los {faltanConPrecioAuto(c)}
+                </button>
+              ) : (
+                <span className="etiqueta">Todos activados</span>
+              )}
+            </div>
+          ))}
+          {irA && <button onClick={() => irA('inventario')}>Ver el inventario</button>}
+        </section>
       )}
     </>
   )
@@ -441,7 +575,7 @@ function PestanaReglas() {
 
 // ---------------------------------------------------------------------------
 
-export default function Proveedor() {
+export default function Proveedor({ irA }) {
   const [vista, setVista] = useState('cola')
   const [corrida, setCorrida] = useState(undefined)   // undefined = cargando, null = ninguna
   const [pendientes, setPendientes] = useState(null)
@@ -474,11 +608,13 @@ export default function Proveedor() {
         <button className="pestana" aria-pressed={vista === 'cola'} onClick={() => setVista('cola')}>
           Por aprobar{pendientes ? ` (${pendientes})` : ''}
         </button>
+        <button className="pestana" aria-pressed={vista === 'traer'} onClick={() => setVista('traer')}>Traer productos</button>
         <button className="pestana" aria-pressed={vista === 'vinculos'} onClick={() => setVista('vinculos')}>Vínculos</button>
         <button className="pestana" aria-pressed={vista === 'reglas'} onClick={() => setVista('reglas')}>Reglas de margen</button>
       </div>
 
       {vista === 'cola' && <PestanaCola irAReglas={() => setVista('reglas')} />}
+      {vista === 'traer' && <PestanaTraer irA={irA} />}
       {vista === 'vinculos' && <PestanaVinculos />}
       {vista === 'reglas' && <PestanaReglas />}
     </div>

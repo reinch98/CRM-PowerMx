@@ -6,6 +6,7 @@ import {
   piezasQueSeRepiten, queTanSeguido
 } from './lib/preventivo'
 import { Alerta } from './ui'
+import { todasLasFilas } from './lib/paginar'
 
 // Tarifas de servicio (solo admin; el técnico nunca ve precios). Se COPIAN a la
 // partida al cotizar, así que cambiar una tarifa no altera cotizaciones viejas.
@@ -304,8 +305,8 @@ export default function Tarifas() {
         .order('concepto').order('clase').order('kw_desde'),
       // Para armar las líneas de un paquete hace falta el catálogo con su grupo
       // equivalente: es lo que decide qué genéricos salen al cotizar.
-      supabase.from('productos').select('id, sku, nombre, grupo_equivalente')
-        .eq('activo', true).order('sku')
+      todasLasFilas(() => supabase.from('productos').select('id, sku, nombre, grupo_equivalente')
+        .eq('activo', true).order('sku'))
     ])
     if (t.error) return setError(t.error.message)
     setFilas(t.data || [])

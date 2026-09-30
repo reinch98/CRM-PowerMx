@@ -7,6 +7,7 @@ import {
   faltantes, partidasDePreventivo, avisosDePreventivo, esIncluida
 } from './lib/preventivo'
 import { Alerta } from './ui'
+import { todasLasFilas } from './lib/paginar'
 
 const IVA = 0.16
 
@@ -203,8 +204,8 @@ export default function Cotizaciones({ irA }) {
       supabase.from('cotizaciones').select('*, clientes(nombre)').order('folio', { ascending: false }),
       supabase.from('clientes').select('id, nombre, distancia_km'),
       supabase.from('equipos').select('id, numero_serie, cliente_id, tipo, marca, capacidad_kw, atributos'),
-      supabase.from('productos').select('id, sku, nombre, precio, unidad, categoria').eq('activo', true).order('sku'),
-      supabase.from('disponibles').select('id, disponible'),
+      todasLasFilas(() => supabase.from('productos').select('id, sku, nombre, precio, unidad, categoria').eq('activo', true).order('sku')),
+      todasLasFilas(() => supabase.from('disponibles').select('id, disponible').order('id')),
       supabase.from('perfiles').select('id, nombre').eq('rol', 'tecnico').eq('activo', true).order('nombre'),
       supabase.from('tarifas_servicio').select('*').eq('activo', true),
       supabase.from('citas').select('id, cotizacion_id, estado, fecha, hora').not('cotizacion_id', 'is', null)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { Alerta } from './ui'
 import { aFormulario, paraGuardar } from './lib/formularios'
+import { todasLasFilas } from './lib/paginar'
 
 const CATEGORIAS = [
   ['generador', 'Generadores'],
@@ -9,7 +10,9 @@ const CATEGORIAS = [
   ['bateria', 'Baterías'],
   ['panel', 'Paneles'],
   ['refaccion', 'Refacciones'],
-  ['renta', 'Rentas']
+  ['renta', 'Rentas'],
+  ['inversor', 'Inversores'],
+  ['accesorio_solar', 'Accesorios solares']
 ]
 
 // Campos que cambian según la categoría. Se guardan dentro de `atributos` (jsonb) con
@@ -114,8 +117,8 @@ export default function Inventario() {
 
   async function cargar() {
     const [p, d, c] = await Promise.all([
-      supabase.from('productos').select('*').eq('activo', true).order('categoria').order('sku'),
-      supabase.from('disponibles').select('*').order('categoria').order('sku'),
+      todasLasFilas(() => supabase.from('productos').select('*').eq('activo', true).order('categoria').order('sku')),
+      todasLasFilas(() => supabase.from('disponibles').select('*').order('categoria').order('sku')),
       supabase.from('clientes').select('id, nombre').order('nombre')
     ])
     if (p.error) return setError(p.error.message)

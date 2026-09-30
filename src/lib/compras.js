@@ -11,6 +11,7 @@
 
 import { supabase } from './supabase'
 import { explicarError } from './errores'
+import { todasLasFilas } from './paginar'
 
 const BUCKET = 'compras'
 export const IVA = 0.16
@@ -132,9 +133,9 @@ export async function cargarPedidosPorRecibir() {
 // El catálogo con costos: esta pantalla es solo del admin, que sí lee `productos`.
 export async function cargarProductos() {
   try {
-    const { data, error } = await supabase.from('productos')
+    const { data, error } = await todasLasFilas(() => supabase.from('productos')
       .select('id, sku, nombre, unidad, costo, categoria')
-      .eq('activo', true).order('sku')
+      .eq('activo', true).order('sku'))
     if (error) return { ok: false, texto: textoDeError(error) }
     return { ok: true, productos: data || [] }
   } catch (e) {
