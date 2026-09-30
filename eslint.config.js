@@ -26,7 +26,7 @@ export default defineConfig([
   {
     // Las pruebas corren en Node (`npm test`), no en el navegador: usan `process` y los
     // enlaces de módulos. Sin este bloque el lint las marcaría por globales inexistentes.
-    files: ['pruebas/**/*.js'],
+    files: ['pruebas/**/*.js', 'scripts/**/*.js'],
     languageOptions: { globals: globals.node },
   },
 ])

@@ -1463,6 +1463,37 @@ solo admin) y el técnico y el almacenista siguen entrando a su lista.
 - **Falta:** correr `42_inicio_admin.sql` y `42_prueba_inicio_admin.sql` (10 pasos); sin el SQL la
   pantalla muestra el error explicado, no se rompe.
 
+## Sincronización con el proveedor (SQL 44, 29/09/2026) — SQL aplicado y probado en Supabase
+
+Precios y existencias de **XLStore (Exel Solar)** entran al CRM con márgenes y candados. Decisión
+(opción A): **no hay segunda tabla `productos`**; el CRM sigue siendo la fuente de verdad y el
+sync es otra puerta hacia `precio` y `costo`. Tablas: `proveedor_productos` (lo que dijo el
+proveedor), `reglas_margen`, `historial_precios`, `cola_revision`, `sync_corridas`, `tipos_cambio`;
+`productos` gana `proveedor`, `proveedor_sku`, `precio_auto`, `precio_sync_en`. **Solo se toca un
+producto vinculado (`vincular_producto_proveedor`) y con `precio_auto`**: leer 900 productos no
+publica ninguno.
+- **El precio se calcula en la base** (`_precio_venta`), no en el script: mayor entre
+  costo×(1+margen) y costo+mínimo, redondeado **hacia arriba**. La regla más específica gana
+  (marca+categoría > marca > categoría > general). Una sola fórmula, sin copia en JS.
+- **Candados, todos en SQL:** nunca bajo costo+mínimo; cambio > ±15 % o producto sin precio
+  previo → `cola_revision` (no se publica); SKU vinculado que desaparece → cola; lectura con menos
+  de la mitad de filas que la anterior → corrida `fallida`, nada se aplica. Aprobar en la cola
+  **recalcula** con el costo y FIX más recientes (nunca aplica un precio viejo guardado).
+- Flujo: `sync_iniciar` → `sync_recibir_lote` (de 200 en 200) → `sync_cerrar_lectura` →
+  `sync_aplicar(tipo_cambio)`. Cuenta `bot` o admin; `resolver_revision(es)` y vincular, solo admin.
+- **Script** `scripts/proveedor/sync.js` (`--archivo x.xlsx`, `--seco` lee sin tocar la base);
+  adaptador aislado en `scripts/proveedor/adaptadores/` (`excel.js` + `normalizar.js` puro; para
+  otro proveedor o un feed, otro adaptador registrado en `index.js`); `banxico.js` (FIX serie
+  SF43718, `BANXICO_TOKEN`, o `TIPO_CAMBIO` a mano; sin ninguno **no inventa** uno).
+- **Límite conocido:** el login de XLStore lleva reCAPTCHA v3, así que **no hay cron posible**
+  hasta que Exel Solar dé un feed; hoy el archivo sale de una lectura hecha con la sesión de Caña
+  en el navegador. Pendiente: pantalla para vincular y aprobar la cola, paquetes solares
+  recalculados, publicar disponibilidad "inmediata" con `stock_local`.
+- Probado: la migración se aplica dos veces sin error y la prueba (`44_prueba_sync_proveedor.sql`,
+  12 pasos) pasa en **PGlite** (Postgres en WebAssembly, stubs de `es_admin`, `_apunta`…) y **en
+  Supabase, 12 de 12 "ok" (29/09/2026)**. `npm test` (289), lint y build en verde; el adaptador leyó el Excel real
+  (908 productos, 12 sin costo).
+
 ## Compras (SQL 41, 27/09/2026) — SQL escrito, falta correrlo
 
 La mitad que le faltaba al inventario. Se sabía qué salió y por qué; lo que **entraba**
