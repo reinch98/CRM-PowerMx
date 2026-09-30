@@ -1527,6 +1527,15 @@ publica ninguno.
   tarea de descargar imágenes y documentos:** `imagenes-productos/Solar/<SKU>.<ext>` y
   `documentos-productos/Solar/<SKU>-ficha-tecnica.pdf` (también `-manual.pdf`), con el SKU = código de
   XLStore; sin archivo, la tarjeta muestra un ícono y `convertir.js` avisa en UNA línea cuántas faltan.
+  **Descargado el 30/09/2026** con `Inventario/descargar-proveedor.js` (lee los enlaces del Excel del
+  proveedor; se puede cortar y repetir): **901 imágenes** comprimidas a 1,200 px (326 MB → 36 MB) y
+  **813 fichas técnicas** (1.1 GB; faltan 7 por enlaces caídos o que no eran PDF). **Los manuales NO se
+  bajaron** (2.7 GB, y uno pesa 47 MB: Cloudflare no sirve archivos de más de 25 MB); decisión de Caña.
+  Todo vive en `Inventario/`; **`convertir.js` copia a `sitio-publicar` solo los archivos de los productos
+  que se publican** (poda) — sin eso cada corrida del robot subiría 1.1 GB de productos que nadie ve. Un
+  catálogo solo-CRM sin productos publicados se escribe como `[]` (no deja el JSON viejo apuntando a
+  archivos podados). Ojo con el peso: el repo pasa de ~170 MB a ~1.3 GB; subirlo en tandas de unos 300 MB
+  (un push de más de 2 GB lo rechaza GitHub).
   Probado con los 908 productos reales del Excel como muestra (sección, subsección, búsqueda, "mostrar
   más", nombres con comillas y `<` sin romper la tarjeta, carrito) en escritorio y celular. **SQL 46**
   (`46_publicar_al_aprobar_precio.sql`, **aplicado y probado en Supabase, 4 de 4 "ok"**): aprobar el
