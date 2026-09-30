@@ -1441,6 +1441,28 @@ el menú"). Sin esto agrupar solo **acomoda**; con esto la barra **avisa**.
 - **Falta de esta tanda** (ver el artefacto "Navegación del CRM PowerMx"): un inicio que diga
   qué atender, y la barra inferior en el celular — en ese orden.
 
+### Inicio del admin (SQL 42, 29/09/2026) — SQL escrito, falta correrlo
+
+Paso 4 de la propuesta de interfaz. Antes el admin entraba a la Agenda, que muestra el calendario
+pero **no lo que está esperando**; ahora entra a **Inicio** (primera pantalla del área Servicio,
+solo admin) y el técnico y el almacenista siguen entrando a su lista.
+
+- **`inicio_admin()`** (solo admin; a otro rol le devuelve `{}`) da `fecha`, `hoy` (citas del día,
+  sin canceladas) y `urgente`: avisos con `clave`, `nivel`, `pantalla`, `n` y `texto` ya armado.
+  Nada viene en cero. Niveles: **alto** = devoluciones atrasadas, avisos sin mandar, solicitudes
+  del sitio y WhatsApp sin ver · **medio** = entregas por firmar, citas por programar, cotizaciones
+  de WhatsApp por revisar, cotizaciones por vencer, órdenes por enviar, mantenimientos vencidos o a
+  7 días, material solicitado · **bajo** = pedidos por recibir.
+- `src/Inicio.jsx` / `src/lib/inicio.js`: el nivel se dice con palabra ("Atender hoy", "Esta
+  semana", "Cuando se pueda"), cada aviso es un **botón** que abre su pantalla, y una cita sin
+  técnico lo dice en vez de callarlo. La fecha se lee como local (`new Date('2026-09-28')` en UTC
+  mostraría el día anterior en Mérida).
+- Medido en celular con mock del RPC: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px,
+  0 px de desborde; el clic lleva a la pantalla correcta y como técnico no aparece Inicio.
+  12 casos en Node (`pruebas/inicio.prueba.js`).
+- **Falta:** correr `42_inicio_admin.sql` y `42_prueba_inicio_admin.sql` (10 pasos); sin el SQL la
+  pantalla muestra el error explicado, no se rompe.
+
 ## Compras (SQL 41, 27/09/2026) — SQL escrito, falta correrlo
 
 La mitad que le faltaba al inventario. Se sabía qué salió y por qué; lo que **entraba**

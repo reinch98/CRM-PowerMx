@@ -8,6 +8,7 @@ import Login from './Login'
 // abre: un técnico nunca baja el código de Cotizaciones, Tarifas o el Agente, ni un
 // almacenista el de Contactos. Login se queda fuera de esto porque hace falta de
 // inmediato, antes de saber quién entra.
+const Inicio = lazy(() => import('./Inicio'))
 const Agenda = lazy(() => import('./Agenda'))
 const Clientes = lazy(() => import('./Clientes'))
 const Contactos = lazy(() => import('./Contactos'))
@@ -27,6 +28,7 @@ const Agente = lazy(() => import('./Agente'))
 // Qué pantallas ve cada rol. El menú y el contenido salen de aquí, así que
 // agregar una pantalla es agregar un renglón, no tocar el resto.
 const PANTALLAS = {
+  inicio:       { titulo: 'Inicio',       componente: Inicio,       roles: ['admin'] },
   agenda:       { titulo: 'Agenda',       componente: Agenda,       roles: ['admin', 'tecnico'] },
   ordenes:      { titulo: 'Órdenes',      componente: Trabajos,     roles: ['admin', 'tecnico'] },
   almacen:      { titulo: 'Almacén',      componente: Almacen,      roles: ['admin', 'almacenista'] },
@@ -58,7 +60,7 @@ const PANTALLAS = {
 // mes al final.
 // ---------------------------------------------------------------------------
 const GRUPOS = [
-  { clave: 'servicio', titulo: 'Servicio', pantallas: ['agenda', 'ordenes'] },
+  { clave: 'servicio', titulo: 'Servicio', pantallas: ['inicio', 'agenda', 'ordenes'] },
   { clave: 'clientes', titulo: 'Clientes', pantallas: ['solicitudes', 'whatsapp', 'clientes', 'contactos', 'equipos'] },
   { clave: 'ventas',   titulo: 'Ventas',   pantallas: ['cotizaciones', 'tarifas'] },
   { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones', 'compras'] },
@@ -108,7 +110,11 @@ export default function App() {
   const [cargando, setCargando] = useState(true)
   // Sin señal el técnico llega a lo que puede usar: la agenda no funciona
   // desconectada, las órdenes sí.
-  const [pantalla, setPantalla] = useState(() => (navigator.onLine ? 'agenda' : 'ordenes'))
+  // El admin entra al Inicio, que dice qué está esperando. Para los demás no hace falta una
+  // excepción: `inicio` es solo de admin, así que `clave` cae sola a su primera pantalla
+  // permitida (el técnico a la Agenda, el almacenista a Almacén). Sin señal se entra directo a
+  // Órdenes, que es la única que funciona desconectada.
+  const [pantalla, setPantalla] = useState(() => (navigator.onLine ? 'inicio' : 'ordenes'))
   // Cuántas cosas esperan en cada pantalla. Sin esto, agrupar las catorce pantallas solo
   // acomoda; con esto la barra avisa. `{}` mientras no se sepa: un globo que no está no
   // estorba, y si la consulta falla la barra se dibuja igual.
