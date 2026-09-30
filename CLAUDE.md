@@ -1485,6 +1485,17 @@ publica ninguno.
   adaptador aislado en `scripts/proveedor/adaptadores/` (`excel.js` + `normalizar.js` puro; para
   otro proveedor o un feed, otro adaptador registrado en `index.js`); `banxico.js` (FIX serie
   SF43718, `BANXICO_TOKEN`, o `TIPO_CAMBIO` a mano; sin ninguno **no inventa** uno).
+- **Pantalla `Proveedor`** (`src/Proveedor.jsx`, `src/lib/proveedor.js`; área Almacén, solo admin;
+  29/09/2026): tres pestañas. **Por aprobar** (la cola: lo urgente primero; "Aprobar todos los
+  primeros precios" con confirmación; "Retirar del sitio" va en rojo, no como botón principal;
+  `sin_regla` y `sin_costo` no se aprueban, solo se dan por vistos), **Vínculos** (busca en
+  `proveedor_productos`; vincular NO activa el precio automático, es un segundo paso) y **Reglas de
+  margen** (alta, edición y apagar; avisa si falta la regla general). Arriba, el resultado de la
+  última lectura, con el motivo si falló. Aquí no se calcula ningún precio: lo muestra la base.
+  11 casos en Node (`pruebas/proveedor-pantalla.prueba.js`); medida en celular con un Supabase
+  falso: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde. **Falta:**
+  verla contra la base real, y el globo de pendientes en la pestaña (habría que ampliar
+  `pendientes_admin` e `inicio_admin` para contar `cola_revision`).
 - **Límite conocido:** el login de XLStore lleva reCAPTCHA v3, así que **no hay cron posible**
   hasta que Exel Solar dé un feed; hoy el archivo sale de una lectura hecha con la sesión de Caña
   en el navegador. Pendiente: pantalla para vincular y aprobar la cola, paquetes solares
