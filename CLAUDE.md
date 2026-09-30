@@ -1536,7 +1536,10 @@ publica ninguno.
   (`actualizar-catalogo.yml`) no tiene credenciales y `convertir.js` lee del CRM por omisión, así que
   **se detiene con error en cada corrida** desde que el CRM pasó a ser la fuente (27/09/2026): hacen
   falta los secretos `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `BOT_EMAIL` y `BOT_PASSWORD` en el repo y un
-  bloque `env:` en ese paso. Hoy el sitio solo se actualiza corriendo `convertir.js` a mano.
+  bloque `env:` en ese paso. **El bloque `env:` (y un `concurrency` para que no corran dos robots a la vez) ya está en
+  el flujo (30/09/2026); faltan los cuatro secretos en GitHub → Settings → Secrets and variables →
+  Actions del repo `POWERMX-sitio`, que los pone Caña (con `BOT_PASSWORD` nuevo, rotado).** Mientras
+  no estén, el sitio solo se actualiza corriendo `convertir.js` a mano.
 - **Supabase corta toda consulta a 1,000 filas en silencio** (dato que este cambio volvió real:
   el catálogo pasa de ~95 a ~1,000 productos). `src/lib/paginar.js` (`todasLasFilas`, 5 pruebas) pide
   de mil en mil y ahora lo usan Inventario, Cotizaciones, Tarifas, Compras y Almacén; **cualquier
