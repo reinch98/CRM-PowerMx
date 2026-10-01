@@ -1557,6 +1557,24 @@ publica ninguno.
   consulta nueva al catálogo completo debe usarlo**, con un orden que no se repita (SKU o id). La
   pestaña Vínculos busca en el servidor (60 por vez, con conteo exacto). `catalogo_publico()` no se
   afecta: devuelve un solo jsonb.
+- **Leer XLStore con tu sesión: C y D (30/09/2026, escrito y probado, sin commit al anotar esto).**
+  `scripts/proveedor/xlstore/` (ver su `LEEME.md`). **`extraer.js`** es una sola pieza (recibe `fetch`
+  y `DOMParser` de afuera) que sirve a dos caminos: **C**, `xlstore-descargar.js` (GENERADO de `extraer.js`
+  con `crear-herramienta.js`; se pega en la consola de Chrome y baja `xlstore_catalogo.csv`), y **D**, el
+  adaptador `adaptadores/xlstore.js` (`sync.js --adaptador xlstore`, con la cookie de la sesión de Caña y
+  `linkedom`). No salta ningún captcha: la sesión la inicia una persona. Candados: verifica la sesión al
+  empezar Y al terminar, rechaza la lectura si trae pocos productos, casi sin precios o sin existencias,
+  4 peticiones a la vez, nunca imprime la cookie. Por omisión NO pide fichas ni manuales y **SQL 50**
+  (aplicado y probado en PGlite; **falta correrlo en Supabase**) hace que una lectura sin documentos no
+  borre los que ya había. `adaptadores/excel.js` ahora también lee `.csv` (`csv.js`). `powermx.ps1` ganó las
+  opciones 4–8 (leer con sesión, guardar cookie, programar cada 12 h con el Programador de tareas, quitar,
+  copiar la herramienta); cookie, conector y token de Banxico se guardan **cifrados con DPAPI** en
+  `%USERPROFILE%\.powermx`; el modo `auto` no hace preguntas y deja registro sin secretos. **Límites
+  reales:** la sesión CADUCA (no se sabe cuánto dura: hay que probar unos días; cuando pasa, la lectura
+  falla y el CRM lo muestra como "última lectura falló"); la compu debe estar encendida; y reutilizar la
+  sesión automáticamente puede ir contra los términos de XLStore. **Falta:** probarlo contra el XLStore
+  REAL (la sesión del navegador caducó antes de poder hacerlo; todo se probó con un XLStore de mentira
+  con la misma forma de HTML: 25 pruebas en `pruebas/xlstore.prueba.js`).
 - **Límite conocido:** el login de XLStore lleva reCAPTCHA v3, así que **no hay cron posible**
   hasta que Exel Solar dé un feed; hoy el archivo sale de una lectura hecha con la sesión de Caña
   en el navegador. Pendiente: pantalla para vincular y aprobar la cola, paquetes solares

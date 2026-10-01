@@ -26,10 +26,11 @@ export function leerArgumentos(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--seco') o.seco = true
-    else if (['--proveedor', '--adaptador', '--archivo', '--moneda', '--hoja', '--lote'].includes(a)) {
+    else if (a === '--con-documentos') o.conDocumentos = true
+    else if (['--proveedor', '--adaptador', '--archivo', '--moneda', '--hoja', '--lote', '--cookie-archivo'].includes(a)) {
       const v = argv[++i]
       if (v === undefined) throw new Error(`Falta el valor de ${a}.`)
-      o[a.slice(2)] = a === '--lote' ? Number(v) : v
+      o[a === '--cookie-archivo' ? 'cookieArchivo' : a.slice(2)] = a === '--lote' ? Number(v) : v
     } else throw new Error(`Argumento desconocido: ${a}`)
   }
   if (!Number.isInteger(o.lote) || o.lote < 1 || o.lote > 1000) throw new Error('--lote debe ser de 1 a 1000.')
@@ -53,7 +54,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   const leer = adaptador(args.adaptador)
 
   if (args.seco) {
-    const lectura = await leer({ archivo: args.archivo, hoja: args.hoja, moneda: args.moneda })
+    const lectura = await leer({
+      archivo: args.archivo, hoja: args.hoja, moneda: args.moneda,
+      cookieArchivo: args.cookieArchivo, conDocumentos: args.conDocumentos,
+    })
     console.log('Lectura en seco (no se tocó la base):')
     console.log(resumenLectura(lectura.filas))
     lectura.avisos.slice(0, 15).forEach((a) => console.log('  aviso:', a))
@@ -78,7 +82,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
 
   const corrida = await rpc('sync_iniciar', { p_proveedor: args.proveedor, p_fuente: args.adaptador })
   try {
-    const lectura = await leer({ archivo: args.archivo, hoja: args.hoja, moneda: args.moneda })
+    const lectura = await leer({
+      archivo: args.archivo, hoja: args.hoja, moneda: args.moneda,
+      cookieArchivo: args.cookieArchivo, conDocumentos: args.conDocumentos,
+    })
     console.log(`Leí ${lectura.filas.length} productos (${lectura.fuente}).`)
     lectura.avisos.slice(0, 10).forEach((a) => console.log('  aviso:', a))
 
