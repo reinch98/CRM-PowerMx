@@ -5,6 +5,8 @@ import assert from 'node:assert/strict'
 import {
   ordenarCola, contarPorTipo, detalleDeCambio, esAprobable, explicacion, alcanceDeRegla, textoDeRegla,
   ordenarReglas, validarRegla, reglaVacia, reglaInicial, MARGEN_INICIAL_PCT, estadoDeVinculo, patronDeBusqueda, totalPorTraer, nombreCategoriaCRM, faltanConPrecioAuto,
+  textoDeMargen, proveedoresDe, proveedoresLibres, ultimaPorProveedor, nombreProveedor, valorDeParametro,
+  descuentoDe, ordenarPromociones, esParametroDePromocion, DIAS_LISTA_VIEJA,
   textoDeCorrida, pesos,
 } from '../src/lib/proveedor.js'
 
@@ -55,13 +57,19 @@ test('las reglas se describen por su alcance y se ordenan de la más específica
   assert.equal(alcanceDeRegla(marca), 'Todo lo de JA SOLAR')
   assert.equal(alcanceDeRegla(ambas), 'Paneles de JA SOLAR')
   assert.deepEqual(ordenarReglas([general, apagada, marca, ambas]).map(r => r.id), [3, 2, 1, 4])
-  assert.match(textoDeRegla(general), /30 % de margen · mínimo .*100.* · redondeo hacia arriba a .*10/)
+  assert.match(textoDeRegla(general), /30 % sobre el costo · mínimo .*100.* · redondeo hacia arriba a .*10/)
+  assert.match(textoDeRegla({ ...general, sobre: 'precio' }), /^30 % del precio de venta \(= 42\.9 % sobre el costo\) · mínimo/)
   assert.doesNotMatch(textoDeRegla(marca), /mínimo/)
 })
 
 test('validarRegla: lo vacío va como null y lo absurdo se rechaza', () => {
   const ok = validarRegla({ ...reglaVacia, categoria: 'panel', marca: '  ', margen_pct: '30', margen_minimo_mxn: '', redondeo: '10' })
-  assert.deepEqual(ok, { ok: true, regla: { categoria: 'panel', marca: null, margen_pct: 30, margen_minimo_mxn: 0, redondeo: 10 } })
+  // Por omisión el margen es sobre el costo (Caña, 01/10/2026).
+  assert.deepEqual(ok, { ok: true, regla: { categoria: 'panel', marca: null, margen_pct: 30, margen_minimo_mxn: 0, redondeo: 10, sobre: 'costo' } })
+  assert.equal(validarRegla({ ...reglaVacia, margen_pct: '30', sobre: 'precio' }).regla.sobre, 'precio')
+  // 100 % del precio de venta sería dividir entre cero; sobre el costo sí se vale.
+  assert.equal(validarRegla({ ...reglaVacia, margen_pct: '100', sobre: 'precio' }).ok, false)
+  assert.equal(validarRegla({ ...reglaVacia, margen_pct: '100', sobre: 'costo' }).ok, true)
   assert.equal(validarRegla({ ...reglaVacia, margen_pct: '' }).ok, false)
   assert.equal(validarRegla({ ...reglaVacia, margen_pct: '-5' }).ok, false)
   assert.equal(validarRegla({ ...reglaVacia, margen_pct: '10', redondeo: '0' }).ok, false)
@@ -118,10 +126,87 @@ test('textoDeCorrida: una lectura fallida se dice fuerte, con su motivo', () => 
   assert.equal(textoDeCorrida({ ...base, estado: 'leida' }).tipo, 'aviso')
 })
 
-test('la regla inicial es el 35 % general: sin mínimo, al peso, y pasa la validación', () => {
-  assert.equal(MARGEN_INICIAL_PCT, 35)
+test('la regla inicial es el 30 % sobre el costo (Caña, 01/10/2026): sin mínimo, al peso, y pasa la validación', () => {
+  assert.equal(MARGEN_INICIAL_PCT, 30)
   const v = validarRegla(reglaInicial)
-  assert.deepEqual(v, { ok: true, regla: { categoria: null, marca: null, margen_pct: 35, margen_minimo_mxn: 0, redondeo: 1 } })
+  assert.deepEqual(v, { ok: true, regla: { categoria: null, marca: null, margen_pct: 30, margen_minimo_mxn: 0, redondeo: 1, sobre: 'costo' } })
   assert.equal(alcanceDeRegla(v.regla), 'Todos los productos (regla general)')
-  assert.match(textoDeRegla(v.regla), /^35 % de margen · redondeo hacia arriba a /)
+  assert.match(textoDeRegla(v.regla), /^30 % sobre el costo · redondeo hacia arriba a /)
+})
+
+test('promociones: el descuento en % entero, y el más grande primero', () => {
+  assert.equal(descuentoDe(9133, 7097), 22)
+  assert.equal(descuentoDe(2600, 1960), 25)
+  assert.equal(descuentoDe(2600, 2600), null)   // no baja: no es promoción
+  assert.equal(descuentoDe(2600, null), null)
+  assert.equal(descuentoDe(0, 100), null)
+  const lista = ordenarPromociones([
+    { nombre: 'B', precio: 263, precio_promocion: 208 },
+    { nombre: 'A', precio: 9133, precio_promocion: 7097 },
+    { nombre: 'C', precio: 1000, precio_promocion: 700 },
+  ])
+  assert.deepEqual(lista.map(p => p.nombre), ['C', 'A', 'B'])
+  assert.equal(esParametroDePromocion({ clave: 'promo_margen_pct' }), true)
+  assert.equal(esParametroDePromocion({ clave: 'mano_obra_panel' }), false)
+})
+
+test('una lista de proveedor con más de 150 días se avisa (Solarama manda la suya cada ~5 meses)', () => {
+  const c = { proveedor: 'solarama', estado: 'aplicada', iniciada_en: '2026-05-01T12:00:00Z', filas: 429, resumen: {} }
+  const vieja = textoDeCorrida(c, new Date('2026-10-01T12:00:00Z'))
+  assert.equal(vieja.tipo, 'aviso')
+  assert.match(vieja.texto, /ya tiene 153 días: pide la nueva/)
+  assert.equal(textoDeCorrida(c, new Date('2026-06-01T12:00:00Z')).tipo, 'ok')
+  assert.equal(DIAS_LISTA_VIEJA, 150)
+})
+
+test('textoDeMargen: el equivalente sobre el costo se dice, porque es fácil confundirlos', () => {
+  assert.equal(textoDeMargen(30, 'precio'), '30 % del precio de venta (= 42.9 % sobre el costo)')
+  assert.equal(textoDeMargen(35, 'costo'), '35 % sobre el costo')
+  assert.equal(textoDeMargen(35, undefined), '35 % sobre el costo')   // reglas de antes de la 51
+  assert.equal(textoDeMargen(null, 'precio'), '—')
+})
+
+test('un repetido en dos proveedores: el detalle dice de quién es el costo y con quién se calculó el precio', () => {
+  const filas = detalleDeCambio({ tipo: 'cambio_precio', detalle: {
+    precio: 11341, precio_actual: 10716, costo_mxn: 7825.5, costo_alto_mxn: 7938.17, proveedor: 'solarama',
+    proveedor_precio: 'xlstore', margen_pct: 30, margen_sobre: 'precio', variacion_pct: 5.8 } })
+  const valor = etiqueta => filas.find(x => x.etiqueta === etiqueta)?.valor
+  assert.match(valor('Costo (opción 1, el más barato)'), /7,825\.50 · Solarama/)
+  assert.match(valor('Precio calculado con'), /7,938\.17 · XLStore/)
+  assert.equal(valor('Margen de la regla'), '30 % del precio de venta (= 42.9 % sobre el costo)')
+  // Con un solo proveedor no hay renglón de "precio calculado con".
+  const uno = detalleDeCambio({ tipo: 'precio_inicial', detalle: { precio: 100, costo_mxn: 70, proveedor: 'xlstore', proveedor_precio: 'xlstore' } })
+  assert.equal(uno.some(x => x.etiqueta === 'Precio calculado con'), false)
+})
+
+test('proveedores de un producto: la opción 1 primero; lo recién ligado al final', () => {
+  const p = { producto_proveedores: [
+    { proveedor: 'xlstore', opcion: 2 }, { proveedor: 'nuevo', opcion: null }, { proveedor: 'solarama', opcion: 1 }] }
+  assert.deepEqual(proveedoresDe(p).map(l => l.proveedor), ['solarama', 'xlstore', 'nuevo'])
+  assert.deepEqual(proveedoresLibres({ producto_proveedores: [{ proveedor: 'xlstore' }] }), ['solarama'])
+  assert.deepEqual(proveedoresLibres({}), ['xlstore', 'solarama'])
+  assert.equal(estadoDeVinculo({ proveedor_sku: null, producto_proveedores: [{ proveedor: 'solarama' }] }), 'vinculado')
+  assert.equal(nombreProveedor('solarama'), 'Solarama')
+  assert.equal(nombreProveedor('otro'), 'otro')
+})
+
+test('ultimaPorProveedor: la lectura más reciente de cada uno, XLStore primero', () => {
+  const lista = [
+    { id: 1, proveedor: 'solarama', iniciada_en: '2026-10-01T10:00:00Z' },
+    { id: 2, proveedor: 'xlstore', iniciada_en: '2026-09-30T10:00:00Z' },
+    { id: 3, proveedor: 'xlstore', iniciada_en: '2026-10-01T09:00:00Z' },
+  ]
+  assert.deepEqual(ultimaPorProveedor(lista).map(c => c.id), [3, 1])
+  assert.deepEqual(ultimaPorProveedor(null), [])
+  assert.match(textoDeCorrida({ proveedor: 'solarama', estado: 'aplicada', iniciada_en: '2026-10-01T10:00:00Z', filas: 429, resumen: {} }).texto,
+    /^Solarama, última lectura/)
+})
+
+test('valorDeParametro: lo que se escribe en la mano de obra, como número de 0 en adelante', () => {
+  assert.equal(valorDeParametro('800'), 800)
+  assert.equal(valorDeParametro('$1,500'), 1500)
+  assert.equal(valorDeParametro(' 3.5 '), 3.5)
+  assert.equal(valorDeParametro(''), null)
+  assert.equal(valorDeParametro('-1'), null)
+  assert.equal(valorDeParametro('mucho'), null)
 })

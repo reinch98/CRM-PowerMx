@@ -2,8 +2,9 @@
 // `{ fuente, filas, avisos }` con las filas en el formato de `normalizar.js`.
 import { leer as excel } from './excel.js'
 import { leer as xlstore } from './xlstore.js'
+import { leer as solarama } from './solarama.js'
 
-export const ADAPTADORES = { excel, xlstore }
+export const ADAPTADORES = { excel, xlstore, solarama }
 
 export function adaptador(nombre) {
   const a = ADAPTADORES[nombre]

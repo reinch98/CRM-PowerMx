@@ -1491,7 +1491,7 @@ publica ninguno.
   `sin_regla` y `sin_costo` no se aprueban, solo se dan por vistos), **Vínculos** (busca en
   `proveedor_productos`; vincular NO activa el precio automático, es un segundo paso) y **Reglas de
   margen** (alta, edición y apagar; avisa si falta la regla general y ofrece **"Crear regla general del
-  35 %"**, un clic, pedido de Caña el 30/09/2026 como punto de partida: sin mínimo, al peso, editable
+  30 %"** del precio de venta —era 35 % sobre el costo hasta la 51—, un clic, como punto de partida: sin mínimo, al peso, editable
   y una regla por marca o categoría le gana). Arriba, el resultado de la
   última lectura, con el motivo si falló. Aquí no se calcula ningún precio: lo muestra la base.
   11 casos en Node (`pruebas/proveedor-pantalla.prueba.js`); medida en celular con un Supabase
@@ -1583,6 +1583,136 @@ publica ninguno.
   12 pasos) pasa en **PGlite** (Postgres en WebAssembly, stubs de `es_admin`, `_apunta`…) y **en
   Supabase, 12 de 12 "ok" (29/09/2026)**. `npm test` (289), lint y build en verde; el adaptador leyó el Excel real
   (908 productos, 12 sin costo).
+
+## Segundo proveedor: Solarama (SQL 51, 01/10/2026) — aplicado y probado en Supabase (9 de 9; el conteo del paso 3 contó también los 27 repetidos reales, ya corregido en la prueba)
+
+Pedido de Caña: "agregar Solarama como proveedor y sus productos al almacén; conservar los artículos repetidos,
+mostrar el precio más caro al público, poner como costo el del proveedor más barato y ponerlo como opción 1;
+margen de productos del 30 %". Solarama manda una **lista de precios en PDF** (`LISTA DE PRECIOS SOLARAMA
+<MES> <AÑO>.pdf`, dólares MÁS IVA, sin existencias ni imágenes); Caña la carga **cada que se la dan, más o
+menos cada 5 meses**.
+
+- **Lector del PDF** (`scripts/proveedor/adaptadores/solarama.js`, `pdfjs-dist` como devDependency, solo para
+  scripts: no entra al bundle). El PDF no es una tabla: cada texto viene suelto con su posición, y en varias
+  páginas la descripción va en dos renglones, uno arriba y otro abajo del código y el precio. Se juntan los
+  textos por renglón (y por ancho: lo que se toca va pegado, "MIN 6000TL" + "-" + "X2"), se reconoce cada
+  producto por su código (izquierda) y su precio (derecha), y cada renglón suelto de descripción se pega al
+  producto más cercano (±16 puntos). Cada página se reconoce por su título (`FORMAS`); una página que no se
+  reconozca, una que no dé productos, un precio fuera de rango o menos de 300 productos **detienen** la lectura
+  con el número de página, en vez de entregar precios equivocados. Paneles: se toma "Menor a 1 pallet" por
+  pieza; si solo se vende por pallet, el de 1 pallet y el nombre lo dice. Guiones tipográficos (‐) se vuelven
+  "-". La lista de septiembre de 2026 dio **429 productos** (408 con precio; 21 de carport "sujeto a
+  proyecto"). 10 pruebas en `pruebas/solarama.prueba.js`.
+- **Cómo se lee:** `powermx.ps1` opción **9** (toma el PDF más reciente con "SOLARAMA" en el nombre, en Descargas
+  o el Escritorio; primero lo lee en seco y pregunta) o
+  `node scripts/proveedor/sync.js --proveedor solarama --archivo "<pdf>"` (con `--proveedor solarama` el
+  adaptador se elige solo).
+- **Varios proveedores por producto:** tabla `producto_proveedores` (producto, proveedor, código, `opcion`,
+  `costo_mxn`). `_calcular_precio` mira a todos los ligados con lectura **vigente** y costo: **costo = el más
+  barato (opción 1, a quien se le compra); precio = el que daría el más caro**. Empate: se queda la opción 1
+  que ya tenía. `productos.proveedor`/`proveedor_sku` quedan como **espejo** de la opción 1 (lo que ya los
+  leía sigue funcionando) y un **disparador** (`espejo_a_vinculos`) crea el vínculo si alguien los escribe
+  directo. `sync_aplicar` recorre los productos ligados al proveedor de la corrida y reordena opciones aunque
+  el precio no cambie. **Si un proveedor deja de listar un producto que el otro sigue vendiendo, no va a "Ya
+  no lo lista"**: el costo pasa al que queda.
+- **Los 27 repetidos** (Growatt MIN 5000/6000/10000, TPM-E y TPM-CT-E, pedestal AXE; Huawei SUN2000 de 3 a
+  150 kW, SmartLogger y SDongle; Victron MultiPlus-II 3 y 5 kW, Quattro 10 kVA, Ekrano, Lynx Power In y
+  Distributor, MK3-USB, portafusible Mega) se ligan en la 51 por modelo exacto. Se dejaron fuera a
+  propósito los dudosos: SmartSolar 250/100 y RS 450/200 (variantes Tr/MC4 o VE.Can), Mega fuse (Solarama
+  vende paquete de 5), Cerbo GX (XLStore tiene el MK2), DTSU666 (otra corriente). **Ojo:** el pedestal AXE
+  cuesta 21.65 USD en XLStore y 65 en Solarama: con la regla "precio del más caro" el precio se triplica y el
+  candado del ±15 % lo manda a "Por aprobar". Revisarlo a mano.
+- **SKU del CRM** (`_sku_crm`): XLStore y cualquier otro, su código tal cual (como la 45); **Solarama lleva
+  `SLR-`** y va sin acentos, espacios ni símbolos (`KIT1X4A10°` → `SLR-KIT1X4A10`, `MIN 3600TL-X2` →
+  `SLR-MIN-3600TL-X2`), porque sus códigos traen espacios, "°" y algunos son solo números, y el SKU nombra la
+  imagen y la ficha en el sitio. Comprobado con las 429 filas reales: 426 nuevos, 3 repetidos saltados, 0 SKU
+  raros, todas con categoría equivalente.
+- **Margen: 30 % SOBRE EL COSTO** (decisión final de Caña, 01/10/2026: precio = costo × 1.30). La 51 lo
+  había puesto sobre el precio de venta por error de interpretación; la **52** lo corrige. Queda la columna
+  `reglas_margen.sobre` (`costo` | `precio`) por si alguna regla se quiere sobre el precio (con `precio`,
+  precio = costo ÷ (1 − margen)); la pantalla dice siempre cuál es y su equivalente.
+- **Parámetros de costeo** (`parametros_costeo`, solo admin; `fijar_parametro_costeo` deja rastro en
+  `auditoria`): mano de obra por panel 800, fija 2,500, trámite CFE 1,500, respaldo 2,500, imprevistos 3 %,
+  metros incluidos 30 y 10. Son los estimados del borrador de paquetes; Caña los corrige en **Precios →
+  "Costeo de paquetes solares"**. Todavía no los usa nada: son para el armado de paquetes (siguiente paso).
+- **Pantalla Proveedor:** arriba la última lectura de cada proveedor; "Traer productos" con selector XLStore /
+  Solarama; en "Vínculos" cada producto lista sus proveedores con costo, existencias, "opción 1" y "Quitar",
+  y "Agregar Solarama"/"Agregar XLStore"; en la cola, un repetido dice el costo de la opción 1 y "Precio
+  calculado con" el más caro; las reglas tienen "El margen es sobre: el precio de venta / el costo".
+- **Probado:** la 51 se aplica dos veces sin error y las pruebas 44, 45, 46 y 50 siguen dando lo esperado con
+  la 51 encima (PGlite). `51_prueba_segundo_proveedor.sql`, 9 pasos, todos "ok" en PGlite (fórmula, dos
+  proveedores, sync que aplica y reordena, proveedor que deja de listar, traer de Solarama con SKU SLR-,
+  quitar un proveedor sin apagar el automático, parámetros con auditoría, técnico sin acceso). Ensayo con las
+  429 filas reales: MIN 6000 quedó con costo de Solarama (7,825.50) y precio con XLStore (11,341). `npm test`
+  (348), lint y build en verde; pantallas medidas en celular con un Supabase falso (0 textos < 17 px, 0
+  contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde).
+- **Para ponerlo en marcha, en este orden:** (1) correr `51_segundo_proveedor.sql` y luego su prueba en
+  Supabase; (2) publicar el CRM (pantallas nuevas); (3) `powermx.ps1` opción 9 (lee el PDF de Solarama y
+  sincroniza); (4) Proveedor → Traer productos → Solarama → traer; (5) activar el precio automático por
+  categoría y aprobar los primeros precios; (6) volver a sincronizar XLStore para que tome el 30 %.
+- **Falta / pendiente:** imágenes de Solarama (no las da; se publican sin foto); que Compras y Pedidos
+  propongan al proveedor de la opción 1; volver a leer el PDF cada mes (si cambia el formato, la lectura lo
+  dice y hay que ajustar `FORMAS`).
+
+## Disponibilidad y "En promoción" (SQL 52, 01/10/2026) — SQL escrito y probado en PGlite; falta correrlo en Supabase
+
+Pedido de Caña: "el margen es sobre el costo; agrega las existencias de la última lectura de XLStore a la
+página; lo de Solarama será bajo pedido; los que comparten proveedor, el precio más caro; y un apartado EN
+PROMOCIÓN, con un margen considerable pero comprándolo en Solarama".
+
+- **Regla general → 30 % sobre el costo** (solo si seguía en 30 % sobre el precio de la 51).
+- **Disponibilidad y existencias del proveedor en el sitio** (`catalogo_publico()` gana `disponibilidad`, `existencia_merida` y `existencia_nacional`): **'inmediata'**
+  = existencia propia (la fórmula de la 39) o del proveedor en Mérida (`stock_local` de XLStore, la lectura
+  vigente); **'proveedor'** = solo en su existencia nacional; **'pedido'** = nada de eso, o sea todo lo de
+  Solarama. `disponible` sigue existiendo (= no es 'pedido'). En el sitio: "Disponible" / "Disponible en unos
+  días" / "Sobre pedido", y debajo del código **las piezas de XLStore** de su última lectura ("12 en existencia
+  en Mérida · 40 en el país"): Caña pidió que se vieran (01/10/2026). La cantidad del almacén **propio** de PowerMx
+  sigue sin publicarse (regla de siempre del sitio).
+- **Precio de promoción** (`productos.precio_promocion`, `_precio_promocion`): solo para un artículo con dos
+  proveedores donde el más barato (opción 1) no es el que marca el precio normal. Precio = costo del barato ×
+  (1 + `promo_margen_pct`, 40 %), redondeado como su regla, y **solo si baja al menos
+  `promo_descuento_minimo_pct` (5 %)** contra el precio publicado y si la lista de ese proveedor tiene menos
+  de `promo_vigencia_lista_dias` (200; Solarama manda la suya cada ~5 meses). Los tres se editan en Precios →
+  "Promociones del sitio". Se recalcula en cada sincronización (en `_ordenar_proveedores`), se apaga si el
+  cálculo falla, al quitar un proveedor o al pasar a precio manual. El precio normal del CRM (el que usa
+  Cotizaciones) no cambia: la promoción es del sitio. Con las listas actuales solo califican el Huawei
+  SUN2000-3KTL-L1 (9,133 → 7,097, −22 %) y el portafusible Mega de Victron (−21 %).
+- **`sync_aplicar` recalcula todo lo que tiene proveedor y precio automático**, no solo lo del proveedor de
+  la corrida: lo que solo vende Solarama (lista cada ~5 meses) sigue el tipo de cambio de cada lectura de
+  XLStore. "Ya no lo lista" sigue siendo solo del proveedor de la corrida. La corrida guarda `en_promocion`.
+- **CRM:** pestaña **"En promoción"** en Proveedor (precio normal, promoción, descuento y a quién se le
+  compra); Precios separa "Costeo de paquetes solares" de "Promociones del sitio"; la lectura de un proveedor
+  con más de 150 días sale como aviso ("pide la nueva").
+- **Sitio** (repo `POWERMX-sitio`): `convertir.js` pasa `disponibilidad` y, si hay promoción, `precio` =
+  el de promoción (es el que cobra el carrito), `precio_antes` = el normal y `en_promocion`.
+  `catalogo-solar.html`: etiqueta "En promoción" y precio normal tachado en la tarjeta, sección "En
+  promoción (n)" en las pastillas (enlace directo `#promocion`), enlace "Ver lo que está en promoción" en el
+  encabezado, y orden: promoción, luego lo que se entrega antes. Probado con un catálogo de mentira en
+  escritorio y celular (0 px de desborde; el carrito guarda 7,097).
+- **Probado:** la 52 se aplica dos veces sin error; su prueba (6 pasos) y las de la 44, 45, 46, 50 y 51 dan
+  lo esperado en PGlite. `npm test` (350), lint y build en verde.
+- **Para ponerlo en marcha:** (1) correr `52_disponibilidad_y_promociones.sql` y su prueba; (2) publicar el
+  CRM y el sitio (`convertir.js` y `catalogo-solar.html`); (3) sincronizar XLStore (`powermx.ps1` opción 1
+  o 4): aplica el 30 % sobre el costo (los precios bajan ~3.7 % contra el 35 % de antes, o ~9 % si ya se había
+  sincronizado con la 51) y calcula las promociones; (4) opción 2 para actualizar el sitio.
+
+## Paquetes solares — borrador y decisiones (30/09 y 01/10/2026)
+
+- **Borrador** en el escritorio de Caña: `Borrador paquetes solares PowerMx.xlsx` (4 a 14 paneles JA 630 W,
+  inversores Growatt MIC 3300 / MIN 6000 / MIN 10000, estructura Aluminext reforzada de 215 km/h, revisión
+  eléctrica de cada arreglo, híbrido A = interconectado + respaldo LUX con batería, híbrido B = todo en LUX
+  sin inyección). El generador vive en el scratchpad de esa sesión; las reglas se pasarán a
+  `src/lib/armado.js` con los 6 paquetes del Excel como prueba de regresión.
+- **Decisiones de Caña (01/10/2026):** margen de los productos **30 % sobre el costo** (el borrador usaba 30 %
+  sobre el precio; al armar los paquetes en el CRM usarán la regla de margen); la mano de obra del borrador
+  como valor inicial, editable (`parametros_costeo`, SQL 51).
+- **Pendiente: promociones en paquetes para reducir ese margen** (pedido de Caña, 01/10/2026). Idea: una
+  regla de margen de categoría `paquete_solar` más baja, o un descuento con vigencia, sin tocar el margen
+  de los productos sueltos.
+- **Siguiente paso acordado:** SQL de recetas de paquete (`paquete_solar_lineas`, producto o grupo
+  equivalente por línea; el precio lo recalcula la base con cada sync, con el mismo candado del ±15 %) +
+  `armado.js` + pantalla "Paquetes solares"; luego "Sistema a la medida" en Cotizaciones.
+- **Siguen sin decidir:** si el precio publicado incluye IVA, y el híbrido A o B.
 
 ## Compras (SQL 41, 27/09/2026) — SQL escrito, falta correrlo
 

@@ -4,14 +4,16 @@ import {
   ETIQUETA_TIPO, esAprobable, ordenarCola, contarPorTipo, detalleDeCambio, explicacion,
   CATEGORIAS, alcanceDeRegla, textoDeRegla, ordenarReglas, reglaVacia, reglaInicial, MARGEN_INICIAL_PCT, validarRegla,
   estadoDeVinculo, ETIQUETA_VINCULO, textoDeCorrida, pesos, totalPorTraer, nombreCategoriaCRM, faltanConPrecioAuto,
-  cargarCola, resolverRevision, resolverEnLote, cargarUltimaCorrida, cargarReglas, guardarRegla,
+  PROVEEDORES, nombreProveedor, proveedoresDe, proveedoresLibres, ultimaPorProveedor,
+  descuentoDe, ordenarPromociones, cargarPromociones,
+  cargarCola, resolverRevision, resolverEnLote, cargarUltimasCorridas, cargarReglas, guardarRegla,
   cambiarActivaRegla, buscarProductosCRM, buscarEnProveedor, vincularProducto,
   cargarResumenProveedor, importarProductos, activarPrecioAutomatico,
 } from './lib/proveedor'
 
-// Precios del proveedor (XLStore). Aquí no se calcula ningún precio: lo calcula la base al
-// sincronizar (SQL 44). Esta pantalla decide qué se publica (la cola), qué productos siguen al
-// proveedor (los vínculos) y con qué margen (las reglas).
+// Precios de los proveedores (XLStore y Solarama). Aquí no se calcula ningún precio: lo calcula la
+// base al sincronizar (SQL 44 y 51). Esta pantalla decide qué se publica (la cola), qué productos
+// siguen a qué proveedor (los vínculos) y con qué margen (las reglas).
 
 // ---------------------------------------------------------------------------
 // Cola: lo que el sync no quiso publicar solo. Componente de nivel superior para que la nota
@@ -36,6 +38,7 @@ function TarjetaRevision({ q, irAReglas, onCambio }) {
       <h3 style={{ marginBottom: 2 }}>{nombre}</h3>
       <p className="ayuda" style={{ marginTop: 0 }}>
         {q.productos?.sku && <>{q.productos.sku} · </>}código del proveedor {q.proveedor_sku}
+        {q.detalle?.proveedor && q.tipo === 'sku_desaparecido' && <> ({nombreProveedor(q.detalle.proveedor)})</>}
       </p>
       <span className={q.tipo === 'cambio_precio' || q.tipo === 'sku_desaparecido' ? 'etiqueta etiqueta-aviso' : 'etiqueta'}>
         {ETIQUETA_TIPO[q.tipo] || q.tipo}
@@ -155,29 +158,40 @@ function PestanaCola({ irAReglas }) {
 // ---------------------------------------------------------------------------
 // Vínculos: qué producto del CRM sigue a cuál del proveedor.
 // ---------------------------------------------------------------------------
-function FilaProducto({ p, lectura, onCambio }) {
-  const [buscando, setBuscando] = useState(false)
+function FilaProducto({ p, lecturas, onCambio }) {
+  const [buscando, setBuscando] = useState(null)   // null = cerrado; si no, el proveedor donde se busca
   const [texto, setTexto] = useState(p.modelo || p.sku)
   const [resultados, setResultados] = useState([])
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState('')
   const estado = estadoDeVinculo(p)
+  const ligados = proveedoresDe(p)
+  const libres = proveedoresLibres(p)
 
-  async function buscar(t) {
+  async function buscar(t, proveedor) {
     setTexto(t)
-    if (t.trim().length < 2) { setResultados([]); return }
-    const r = await buscarEnProveedor(t)
+    if (!proveedor || t.trim().length < 2) { setResultados([]); return }
+    const r = await buscarEnProveedor(t, proveedor)
     if (r.ok) { setResultados(r.datos); setError('') } else setError(r.texto)
   }
 
-  async function guardar(sku, auto) {
+  function abrirBusqueda(proveedor) {
+    if (buscando === proveedor) { setBuscando(null); return }
+    setBuscando(proveedor)
+    buscar(texto, proveedor)
+  }
+
+  async function guardar(proveedor, sku, auto) {
     setOcupado(true); setError('')
-    const r = await vincularProducto(p.id, sku, auto)
+    const r = await vincularProducto(p.id, sku, auto, proveedor)
     setOcupado(false)
     if (!r.ok) { setError(r.texto); return }
-    setBuscando(false)
+    setBuscando(null)
     onCambio()
   }
+
+  // El interruptor de precio automático es del producto; se manda junto con su primer proveedor.
+  const primero = ligados[0]
 
   return (
     <section className="tarjeta">
@@ -188,37 +202,52 @@ function FilaProducto({ p, lectura, onCambio }) {
       </div>
       <span className={estado === 'automatico' ? 'etiqueta' : 'etiqueta etiqueta-aviso'}>{ETIQUETA_VINCULO[estado]}</span>
 
-      {p.proveedor_sku && (
+      {ligados.map(l => {
+        const lectura = lecturas[`${l.proveedor}|${l.proveedor_sku}`]
+        return (
+          <div key={l.proveedor} className="fila" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+            <p className="ayuda" style={{ margin: 0 }}>
+              <strong>{nombreProveedor(l.proveedor)}</strong>
+              {l.opcion === 1 && ligados.length > 1 && <> · <strong>opción 1</strong> (el más barato)</>}
+              {' '}· código {l.proveedor_sku}
+              {lectura
+                ? <> · costo {lectura.costo == null ? 'sin dato' : `${lectura.costo} ${lectura.moneda}`}
+                  {l.costo_mxn != null && <> ({pesos(l.costo_mxn)})</>}
+                  {lectura.stock_local != null && <> · {lectura.stock_local} en Mérida</>}
+                  {!lectura.vigente && <> · <strong>ya no lo lista</strong></>}</>
+                : ' · todavía sin lectura'}
+            </p>
+            <button disabled={ocupado} onClick={() => guardar(l.proveedor, null, p.precio_auto)}>
+              Quitar {nombreProveedor(l.proveedor)}
+            </button>
+          </div>
+        )
+      })}
+      {ligados.length > 1 && (
         <p className="ayuda">
-          Sigue a <strong>{p.proveedor_sku}</strong>
-          {lectura
-            ? <> · costo {lectura.costo == null ? 'sin dato' : `${lectura.costo} ${lectura.moneda}`}
-              {lectura.stock_local != null && <> · {lectura.stock_local} en Mérida</>}
-              {!lectura.vigente && <> · <strong>el proveedor ya no lo lista</strong></>}</>
-            : ' · sin lectura del proveedor'}
+          El costo es el de la opción 1 (a quien se le compra) y el precio publicado se calcula con el
+          proveedor más caro.
         </p>
       )}
 
       {error && <Alerta tipo="error">{error}</Alerta>}
 
-      <div className="fila" style={{ flexWrap: 'wrap', gap: 8 }}>
-        {estado === 'sin_vincular' && (
-          <button disabled={ocupado} onClick={() => { setBuscando(v => !v); if (!buscando) buscar(texto) }}>
-            {buscando ? 'Cerrar búsqueda' : 'Vincular con el proveedor'}
+      <div className="fila" style={{ flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+        {libres.map(prov => (
+          <button key={prov} disabled={ocupado} onClick={() => abrirBusqueda(prov)}>
+            {buscando === prov ? 'Cerrar búsqueda'
+              : `${ligados.length ? 'Agregar' : 'Vincular con'} ${nombreProveedor(prov)}`}
           </button>
-        )}
-        {estado === 'vinculado' && (
-          <button className="btn-primario" disabled={ocupado} onClick={() => guardar(p.proveedor_sku, true)}>
+        ))}
+        {estado === 'vinculado' && primero && (
+          <button className="btn-primario" disabled={ocupado} onClick={() => guardar(primero.proveedor, primero.proveedor_sku, true)}>
             Activar precio automático
           </button>
         )}
-        {estado === 'automatico' && (
-          <button disabled={ocupado} onClick={() => guardar(p.proveedor_sku, false)}>
+        {estado === 'automatico' && primero && (
+          <button disabled={ocupado} onClick={() => guardar(primero.proveedor, primero.proveedor_sku, false)}>
             Pasar a precio manual
           </button>
-        )}
-        {estado !== 'sin_vincular' && (
-          <button disabled={ocupado} onClick={() => guardar(null, false)}>Quitar vínculo</button>
         )}
       </div>
       {estado === 'vinculado' && (
@@ -231,14 +260,14 @@ function FilaProducto({ p, lectura, onCambio }) {
       {buscando && (
         <div className="buscador" style={{ marginTop: 10 }}>
           <input
-            placeholder="Buscar en el proveedor por código, modelo o nombre"
-            aria-label="Buscar en el proveedor"
-            value={texto} onChange={e => buscar(e.target.value)} />
+            placeholder={`Buscar en ${nombreProveedor(buscando)} por código, modelo o nombre`}
+            aria-label={`Buscar en ${nombreProveedor(buscando)}`}
+            value={texto} onChange={e => buscar(e.target.value, buscando)} />
           {resultados.length > 0 && (
             <div className="buscador-lista">
               {resultados.map(r => (
                 <button key={r.sku_proveedor} type="button" disabled={ocupado}
-                  onClick={() => guardar(r.sku_proveedor, false)}>
+                  onClick={() => guardar(buscando, r.sku_proveedor, p.precio_auto)}>
                   {r.sku_proveedor} — {r.marca} {r.modelo}
                   <span className="ayuda">
                     {r.nombre} · {r.costo == null ? 'sin costo' : `${r.costo} ${r.moneda}`}
@@ -277,9 +306,10 @@ function PestanaVinculos() {
   return (
     <>
       <p className="ayuda">
-        Un producto solo sigue al proveedor si está vinculado. Vincular no cambia ningún precio: el
-        precio cambia hasta que activas el precio automático. Los productos que trajiste del
-        proveedor ya vienen vinculados; aquí se liga uno que ya tenías de antes.
+        Un producto solo sigue a un proveedor si está vinculado, y puede seguir a los dos: entonces
+        su costo es el del más barato (opción 1) y su precio publicado se calcula con el más caro.
+        Vincular no cambia ningún precio hasta que activas el precio automático. Los productos que
+        trajiste de un proveedor ya vienen vinculados; aquí se liga uno que ya tenías de antes.
       </p>
       {error && <Alerta tipo="error">{error}</Alerta>}
       {datos === null && !error && <p>Cargando…</p>}
@@ -297,7 +327,7 @@ function PestanaVinculos() {
         <>
           {datos.productos.length === 0 && <p className="ayuda">No hay productos con ese filtro.</p>}
           {datos.productos.map(p => (
-            <FilaProducto key={p.id} p={p} lectura={datos.lecturas[p.proveedor_sku]} onCambio={cargar} />
+            <FilaProducto key={p.id} p={p} lecturas={datos.lecturas} onCambio={cargar} />
           ))}
           {datos.total > datos.productos.length && (
             <p className="ayuda">
@@ -315,6 +345,7 @@ function PestanaVinculos() {
 // publicar y sin precio, ya vinculados; se publican cuando su precio se aprueba.
 // ---------------------------------------------------------------------------
 function PestanaTraer({ irA }) {
+  const [proveedor, setProveedor] = useState(PROVEEDORES[0][0])
   const [resumen, setResumen] = useState(null)
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
@@ -323,9 +354,13 @@ function PestanaTraer({ irA }) {
   const [ocupado, setOcupado] = useState(false)
 
   const cargar = useCallback(async () => {
-    const r = await cargarResumenProveedor()
+    const r = await cargarResumenProveedor(proveedor)
     if (r.ok) { setResumen(r.datos); setError('') } else setError(r.texto)
-  }, [])
+  }, [proveedor])
+
+  function elegirProveedor(k) {
+    setProveedor(k); setResumen(null); setMarcadas(null); setConfirmando(false); setMensaje(''); setError('')
+  }
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     cargar()
@@ -343,7 +378,7 @@ function PestanaTraer({ irA }) {
 
   async function traer() {
     setOcupado(true); setError(''); setMensaje('')
-    const r = await importarProductos(elegidas)
+    const r = await importarProductos(elegidas, proveedor)
     setOcupado(false); setConfirmando(false)
     if (!r.ok) { setError(r.texto); return }
     const d = r.datos
@@ -354,7 +389,7 @@ function PestanaTraer({ irA }) {
 
   async function activar(categoria) {
     setOcupado(true); setError(''); setMensaje('')
-    const r = await activarPrecioAutomatico(categoria)
+    const r = await activarPrecioAutomatico(categoria, proveedor)
     setOcupado(false)
     if (!r.ok) { setError(r.texto); return }
     setMensaje(`Precio automático activado en ${r.datos} producto${r.datos === 1 ? '' : 's'} de ${nombreCategoriaCRM(categoria).toLowerCase()}. ` +
@@ -364,9 +399,18 @@ function PestanaTraer({ irA }) {
 
   return (
     <>
+      <div className="pestanas" aria-label="Proveedor">
+        {PROVEEDORES.map(([k, nombre]) => (
+          <button key={k} className="pestana" aria-pressed={proveedor === k} onClick={() => elegirProveedor(k)}>{nombre}</button>
+        ))}
+      </div>
       <p className="ayuda">
-        Lo que el proveedor tiene y todavía no está en tu catálogo. Al traerlo, el producto queda en
-        Inventario con el código de XLStore, sin precio y <strong>sin publicar</strong>.
+        Lo que {nombreProveedor(proveedor)} tiene y todavía no está en tu catálogo. Al traerlo, el
+        producto queda en Inventario {proveedor === 'solarama'
+          ? <>con el código de Solarama y el prefijo SLR- (por ejemplo SLR-MIN-3600TL-X2)</>
+          : <>con el código de XLStore</>}, sin precio y <strong>sin publicar</strong>.
+        {proveedor === 'solarama' && <> Solarama no da imágenes ni existencias: sus productos salen sin foto.
+          Los que también vende XLStore ya están ligados y no se duplican.</>}
       </p>
       {error && <Alerta tipo="error">{error}</Alerta>}
       {mensaje && <Alerta tipo="ok">{mensaje}</Alerta>}
@@ -443,6 +487,76 @@ function PestanaTraer({ irA }) {
 }
 
 // ---------------------------------------------------------------------------
+// En promoción (SQL 52): repetidos que salen bastante más baratos en el otro proveedor. La base los
+// calcula en cada sincronización; aquí solo se ven. El sitio los muestra en su apartado "En promoción".
+// ---------------------------------------------------------------------------
+function PestanaPromociones({ irA }) {
+  const [lista, setLista] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let vivo = true
+    ;(async () => {
+      const r = await cargarPromociones()
+      if (!vivo) return
+      if (r.ok) setLista(ordenarPromociones(r.datos)); else setError(r.texto)
+    })()
+    return () => { vivo = false }
+  }, [])
+
+  return (
+    <>
+      <p className="ayuda">
+        Artículos que venden los dos proveedores y salen bastante más baratos comprándolos en el otro
+        (casi siempre Solarama): se anuncian en el sitio, en el apartado &quot;En promoción&quot;, a ese costo más el
+        margen de promoción, con el precio normal tachado. Se recalculan solos en cada sincronización y se
+        apagan si la lista de ese proveedor envejece. El margen, el descuento mínimo y la vigencia se
+        ajustan en Precios.
+      </p>
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {lista === null && !error && <p>Cargando…</p>}
+      {lista && lista.length === 0 && (
+        <section className="tarjeta">
+          <h3>Nada en promoción por ahora</h3>
+          <p className="ayuda">
+            Aparecen cuando un artículo repetido sale lo bastante más barato en el otro proveedor para
+            bajarle el precio y seguir ganando el margen de promoción.
+          </p>
+        </section>
+      )}
+      {(lista || []).map(p => {
+        const opcion1 = proveedoresDe(p)[0]
+        return (
+          <section key={p.id} className="tarjeta">
+            <strong>{p.sku} — {p.nombre}</strong>
+            <dl style={{ display: 'grid', gap: 4, margin: '10px 0 0' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <dt className="ayuda" style={{ margin: 0 }}>Precio normal:</dt>
+                <dd style={{ margin: 0, fontWeight: 700 }}>{pesos(p.precio)}</dd>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <dt className="ayuda" style={{ margin: 0 }}>En promoción:</dt>
+                <dd style={{ margin: 0, fontWeight: 700 }}>
+                  {pesos(p.precio_promocion)} · baja {descuentoDe(p.precio, p.precio_promocion)} %
+                </dd>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <dt className="ayuda" style={{ margin: 0 }}>Se compra en:</dt>
+                <dd style={{ margin: 0, fontWeight: 700 }}>
+                  {opcion1 ? `${nombreProveedor(opcion1.proveedor)} · ${pesos(opcion1.costo_mxn ?? p.costo)}` : pesos(p.costo)}
+                </dd>
+              </div>
+            </dl>
+            {!p.publicar && <p className="ayuda">No está publicado: no sale en el sitio.</p>}
+          </section>
+        )
+      })}
+      {irA && lista && lista.length > 0 && <button onClick={() => irA('tarifas')}>Ajustar la promoción en Precios</button>}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Reglas de margen. Sin regla, el sync no calcula precio (queda en la cola como "falta regla").
 // ---------------------------------------------------------------------------
 function PestanaReglas() {
@@ -468,6 +582,7 @@ function PestanaReglas() {
       setForm({
         categoria: r.categoria || '', marca: r.marca || '', margen_pct: String(r.margen_pct),
         margen_minimo_mxn: String(r.margen_minimo_mxn), redondeo: String(r.redondeo),
+        sobre: r.sobre || 'costo',
       })
       setEditando(r.id)
     } else {
@@ -494,7 +609,7 @@ function PestanaReglas() {
     const r = await guardarRegla(null, v.regla)
     setOcupado(false)
     if (!r.ok) { setError(r.texto); return }
-    setMensaje(`Listo: margen general de ${MARGEN_INICIAL_PCT} %. Si no te parece, edítalo abajo; se usa en la próxima sincronización.`)
+    setMensaje(`Listo: margen general de ${MARGEN_INICIAL_PCT} % sobre el costo. Si no te parece, edítalo abajo; se usa en la próxima sincronización.`)
     cargar()
   }
 
@@ -511,9 +626,10 @@ function PestanaReglas() {
   return (
     <>
       <p className="ayuda">
-        Precio = el mayor entre costo + margen % y costo + margen mínimo, redondeado hacia arriba.
-        Si varias reglas le tocan a un producto, gana la más específica (marca y categoría, luego
-        marca, luego categoría, luego la general).
+        Con el margen sobre el costo, precio = costo × (1 + margen): 30 % sobre 1,000 da 1,300. Sobre el
+        precio de venta, precio = costo ÷ (1 − margen). Nunca queda por debajo de costo + margen mínimo y
+        se redondea hacia arriba. Si varias reglas le tocan a un producto,
+        gana la más específica (marca y categoría, luego marca, luego categoría, luego la general).
       </p>
       {error && <Alerta tipo="error">{error}</Alerta>}
       {mensaje && <Alerta tipo="ok">{mensaje}</Alerta>}
@@ -526,8 +642,8 @@ function PestanaReglas() {
         <section className="tarjeta">
           <h3>Empezar con {MARGEN_INICIAL_PCT} % de margen</h3>
           <p className="ayuda">
-            Crea una regla general del {MARGEN_INICIAL_PCT} % sobre el costo, redondeada al peso, para todos los
-            productos. Es solo el punto de partida: después la editas, o agregas reglas por marca o por
+            Crea una regla general del {MARGEN_INICIAL_PCT} % sobre el costo, redondeada al peso, para todos
+            los productos. Es solo el punto de partida: después la editas, o agregas reglas por marca o por
             categoría que le ganan.
           </p>
           <button className="btn-primario" disabled={ocupado} onClick={crearInicial}>
@@ -560,6 +676,13 @@ function PestanaReglas() {
               <span>Margen (%)</span>
               <input type="number" min="0" step="any" inputMode="decimal" value={form.margen_pct}
                 onChange={e => campo('margen_pct', e.target.value)} required />
+            </label>
+            <label className="campo">
+              <span>El margen es sobre</span>
+              <select value={form.sobre} onChange={e => campo('sobre', e.target.value)}>
+                <option value="costo">El costo</option>
+                <option value="precio">El precio de venta</option>
+              </select>
             </label>
             <label className="campo">
               <span>Margen mínimo (pesos)</span>
@@ -601,32 +724,34 @@ function PestanaReglas() {
 
 export default function Proveedor({ irA }) {
   const [vista, setVista] = useState('cola')
-  const [corrida, setCorrida] = useState(undefined)   // undefined = cargando, null = ninguna
+  const [corridas, setCorridas] = useState(undefined)   // undefined = cargando; [] = ninguna
   const [pendientes, setPendientes] = useState(null)
 
   useEffect(() => {
     let vivo = true
     ;(async () => {
-      const [c, q] = await Promise.all([cargarUltimaCorrida(), cargarCola()])
+      const [c, q] = await Promise.all([cargarUltimasCorridas(), cargarCola()])
       if (!vivo) return
-      setCorrida(c.ok ? (c.datos[0] || null) : null)
+      setCorridas(c.ok ? ultimaPorProveedor(c.datos) : [])
       setPendientes(q.ok ? q.datos.length : null)
     })()
     return () => { vivo = false }
   }, [vista])
 
-  const estado = textoDeCorrida(corrida)
 
   return (
     <div className="pagina-angosta">
-      <h2>Precios del proveedor</h2>
+      <h2>Precios de los proveedores</h2>
       <p className="ayuda">
-        XLStore (Exel Solar): qué se aprueba antes de publicarse, qué productos lo siguen y con qué
-        margen.
+        XLStore (Exel Solar) y Solarama: qué se aprueba antes de publicarse, qué productos siguen a
+        cada uno y con qué margen.
       </p>
 
-      {corrida === null && <Alerta tipo="info">Todavía no se ha corrido ninguna sincronización.</Alerta>}
-      {estado && <Alerta tipo={estado.tipo}>{estado.texto}</Alerta>}
+      {corridas?.length === 0 && <Alerta tipo="info">Todavía no se ha corrido ninguna sincronización.</Alerta>}
+      {(corridas || []).map(c => {
+        const e = textoDeCorrida(c)
+        return <Alerta key={c.id} tipo={e.tipo}>{e.texto}</Alerta>
+      })}
 
       <div className="pestanas">
         <button className="pestana" aria-pressed={vista === 'cola'} onClick={() => setVista('cola')}>
@@ -634,12 +759,14 @@ export default function Proveedor({ irA }) {
         </button>
         <button className="pestana" aria-pressed={vista === 'traer'} onClick={() => setVista('traer')}>Traer productos</button>
         <button className="pestana" aria-pressed={vista === 'vinculos'} onClick={() => setVista('vinculos')}>Vínculos</button>
+        <button className="pestana" aria-pressed={vista === 'promocion'} onClick={() => setVista('promocion')}>En promoción</button>
         <button className="pestana" aria-pressed={vista === 'reglas'} onClick={() => setVista('reglas')}>Reglas de margen</button>
       </div>
 
       {vista === 'cola' && <PestanaCola irAReglas={() => setVista('reglas')} />}
       {vista === 'traer' && <PestanaTraer irA={irA} />}
       {vista === 'vinculos' && <PestanaVinculos />}
+      {vista === 'promocion' && <PestanaPromociones irA={irA} />}
       {vista === 'reglas' && <PestanaReglas />}
     </div>
   )

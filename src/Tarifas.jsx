@@ -7,6 +7,7 @@ import {
 } from './lib/preventivo'
 import { Alerta } from './ui'
 import { todasLasFilas } from './lib/paginar'
+import { cargarParametrosCosteo, fijarParametroCosteo, valorDeParametro, esParametroDePromocion } from './lib/proveedor'
 
 // Tarifas de servicio (solo admin; el técnico nunca ve precios). Se COPIAN a la
 // partida al cotizar, así que cambiar una tarifa no altera cotizaciones viejas.
@@ -29,6 +30,99 @@ const vacia = {
 }
 
 const aNumero = v => (v === '' || v == null ? null : Number(v))
+
+// ---------------------------------------------------------------------------
+// Costeo de paquetes solares (SQL 51) y promociones (SQL 52), en `parametros_costeo`.
+// El costeo arranca con lo que se estimó en el borrador de paquetes (30/09/2026); la promoción, con
+// 40 % de margen, 5 % de descuento mínimo y 200 días de vigencia de la lista. Caña los corrige aquí y
+// cada cambio queda en auditoría (fijar_parametro_costeo).
+// ---------------------------------------------------------------------------
+const textoUnidad = u => (u === 'MXN' ? 'pesos' : u === 'm' ? 'metros' : u || '')
+
+function FilaParametro({ p, texto, ocupado, onTexto, onGuardar }) {
+  const cambio = texto !== String(p.valor)
+  const valido = valorDeParametro(texto) !== null
+  return (
+    <div className="fila" style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+      <label className="campo" style={{ flex: '1 1 220px', margin: 0 }}>
+        <span>{p.etiqueta} ({textoUnidad(p.unidad)})</span>
+        <input type="number" min="0" step="any" inputMode="decimal" value={texto ?? ''}
+          onChange={e => onTexto(e.target.value)} />
+        {p.nota && <span className="ayuda">{p.nota}</span>}
+      </label>
+      <button disabled={!cambio || !valido || ocupado} onClick={onGuardar}>
+        {cambio ? 'Guardar' : 'Sin cambios'}
+      </button>
+    </div>
+  )
+}
+
+function ParametrosCosteo() {
+  const [lista, setLista] = useState(null)
+  const [textos, setTextos] = useState({})
+  const [ocupado, setOcupado] = useState('')
+  const [error, setError] = useState('')
+  const [mensaje, setMensaje] = useState('')
+
+  async function cargar() {
+    const r = await cargarParametrosCosteo()
+    if (!r.ok) { setError(r.texto); setLista([]); return }
+    setLista(r.datos)
+    setTextos(Object.fromEntries(r.datos.map(p => [p.clave, String(p.valor)])))
+  }
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { cargar() }, [])
+
+  async function guardar(p) {
+    const valor = valorDeParametro(textos[p.clave])
+    if (valor === null) { setError(`"${p.etiqueta}" debe ser un número de 0 en adelante.`); return }
+    setOcupado(p.clave); setError(''); setMensaje('')
+    const r = await fijarParametroCosteo(p.clave, valor)
+    setOcupado('')
+    if (!r.ok) { setError(r.texto); return }
+    setMensaje(`${p.etiqueta} quedó en ${valor} ${textoUnidad(p.unidad)}.`)
+    cargar()
+  }
+
+  const fila = p => (
+    <FilaParametro key={p.clave} p={p} texto={textos[p.clave]} ocupado={ocupado === p.clave}
+      onTexto={v => setTextos(t => ({ ...t, [p.clave]: v }))} onGuardar={() => guardar(p)} />
+  )
+  const costeo = (lista || []).filter(p => !esParametroDePromocion(p))
+  const promocion = (lista || []).filter(esParametroDePromocion)
+
+  return (
+    <>
+      <section className="tarjeta">
+        <h3>Costeo de paquetes solares</h3>
+        <p className="ayuda">
+          Lo que se suma al material al armar un paquete solar. Los valores iniciales son el estimado del
+          borrador de paquetes: corrígelos con lo que te cuesta de verdad. El margen de los paquetes es el
+          de las reglas de margen (pantalla Proveedor).
+        </p>
+        {error && <Alerta tipo="error">{error}</Alerta>}
+        {mensaje && <Alerta tipo="ok" palabra="Listo">{mensaje}</Alerta>}
+        {lista === null && <p>Cargando…</p>}
+        {lista && lista.length === 0 && !error && (
+          <p className="ayuda">Todavía no hay parámetros: corre el SQL 51 en Supabase.</p>
+        )}
+        {costeo.map(fila)}
+      </section>
+      {promocion.length > 0 && (
+        <section className="tarjeta">
+          <h3>Promociones del sitio</h3>
+          <p className="ayuda">
+            Un artículo que venden los dos proveedores y sale bastante más barato en uno (casi siempre
+            Solarama) se anuncia en el apartado &quot;En promoción&quot; del sitio: a su costo más este margen, con
+            el precio normal tachado. Se recalcula en cada sincronización; la lista de ese proveedor tiene que
+            ser reciente.
+          </p>
+          {promocion.map(fila)}
+        </section>
+      )}
+    </>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Paquetes de mantenimiento: qué refacciones lleva un preventivo (SQL 28).
@@ -571,6 +665,8 @@ export default function Tarifas() {
           </table>
         </div>
       </section>
+
+      <ParametrosCosteo />
 
       <PaquetesMantenimiento productos={productos} />
 

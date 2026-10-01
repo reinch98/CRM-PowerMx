@@ -2,6 +2,7 @@
 //
 //   node scripts/proveedor/sync.js --archivo C:\ruta\xlstore_catalogo.xlsx
 //   node scripts/proveedor/sync.js --archivo x.xlsx --seco     (solo lee y revisa; no toca nada)
+//   node scripts/proveedor/sync.js --proveedor solarama --archivo "LISTA DE PRECIOS SOLARAMA <MES>.pdf"
 //
 // Variables de entorno (las mismas cuentas que el webhook de WhatsApp y `convertir.js`):
 //   SUPABASE_URL, SUPABASE_ANON_KEY, BOT_EMAIL, BOT_PASSWORD
@@ -34,6 +35,8 @@ export function leerArgumentos(argv) {
     } else throw new Error(`Argumento desconocido: ${a}`)
   }
   if (!Number.isInteger(o.lote) || o.lote < 1 || o.lote > 1000) throw new Error('--lote debe ser de 1 a 1000.')
+  // Solarama solo publica su lista en PDF: si no se dice otro adaptador, se usa el suyo.
+  if (o.proveedor === 'solarama' && !argv.includes('--adaptador')) o.adaptador = 'solarama'
   return o
 }
 
