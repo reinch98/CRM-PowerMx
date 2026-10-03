@@ -436,6 +436,35 @@ marcar al pulsar el enlace da por enviado algo que el admin podría no mandar; p
 nuevo". Un cambio de técnico sin cambio de horario también manda "CAMBIO en el servicio" al cliente y
 al técnico que no cambió (informativo, con el nuevo nombre).
 
+**El recordatorio del día anterior (SQL 54, 01/10/2026) — aplicado, falta correr la
+prueba y programar el cron.** Estaba en el plan original ("confirmación por plantilla →
+recordatorio el día anterior → …") pero nunca se construyó: `avisos.tipo` solo aceptaba
+confirmacion/reprogramacion/cancelacion. Se encontró el hueco preparando las plantillas
+de Meta (Caña mandó su cuenta a revisión el 01/10/2026) — hacía falta un cuarto tipo de
+aviso para poder redactar la plantilla `recordatorio_cita`.
+- `generar_recordatorios()` (`supabase/sql/54_recordatorio_cita.sql`, revocada a todos:
+  no es para la API) encola un aviso `recordatorio` **solo al cliente** (el técnico ya ve
+  su agenda en la app) por cada cita `programada` cuya fecha sea **mañana** en hora de
+  Mérida. Set-based como `_encolar_avisos`, no por cita una por una; idempotente de
+  verdad — nunca inserta un segundo recordatorio para la misma cita y el mismo
+  destinatario, sin importar cuántas veces se llame ni en qué estado haya quedado el
+  anterior (el índice `un_aviso_pendiente` de la 16 solo cubre "pendiente").
+  `texto_aviso()` se redefinió completa (misma técnica que la 29 con
+  `paquete_preventivo`) con la rama nueva.
+- **Falta programarlo:** `generar_recordatorios()` existe pero nada la llama todavía.
+  Hace falta activar la extensión `pg_cron` desde Supabase → Database → Extensions (un
+  clic) y correr una vez `select cron.schedule('recordatorios-de-cita', '0 14 * * *',
+  $$select generar_recordatorios()$$);` (14:00 UTC = 08:00 Mérida, sin horario de
+  verano) — los pasos exactos están comentados al final del archivo 54. Es la primera
+  vez que el proyecto usa un cron de verdad dentro de la base.
+  Prueba (`54_prueba_recordatorio_cita.sql`, SQL plano, sin plpgsql): dos citas de
+  mañana (una con contacto de empresa, otra con el teléfono de la ficha) y una de
+  pasado mañana como control. **Escrita; falta correrla en Supabase.**
+- Sale igual que los demás en la cola "Avisos pendientes" de la Agenda, con su
+  etiqueta propia (`TIPOS.recordatorio` en `src/lib/avisos.js`) — no hizo falta tocar
+  la pantalla. Mientras no haya plantilla aprobada ni envío por la API, se manda a
+  mano con el enlace de WhatsApp, como confirmación/reprogramación/cancelación.
+
 **Datos que faltan capturar** (desde la pantalla Tarifas, no bloquean el código): tarifas
 de diagnóstico por clase × tramo de kW, precio por km, y `distancia_km` de cada cliente
 (se edita en la lista de Clientes).
@@ -875,6 +904,17 @@ y probado** (10 pasos con rollback, todos "ok"). Las dos funciones (`agente-what
 - **Lo lento no es el código:** la verificación del negocio en Meta, la aprobación de plantillas y
   un número dedicado que no esté activo en la app normal de WhatsApp tardan días o semanas.
   Conviene iniciar ese trámite antes que el código.
+- **01/10/2026: la verificación del negocio en Meta ya está en revisión.** Mientras se resuelve,
+  se redactaron y se están dando de alta **5 plantillas** (categoría Utilidad, español MX) en el
+  Administrador de WhatsApp: `cita_confirmada`, `cita_reprogramada`, `cita_cancelada`,
+  `recordatorio_cita` y `orden_servicio_lista` (esta con encabezado de documento, para el PDF de
+  cierre). Meta usa **variables con nombre** (`{{nombre}}`, no `{{1}}`) — minúsculas y guión bajo,
+  dos llaves; una variable vacía (`{{}}`) o en otro formato se rechaza. Son textos **fijos**
+  a propósito, más simples que lo que arma `texto_aviso()` hoy (sin las líneas que aparecen o no
+  según el caso): una plantilla no puede tener contenido condicional, así que cuando se mande por
+  la API va a hacer falta una versión de cada mensaje recortada a lo fijo, aparte del texto libre
+  que sigue usando el envío manual por `wa.me`.
+  Redactarlas destapó que faltaba el tipo `recordatorio` en el código — ver el SQL 54 arriba.
 
 **Bandeja de WhatsApp (SQL 22) — aplicada y probada el 22/09/2026** (10 pasos con rollback,
 todos "ok"; la pantalla solo se vio en el emulador)
@@ -950,6 +990,89 @@ No contesta ni agenda nada: eso sigue siendo a mano desde la pantalla WhatsApp.
   un 401 sería "Verify JWT" encendido.
 - El **token de Meta no interviene aquí**: recibir no lo usa. Que el token temporal de 24 h
   venza no apaga la bandeja; hará falta uno permanente cuando el CRM **mande** por la API.
+
+## Campañas mensuales de WhatsApp (SQL 57, 03/10/2026) — aplicado y probado en Supabase el 03/10/2026 (9 de 9 "ok")
+
+Sobre la cola de la 56. Solo clientes de PowerMx (los "PowerMx (confirmó)" de la hoja Asignación del
+reporte; las campañas de Dutton van en su proyecto). Flujo: cargar el CSV del mes en `campana_envios`
+(`campana_powermx_<AAAA-MM>.csv`, lo arma `campanas_csv.py` fuera del repo desde plan_servicio_mensual.xlsx)
+→ `proponer_tanda(mes, 37)` → Caña revisa y quita (`quitar_de_tanda`) → `aprobar_tanda` mete cada envío a
+`salida_wa` como marketing → `resultados_campana(mes)` calcula respondió / cita / BAJA (antes se llenaba a mano).
+- Omite con motivo escrito: BAJA, marketing en los últimos `dias_entre_marketing` días, teléfono
+  inválido, sin plantilla. Las reglas se revisan al proponer Y al aprobar.
+- 6 plantillas de campaña sembradas en `borrador` (seguimiento_pendiente es Utilidad; las demás Marketing;
+  maintenance_reminder en en_US). Hay que darlas de alta en Meta; lo aprobado espera en la cola hasta entonces.
+- Las variables se aplanan (sin saltos de línea ni espacios seguidos) y se recortan: Meta las rechaza si no.
+
+## Cola de salida de WhatsApp (SQL 56, 02/10/2026) — aplicado y probado en Supabase el 03/10/2026 (13 de 13 "ok")
+
+Rediseño acordado con Caña: TODO lo que se manda por la API pasa por una sola cola, `salida_wa`, que vacía
+una sola Edge Function (`enviar-whatsapp`, fase 3, sin construir; necesita el número real y el token
+permanente). Decisiones de Caña: avisos de cita con interruptor `wa_config.avisos_automaticos`
+(arranca apagado → "por aprobar"); el agente sigue en borrador hasta que se apruebe su funcionamiento;
+las tandas de campaña las aprueba él (campañas = SQL 57, pendiente); la regla de traspaso Dutton/PowerMx
+sigue pendiente.
+- Entran a la cola: avisos de cita (trigger sobre `avisos`, si hay plantilla para `aviso:<tipo>:<destinatario>`),
+  la orden en PDF (`encolar_orden(envio)`, una fila por destinatario) y respuestas de texto
+  (`responder_whatsapp`, solo con la ventana de 24 h abierta; aprueba el borrador del agente).
+- `wa_plantillas`: nombre, uso, `variables` (nombres EXACTOS de Meta) y estado. Las 5 de la revisión del
+  01/10 están sembradas `en_revision` con variables SUPUESTAS: al aprobarse, corregirlas y marcar `aprobada`.
+  Una fila con plantilla no aprobada espera sin error.
+- `tomar_salida(n)` (bot) vuelve a revisar las reglas al salir (ventana, baja, plantilla, variables no
+  vacías) y calcula las variables de los avisos con datos frescos (`_variables_aviso`, versión corta del
+  texto). `marcar_salida` deja el mensaje en la conversación y marca el aviso `enviado` por `whatsapp_api`.
+  Un aviso mandado a mano por wa.me cancela su fila de la cola: no sale dos veces.
+- Lo que queda "enviando" más de 10 min pasa a `sin_confirmar` y NO se reintenta solo (Meta no tiene
+  llave de idempotencia; reintentar podría duplicar). Errores temporales: hasta 3 intentos con espera.
+- Acuses (`registrar_estado_wa`) solo avanzan: enviado → entregado → leído (o fallido).
+- `wa_bajas` + `registrar_baja`: BAJA cancela el marketing pendiente de ese número; los avisos de su cita sí le llegan.
+- Interruptor general `wa_config.envio_activo` (apagado).
+- **Corrección del 03/10/2026:** `cola_whatsapp()` nació `stable` pero hace un `update` (pasa a
+  `sin_confirmar` lo atorado), y Postgres lo rechaza en cuanto se llama ("UPDATE is not allowed in a
+  non-volatile function"). La prueba original nunca la llamaba. Se quitó el `stable` en el mismo 56 y la
+  prueba ganó el paso 13 (ahora 14 en total). Vuelto a correr en Supabase el 03/10/2026: 14 de 14 "ok".
+  Lección: una función que escribe no puede ser `stable`, y toda función que la pantalla llame debe
+  aparecer en la prueba.
+
+**Pantalla (03/10/2026, construida y probada en emulador con un Supabase falso):** WhatsApp ganó
+pestañas **Bandeja · Por enviar (n) · Campañas** (`src/SalidaWhatsApp.jsx`, `src/lib/salidaWa.js`, 14 casos
+en `pruebas/salidaWa.prueba.js`).
+- *Por enviar*: los dos interruptores (`envio_activo`, `avisos_automaticos`), "Por aprobar" con Aprobar /
+  No mandar / Aprobar todos, "Con problema" (fallidos y sin confirmar: "Ya lo revisé, quitar"; no hay
+  reintento desde la pantalla, a propósito), cuántos esperan a que Meta apruebe cada plantilla, y el editor
+  de plantillas (variables y estado). El número de la pestaña = por aprobar + con problema.
+- Las variables de una plantilla se separan **solo por comas**: la primera versión partía también por
+  espacios y "nombre del cliente" se guardaba como tres variables válidas. Lo atrapó la prueba en el
+  emulador, no la de Node.
+- *Campañas*: mes (oct-2026 a sep-2027), resumen con % de respuesta, proponer tanda, Quitar / No
+  escribirle, Aprobar / Cancelar tanda, y quién ya recibió o se omitió con su resultado en palabra.
+- En la conversación, con `envio_activo` encendido: "Enviar" y "Aprobar y enviar" (el borrador del agente)
+  van por `responder_whatsapp`; apagado, sigue el flujo de wa.me.
+- Medido en celular (375 px, `pointer: coarse`): 0 textos < 17 px, 0 contrastes < 4.5, 0 px de desborde;
+  los únicos objetivos < 48 px son las dos casillas (26 px) dentro de su etiqueta de 56 px.
+- **Supabase falso para el emulador:** `VITE_SUPABASE_URL=http://prueba.localhost:5199` (así la llave de
+  sesión es `sb-prueba-auth-token`) en un `.env.prueba.local` + `vite --mode prueba`, y un servidor Node
+  que conteste PostgREST. Ojo: `maybeSingle()` de esta versión de supabase-js pide una **lista** y escoge
+  el renglón; si el falso responde un objeto, la app cree que no hay perfil ("tu cuenta no tiene permisos").
+
+## Clientes del historial de WhatsApp (SQL 55, 02/10/2026) — escrito y probado en PGlite (8 de 8), falta correrlo en Supabase
+
+Del reporte del historial de WhatsApp Business de Dutton Hermanos (fuera del repo, en el escritorio de
+Caña), solo entran al CRM los clientes que Caña marque "PowerMx (confirmó)" en la hoja Asignación.
+- `importacion_whatsapp` es una **tabla de paso** (solo admin): el CSV `agente_powermx_contexto.csv` se
+  sube ahí. **Nada entra a `contactos` sin que el admin lo acepte** con `aceptar_importacion_whatsapp(id,
+  cliente?)`, porque el trigger de la 22 liga una conversación a cualquier contacto ACTIVO y desde ese
+  momento el agente ve los datos del cliente. Aceptar crea el cliente (o usa uno existente), el contacto
+  verificado y liga la conversación si ese número ya escribió. `descartar_importacion_whatsapp` exige motivo.
+- `wa_contexto` se redefine (misma lógica de la 27, con asignación en lugar de `select ... into`) y gana
+  `historial` (equipo, último servicio, pendiente) y `razon_social` (la de `datos_fiscales` manda).
+- El agente de **Dutton** vive en otro proyecto de Supabase, fuera de este repo
+  (`C:\Users\USER\Documents\dutton-whatsapp`). No se comparte nada entre los dos.
+- PGlite para probar SQL (arnés de usar y tirar en el scratchpad de la sesión: `@electric-sql/pglite`
+  0.2 + stubs de `auth.jwt()`/`auth.uid()` y los roles `anon`/`authenticated`): carga
+  la foto del esquema por sentencias y en varias pasadas (las funciones de la foto aparecen antes que los
+  tipos que usan) con `check_function_bodies = off`. Supabase concede privilegios a `authenticated` por
+  defecto en cada tabla nueva y PGlite no: por eso la 55 lleva su `grant` explícito.
 
 ## Solicitudes del sitio (SQL 36, 27/09/2026) — SQL aplicado y probado; falta desplegar la función y publicar
 
@@ -1654,7 +1777,7 @@ menos cada 5 meses**.
   propongan al proveedor de la opción 1; volver a leer el PDF cada mes (si cambia el formato, la lectura lo
   dice y hay que ajustar `FORMAS`).
 
-## Disponibilidad y "En promoción" (SQL 52, 01/10/2026) — SQL escrito y probado en PGlite; falta correrlo en Supabase
+## Disponibilidad y "En promoción" (SQL 52, 01/10/2026) — aplicado y probado en Supabase (6 de 6)
 
 Pedido de Caña: "el margen es sobre el costo; agrega las existencias de la última lectura de XLStore a la
 página; lo de Solarama será bajo pedido; los que comparten proveedor, el precio más caro; y un apartado EN
@@ -1690,9 +1813,11 @@ PROMOCIÓN, con un margen considerable pero comprándolo en Solarama".
   encabezado, y orden: promoción, luego lo que se entrega antes. Probado con un catálogo de mentira en
   escritorio y celular (0 px de desborde; el carrito guarda 7,097).
 - **Probado:** la 52 se aplica dos veces sin error; su prueba (6 pasos) y las de la 44, 45, 46, 50 y 51 dan
-  lo esperado en PGlite. `npm test` (350), lint y build en verde.
-- **Para ponerlo en marcha:** (1) correr `52_disponibilidad_y_promociones.sql` y su prueba; (2) publicar el
-  CRM y el sitio (`convertir.js` y `catalogo-solar.html`); (3) sincronizar XLStore (`powermx.ps1` opción 1
+  lo esperado en PGlite. `npm test` (350), lint y build en verde. **En Supabase, 6 de 6 "ok" (01/10/2026)**,
+  incluido el catálogo: P52A inmediata con promoción 1,960 y existencia 3/40, P52B "proveedor" con 12 en el país,
+  P52C sobre pedido, y 0 campos privados (ni `costo` ni `stock_local`/`stock_proveedor`).
+- **Para ponerlo en marcha:** ~~(1) correr `52_disponibilidad_y_promociones.sql` y su prueba~~ hecho; ~~(2) publicar el
+  CRM y el sitio (`convertir.js` y `catalogo-solar.html`)~~ hecho (commits `6875a18` y `27335f3`); (3) sincronizar XLStore (`powermx.ps1` opción 1
   o 4): aplica el 30 % sobre el costo (los precios bajan ~3.7 % contra el 35 % de antes, o ~9 % si ya se había
   sincronizado con la 51) y calcula las promociones; (4) opción 2 para actualizar el sitio.
 

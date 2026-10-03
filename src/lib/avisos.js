@@ -9,7 +9,8 @@ import { normalizarTelefono } from './contactos'
 export const TIPOS = {
   confirmacion: 'Confirmación',
   reprogramacion: 'Cambio de horario',
-  cancelacion: 'Cancelación'
+  cancelacion: 'Cancelación',
+  recordatorio: 'Recordatorio'
 }
 export const etiquetaTipo = tipo => TIPOS[tipo] ?? tipo
 

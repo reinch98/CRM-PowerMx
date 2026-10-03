@@ -66,6 +66,7 @@ test('cuandoCorto: sin fecha lo dice; una cita puede estar por programar', () =>
 
 test('etiquetaTipo y etiquetaPara nunca dejan una clave cruda a la vista', () => {
   assert.equal(etiquetaTipo('reprogramacion'), 'Cambio de horario')
+  assert.equal(etiquetaTipo('recordatorio'), 'Recordatorio')
   assert.equal(etiquetaTipo('otra_cosa'), 'otra_cosa')
   assert.equal(etiquetaPara('tecnico'), 'Técnico')
   assert.equal(etiquetaPara('cliente'), 'Cliente')

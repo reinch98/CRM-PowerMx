@@ -6,6 +6,8 @@ import {
   marcarLeida, cerrarConversacion, vincularConversacion,
   cargarAgente, guardarAgente, marcarBorradorEnviado
 } from './lib/whatsapp'
+import { cargarConfig, cargarCola, agruparCola, responderPorApi } from './lib/salidaWa'
+import { ColaSalida, Campanas } from './SalidaWhatsApp'
 
 const cuando = iso => iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : ''
 
@@ -13,7 +15,7 @@ const cuando = iso => iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: '
 // Una conversación abierta: los mensajes y la caja para responder. Componente de nivel
 // superior (no dentro de otro) para que la caja de texto no pierda el foco al escribir.
 // ---------------------------------------------------------------------------
-function Conversacion({ conv, contactos, onVolver, onCambio }) {
+function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
   const [mensajes, setMensajes] = useState(null)
   const [texto, setTexto] = useState('')
   const [contacto, setContacto] = useState('')
@@ -45,6 +47,19 @@ function Conversacion({ conv, contactos, onVolver, onCambio }) {
     if (!r.ok) return setError(r.texto)
     setMensaje('Respuesta guardada en la conversación. Se abrió WhatsApp: ahí la mandas.')
     setTexto('')
+    cargar(); onCambio()
+  }
+
+  // Con la API encendida la respuesta va a la cola (SQL 56) y sale sola; sin ella, wa.me.
+  async function enviarPorApi(textoAEnviar, borradorId = null) {
+    setError(''); setMensaje('')
+    if (!textoAEnviar?.trim()) return setError('Escribe la respuesta.')
+    setOcupado(true)
+    const r = await responderPorApi(conv.id, textoAEnviar, borradorId)
+    setOcupado(false)
+    if (!r.ok) return setError(r.texto)
+    setMensaje('En la cola: sale en el siguiente minuto.')
+    if (!borradorId) setTexto('')
     cargar(); onCambio()
   }
 
@@ -123,7 +138,12 @@ function Conversacion({ conv, contactos, onVolver, onCambio }) {
             {esBorrador(m) && (
               <div style={{ marginTop: 6 }}>
                 <span className="etiqueta etiqueta-aviso">Borrador del agente · sin enviar</span>
-                {enlaceWhatsApp(conv.telefono, m.texto) && (
+                {apiActiva && ventana.puede ? (
+                  <div style={{ marginTop: 6 }}>
+                    <button type="button" className="btn-primario" disabled={ocupado}
+                      onClick={() => enviarPorApi(m.texto, m.id)}>Aprobar y enviar</button>
+                  </div>
+                ) : enlaceWhatsApp(conv.telefono, m.texto) && (
                   <div style={{ marginTop: 6 }}>
                     <a className="btn btn-primario" href={enlaceWhatsApp(conv.telefono, m.texto)}
                       target="_blank" rel="noreferrer"
@@ -144,11 +164,15 @@ function Conversacion({ conv, contactos, onVolver, onCambio }) {
           placeholder="Escribe la respuesta…" />
       </label>
       <p className="ayuda">
-        Todavía no hay envío automático: al guardar se abre WhatsApp con el texto listo y ahí lo
-        mandas. La respuesta queda en esta conversación de todos modos.
+        {apiActiva
+          ? (ventana.puede ? 'Se manda por la API de Meta: sale en el siguiente minuto.' : 'Ventana cerrada: solo con plantilla aprobada.')
+          : 'Todavía no hay envío automático: al guardar se abre WhatsApp con el texto listo y ahí lo mandas. La respuesta queda en esta conversación de todos modos.'}
       </p>
       <div className="fila">
-        {!enlace ? (
+        {apiActiva ? (
+          <button type="button" className="btn-primario" disabled={ocupado || !texto.trim() || !ventana.puede}
+            onClick={() => enviarPorApi(texto)}>{ocupado ? 'Enviando…' : 'Enviar'}</button>
+        ) : !enlace ? (
           <span className="etiqueta etiqueta-aviso">El número no sirve para WhatsApp</span>
         ) : texto.trim() ? (
           <a className="btn btn-primario" href={enlace} target="_blank" rel="noreferrer" onClick={responder}>
@@ -177,13 +201,24 @@ export default function WhatsApp() {
   const [seleccion, setSeleccion] = useState(null)
   const [error, setError] = useState('')
   const [enLinea, setEnLinea] = useState(navigator.onLine)
+  const [pestana, setPestana] = useState('bandeja')
+  const [config, setConfig] = useState(null)
+  const [porAtender, setPorAtender] = useState(0)
+
+  // Lo que espera a la oficina en la cola (por aprobar + con problema): el número de la pestaña.
+  async function contarCola() {
+    const k = await cargarCola()
+    if (k.ok) { const g = agruparCola(k.filas); setPorAtender(g.porAprobar.length + g.problemas.length) }
+  }
 
   async function recargar(cerradas = incluirCerradas) {
-    const [b, c, a] = await Promise.all([cargarBandeja(cerradas), cargarContactos(), cargarAgente()])
+    const [b, c, a, k] = await Promise.all([cargarBandeja(cerradas), cargarContactos(), cargarAgente(), cargarConfig()])
     if (b.ok) { setConversaciones(b.conversaciones); setError('') }
     else setError(b.texto)
     if (c.ok) setContactos(c.contactos)
     if (a.ok) setAgente(a.agente)
+    if (k.ok) setConfig(k.config)
+    contarCola()
   }
 
   // Se guarda al momento: son tres ajustes, un botón de guardar solo estorbaría.
@@ -216,7 +251,7 @@ export default function WhatsApp() {
   if (abierta) {
     return (
       <Conversacion
-        key={abierta.id} conv={abierta} contactos={contactos}
+        key={abierta.id} conv={abierta} contactos={contactos} apiActiva={!!config?.envio_activo}
         onVolver={() => setSeleccion(null)} onCambio={() => recargar()}
       />
     )
@@ -236,6 +271,18 @@ export default function WhatsApp() {
       </p>
 
       {!enLinea && <Alerta tipo="aviso" palabra="Sin señal">La bandeja necesita conexión.</Alerta>}
+
+      <div className="pestanas" role="group" aria-label="Secciones de WhatsApp">
+        <button type="button" className="pestana" aria-pressed={pestana === 'bandeja'} onClick={() => setPestana('bandeja')}>Bandeja</button>
+        <button type="button" className="pestana" aria-pressed={pestana === 'salida'} onClick={() => setPestana('salida')}>
+          Por enviar{porAtender > 0 ? ` (${porAtender})` : ''}
+        </button>
+        <button type="button" className="pestana" aria-pressed={pestana === 'campanas'} onClick={() => setPestana('campanas')}>Campañas</button>
+      </div>
+
+      {pestana === 'salida' && enLinea && <ColaSalida onCambio={contarCola} />}
+      {pestana === 'campanas' && enLinea && <Campanas />}
+      {pestana === 'bandeja' && <>
       {error && <Alerta tipo="error">{error}</Alerta>}
 
       {/* El agente arranca apagado y en borrador: redacta y tú mandas. Se pasa a
@@ -341,6 +388,7 @@ export default function WhatsApp() {
           </button>
         )
       })}
+      </>}
     </div>
   )
 }
