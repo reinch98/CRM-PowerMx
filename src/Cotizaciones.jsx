@@ -38,8 +38,9 @@ const TIPOS = [
 
 const CONDICIONES = `Precios en pesos mexicanos, más IVA.
 Tiempo de entrega sujeto a existencia al momento de la aprobación.
-Anticipo del 60% para iniciar, saldo contra entrega.
 La instalación incluye 30 m de panel a inversor y 10 m de inversor a la conexión.`
+
+const FORMA_PAGO = 'Anticipo del 60% para iniciar, saldo contra entrega.'
 
 const num = v => (v === '' || v == null ? 0 : Number(v))
 const pesos = v =>
@@ -56,6 +57,8 @@ const vacio = () => ({
   descuento: '',
   requiere_visita: false,
   condiciones: CONDICIONES,
+  forma_pago: FORMA_PAGO,
+  garantia: '',
   notas_internas: '',
   // Programación propuesta: se vuelve cita real al aceptar la cotización.
   prog_fecha: '',
@@ -228,6 +231,8 @@ export default function Cotizaciones({ irA }) {
       descuento: Number(c.descuento) > 0 ? c.descuento : '',
       requiere_visita: !!c.requiere_visita,
       condiciones: c.condiciones ?? CONDICIONES,
+      forma_pago: c.forma_pago || '',
+      garantia: c.garantia || '',
       notas_internas: c.notas_internas || '',
       prog_fecha: c.prog_fecha || '',
       prog_hora: c.prog_hora ? String(c.prog_hora).slice(0, 5) : '09:00',
@@ -405,6 +410,8 @@ export default function Cotizaciones({ irA }) {
       subtotal, descuento, iva, total,
       requiere_visita: form.requiere_visita,
       condiciones: form.condiciones,
+      forma_pago: form.forma_pago.trim() || null,
+      garantia: form.garantia.trim() || null,
       notas_internas: form.notas_internas || null,
       // Programación propuesta: solo se guarda si la cotización lleva visita.
       prog_fecha: llevaVisita(form) ? form.prog_fecha || null : null,
@@ -673,6 +680,12 @@ export default function Cotizaciones({ irA }) {
                   <div>IVA: {pesos(c.iva)}</div>
                   <div style={{ fontSize: 20 }}><strong>Total: {pesos(c.total)}</strong></div>
                 </div>
+                {(c.forma_pago || c.garantia) && (
+                  <p className="ayuda">
+                    {c.forma_pago && <>Forma de pago: {c.forma_pago}<br /></>}
+                    {c.garantia && <>Garantía: {c.garantia}</>}
+                  </p>
+                )}
                 {c.condiciones && <p className="ayuda" style={{ whiteSpace: 'pre-line' }}>{c.condiciones}</p>}
                 {c.notas_internas && (
                   <Alerta tipo="aviso" palabra="Nota interna">
@@ -919,6 +932,19 @@ export default function Cotizaciones({ irA }) {
             </div>
             <div>IVA ({IVA * 100}%): {pesos(iva)}</div>
             <div style={{ fontSize: 22 }}><strong>Total: {pesos(total)}</strong></div>
+          </div>
+
+          <div className="rejilla-2">
+            <label className="campo">
+              <span>Forma de pago</span>
+              <input value={form.forma_pago} placeholder="Ej. Anticipo del 60%, saldo contra entrega"
+                onChange={e => setForm({ ...form, forma_pago: e.target.value })} />
+            </label>
+            <label className="campo">
+              <span>Garantía</span>
+              <input value={form.garantia} placeholder="Ej. 12 meses en refacciones, 90 días en mano de obra"
+                onChange={e => setForm({ ...form, garantia: e.target.value })} />
+            </label>
           </div>
 
           <label className="campo">

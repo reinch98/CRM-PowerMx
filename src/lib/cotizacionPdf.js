@@ -106,6 +106,12 @@ export function datosDelEquipo(eq) {
   ].filter(([, v]) => v)
 }
 
+// Forma de pago y garantía: filas con etiqueta, solo si se capturaron.
+export function filasDePago(c) {
+  return [['Forma de pago', c.forma_pago], ['Garantía', c.garantia]]
+    .map(([e, v]) => [e, String(v || '').trim()]).filter(([, v]) => v)
+}
+
 export const lineasDeCondiciones = texto =>
   String(texto || '').split('\n').map(s => s.trim()).filter(Boolean)
 
@@ -272,6 +278,7 @@ export async function construirPdfCotizacion(c, cliente, equipo) {
   const vig = c.vigencia_dias || 15
   const hasta = fechaLarga(vigenteHasta(c)) || vigenteHasta(c)
   const condiciones = [
+    ...filasDePago(c),
     ['Vigencia', `${vig} días naturales a partir de la fecha de emisión (hasta el ${hasta}).`],
     ...lineasDeCondiciones(c.condiciones).map(t => ['', t])
   ]

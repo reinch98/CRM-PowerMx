@@ -76,3 +76,11 @@ test('las condiciones se separan por renglón y sin vacíos', () => {
   assert.deepEqual(lineasDeCondiciones('a\n\n b \n'), ['a', 'b'])
   assert.deepEqual(lineasDeCondiciones(null), [])
 })
+
+import { filasDePago } from '../src/lib/cotizacionPdf.js'
+
+test('forma de pago y garantía salen solo si se capturaron', () => {
+  assert.deepEqual(filasDePago({}), [])
+  assert.deepEqual(filasDePago({ forma_pago: ' 50% ', garantia: '' }), [['Forma de pago', '50%']])
+  assert.deepEqual(filasDePago({ forma_pago: 'a', garantia: 'b' }).map(([e]) => e), ['Forma de pago', 'Garantía'])
+})
