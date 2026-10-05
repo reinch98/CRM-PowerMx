@@ -8,6 +8,10 @@ import {
 } from './lib/preventivo'
 import { Alerta } from './ui'
 import { todasLasFilas } from './lib/paginar'
+import {
+  sePuedeEditar, construirPdfCotizacion, cargarClienteParaPdf, cargarEquipoParaPdf,
+  nombreArchivoCotizacion, descargarBlob
+} from './lib/cotizacionPdf'
 
 const IVA = 0.16
 
@@ -196,8 +200,60 @@ export default function Cotizaciones({ irA }) {
   const [mensaje, setMensaje] = useState('')
   const [aviso, setAviso] = useState(null)   // requisiciones generadas o canceladas por el último cambio
   const [detalle, setDetalle] = useState(null)
+  const [editandoId, setEditandoId] = useState(null)   // cotización que se está editando (null = nueva)
+  const [generandoPdf, setGenerandoPdf] = useState(null)
 
   useEffect(() => { cargar() }, [])
+
+  // Nueva en blanco: también sirve para salir de una edición sin guardar.
+  function nueva() {
+    setEditandoId(null); setForm(vacio()); setPartidas([]); setAvisosDiag([])
+    setError(''); setMensaje(''); setVista('nueva')
+  }
+
+  // Edita con el MISMO formulario del alta, para que un campo nuevo no se olvide aquí.
+  // Solo borrador y enviada: una aceptada ya apartó inventario con sus partidas actuales.
+  function editar(c) {
+    if (!sePuedeEditar(c.estado)) {
+      return setError('Una cotización aceptada, rechazada o vencida no se edita. Si hace falta cambiarla, ponla primero en Borrador.')
+    }
+    setError(''); setMensaje('')
+    setForm({
+      ...vacio(),
+      cliente_id: c.cliente_id || '',
+      equipo_id: c.equipo_id || '',
+      fecha: c.fecha || hoyLocal(),
+      vigencia_dias: c.vigencia_dias ?? 15,
+      tipo: c.tipo || 'venta',
+      descuento: Number(c.descuento) > 0 ? c.descuento : '',
+      requiere_visita: !!c.requiere_visita,
+      condiciones: c.condiciones ?? CONDICIONES,
+      notas_internas: c.notas_internas || '',
+      prog_fecha: c.prog_fecha || '',
+      prog_hora: c.prog_hora ? String(c.prog_hora).slice(0, 5) : '09:00',
+      prog_duracion_min: c.prog_duracion_min || 120,
+      prog_tecnico_id: c.prog_tecnico_id || '',
+      prog_tecnico2_id: c.prog_tecnico2_id || ''
+    })
+    setPartidas((c.partidas || []).map(p => ({ ...p })))
+    setAvisosDiag([])
+    setEditandoId(c.id)
+    setVista('nueva')
+  }
+
+  async function descargarPdf(c) {
+    setError(''); setGenerandoPdf(c.id)
+    try {
+      const cliente = await cargarClienteParaPdf(c.cliente_id)
+      const equipo = await cargarEquipoParaPdf(c.equipo_id)
+      const blob = await construirPdfCotizacion(c, cliente, equipo)
+      descargarBlob(blob, nombreArchivoCotizacion(c))
+    } catch (e) {
+      setError(`No se pudo armar el PDF: ${e?.message || e}`)
+    } finally {
+      setGenerandoPdf(null)
+    }
+  }
 
   async function cargar() {
     const [co, cl, eq, pr, di, te, ta, ci] = await Promise.all([
@@ -334,7 +390,7 @@ export default function Cotizaciones({ irA }) {
     }
 
     setGuardando(true)
-    const { error } = await supabase.from('cotizaciones').insert([{
+    const datos = {
       cliente_id: form.cliente_id,
       equipo_id: form.equipo_id || null,
       fecha: form.fecha,
@@ -355,15 +411,34 @@ export default function Cotizaciones({ irA }) {
       prog_hora: llevaVisita(form) ? form.prog_hora || null : null,
       prog_duracion_min: llevaVisita(form) ? num(form.prog_duracion_min) || null : null,
       prog_tecnico_id: llevaVisita(form) ? form.prog_tecnico_id || null : null,
-      prog_tecnico2_id: llevaVisita(form) ? form.prog_tecnico2_id || null : null,
-      estado: 'borrador',
-      creada_por: (await supabase.auth.getUser()).data.user?.email || 'crm'
-    }])
+      prog_tecnico2_id: llevaVisita(form) ? form.prog_tecnico2_id || null : null
+    }
+
+    let error
+    if (editandoId) {
+      // El estado y quién la creó no se tocan al editar. El filtro por estado es el candado
+      // de verdad: si alguien la aceptó mientras se editaba, no se guarda nada.
+      const r = await supabase.from('cotizaciones').update(datos)
+        .eq('id', editandoId).in('estado', ['borrador', 'enviada']).select('id')
+      error = r.error
+      if (!error && (r.data || []).length === 0) {
+        setGuardando(false)
+        return setError('No se guardó: la cotización ya no está en Borrador ni Enviada (¿la aceptaron mientras la editabas?).')
+      }
+    } else {
+      const r = await supabase.from('cotizaciones').insert([{
+        ...datos,
+        estado: 'borrador',
+        creada_por: (await supabase.auth.getUser()).data.user?.email || 'crm'
+      }])
+      error = r.error
+    }
     setGuardando(false)
     if (error) return setError(error.message)
 
-    setForm(vacio()); setPartidas([]); setAvisosDiag([]); setVista('lista')
-    setMensaje('Cotización guardada como borrador.')
+    const fueEdicion = !!editandoId
+    setEditandoId(null); setForm(vacio()); setPartidas([]); setAvisosDiag([]); setVista('lista')
+    setMensaje(fueEdicion ? 'Cambios guardados.' : 'Cotización guardada como borrador.')
     cargar()
   }
 
@@ -436,7 +511,10 @@ export default function Cotizaciones({ irA }) {
 
       <div className="pestanas">
         <button className="pestana" aria-pressed={vista === 'lista'} onClick={() => setVista('lista')}>Lista</button>
-        <button className="pestana" aria-pressed={vista === 'nueva'} onClick={() => setVista('nueva')}>Nueva</button>
+        <button className="pestana" aria-pressed={vista === 'nueva'}
+          onClick={() => (vista === 'nueva' && editandoId ? setVista('nueva') : nueva())}>
+          {editandoId ? 'Editando' : 'Nueva'}
+        </button>
       </div>
 
       {error && <Alerta tipo="error">{error}</Alerta>}
@@ -563,6 +641,14 @@ export default function Cotizaciones({ irA }) {
             return (
               <section className="tarjeta" style={{ maxWidth: 760 }}>
                 <h3>Cotización {c.folio} — {c.clientes?.nombre}</h3>
+                <div className="fila" style={{ flexWrap: 'wrap', marginBottom: 8 }}>
+                  <button className="btn-primario" disabled={generandoPdf === c.id} onClick={() => descargarPdf(c)}>
+                    {generandoPdf === c.id ? 'Armando el PDF…' : 'Descargar PDF'}
+                  </button>
+                  {sePuedeEditar(c.estado)
+                    ? <button onClick={() => editar(c)}>Editar</button>
+                    : <span className="ayuda">Para editarla, cámbiala primero a Borrador.</span>}
+                </div>
                 <div className="tabla-scroll">
                   <table style={{ width: '100%' }}>
                     <thead>
@@ -602,6 +688,12 @@ export default function Cotizaciones({ irA }) {
       {/* ------------------------------------------------------------------ */}
       {vista === 'nueva' && (
         <form onSubmit={guardar} style={{ maxWidth: 820 }}>
+          {editandoId && (
+            <Alerta tipo="info" palabra="Editando">
+              Cotización {cotizaciones.find(x => x.id === editandoId)?.folio}. Los cambios reemplazan
+              lo guardado; las partidas conservan el precio con el que se cotizaron.
+            </Alerta>
+          )}
           <div className="rejilla-2">
             <label className="campo">
               <span>Cliente *</span>
@@ -841,9 +933,16 @@ export default function Cotizaciones({ irA }) {
               onChange={e => setForm({ ...form, notas_internas: e.target.value })} />
           </label>
 
-          <button type="submit" className="btn-primario btn-grande" disabled={guardando}>
-            {guardando ? 'Guardando…' : 'Guardar como borrador'}
-          </button>
+          <div className="fila" style={{ flexWrap: 'wrap' }}>
+            <button type="submit" className="btn-primario btn-grande" disabled={guardando}>
+              {guardando ? 'Guardando…' : (editandoId ? 'Guardar cambios' : 'Guardar como borrador')}
+            </button>
+            {editandoId && (
+              <button type="button" className="btn-grande" onClick={() => { nueva(); setVista('lista') }}>
+                Cancelar edición
+              </button>
+            )}
+          </div>
         </form>
       )}
     </div>
