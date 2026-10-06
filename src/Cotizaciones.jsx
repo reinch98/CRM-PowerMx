@@ -8,6 +8,7 @@ import {
 } from './lib/preventivo'
 import { Alerta } from './ui'
 import { todasLasFilas } from './lib/paginar'
+import { renglonesDelResumen, previsualizarEliminacion, ejecutarEliminacion } from './lib/eliminarCotizacion'
 import {
   sePuedeEditar, construirPdfCotizacion, cargarClienteParaPdf, cargarEquipoParaPdf,
   nombreArchivoCotizacion, descargarBlob
@@ -205,6 +206,7 @@ export default function Cotizaciones({ irA }) {
   const [detalle, setDetalle] = useState(null)
   const [editandoId, setEditandoId] = useState(null)   // cotización que se está editando (null = nueva)
   const [generandoPdf, setGenerandoPdf] = useState(null)
+  const [eliminando, setEliminando] = useState(null)   // { id, ocupado, bloqueos, resumen, listo }
 
   useEffect(() => { cargar() }, [])
 
@@ -244,6 +246,32 @@ export default function Cotizaciones({ irA }) {
     setAvisosDiag([])
     setEditandoId(c.id)
     setVista('nueva')
+  }
+
+  // Borrar una cotización de prueba con sus citas y órdenes: siempre vista previa primero.
+  async function pedirEliminar(c) {
+    setError(''); setMensaje('')
+    setEliminando({ id: c.id, ocupado: true })
+    const { respuesta, error: e } = await previsualizarEliminacion(c.id)
+    if (e) { setEliminando(null); return setError(e) }
+    setEliminando({
+      id: c.id, ocupado: false, bloqueos: respuesta.bloqueos,
+      resumen: respuesta.resumen, listo: respuesta.ok
+    })
+  }
+
+  async function confirmarEliminar() {
+    const id = eliminando.id
+    setEliminando({ ...eliminando, ocupado: true })
+    const { respuesta, error: e } = await ejecutarEliminacion(id)
+    if (e) { setEliminando(null); return setError(e) }
+    if (!respuesta.ejecutado) {
+      // Algo cambió entre la vista previa y el clic: se vuelve a mostrar lo que lo impide.
+      return setEliminando({ id, ocupado: false, bloqueos: respuesta.bloqueos, resumen: respuesta.resumen, listo: false })
+    }
+    setEliminando(null); setDetalle(null)
+    setMensaje(`Cotización ${respuesta.resumen?.folio ?? ''} eliminada con sus citas y órdenes.`)
+    cargar()
   }
 
   async function descargarPdf(c) {
@@ -655,7 +683,31 @@ export default function Cotizaciones({ irA }) {
                   {sePuedeEditar(c.estado)
                     ? <button onClick={() => editar(c)}>Editar</button>
                     : <span className="ayuda">Para editarla, cámbiala primero a Borrador.</span>}
+                  <button className="btn-peligro" disabled={eliminando?.id === c.id && eliminando.ocupado}
+                    onClick={() => pedirEliminar(c)}>
+                    Eliminar…
+                  </button>
                 </div>
+                {eliminando?.id === c.id && !eliminando.ocupado && (
+                  eliminando.listo ? (
+                    <Alerta tipo="aviso" palabra="Confirma">
+                      <div>Se va a eliminar, sin poder deshacerse:</div>
+                      <ul>
+                        {renglonesDelResumen(eliminando.resumen).map(x => <li key={x}>{x}</li>)}
+                      </ul>
+                      <div className="fila" style={{ flexWrap: 'wrap', marginTop: 8 }}>
+                        <button className="btn-peligro" onClick={confirmarEliminar}>Sí, eliminar todo</button>
+                        <button onClick={() => setEliminando(null)}>No, conservarla</button>
+                      </div>
+                    </Alerta>
+                  ) : (
+                    <Alerta tipo="error" palabra="No se puede eliminar">
+                      <ul>{(eliminando.bloqueos || []).map(x => <li key={x}>{x}</li>)}</ul>
+                      <button onClick={() => setEliminando(null)}>Entendido</button>
+                    </Alerta>
+                  )
+                )}
+                {eliminando?.id === c.id && eliminando.ocupado && <p className="ayuda">Revisando qué se borraría…</p>}
                 <div className="tabla-scroll">
                   <table style={{ width: '100%' }}>
                     <thead>
