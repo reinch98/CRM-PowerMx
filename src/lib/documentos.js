@@ -19,6 +19,7 @@ import {
   AC_SOLAR, BANCO_SOLAR, LECTURAS_GEN, TIPOS_TRANSFERENCIA, TRANSFERENCIA_GEN,
 } from './revision'
 import { nombreCombustible } from './equipoCampo'
+import { crearLienzo, AZUL, CLARO, ZEBRA, LINEA, TEXTO, GRIS } from './pdfEstilo.js'
 
 // "B" en la pantalla es un botón; en el papel tiene que leerse solo.
 const CALIFICACION_LARGA = Object.fromEntries(CALIFICACIONES)
@@ -40,9 +41,6 @@ export function paraPdf(texto) {
 }
 
 const BUCKET = 'ordenes'
-const NOCHE = [12, 21, 32]     // #0c1520
-const CLARO = [232, 237, 244]  // #e8edf4
-const TEXTO = [30, 41, 59]
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
@@ -73,6 +71,48 @@ export function fechaLarga(fecha) {
   const [a, m, d] = fecha.split('-').map(Number)
   if (!a || !m || !d) return fecha
   return `${d} de ${MESES[m - 1]} de ${a}`
+}
+
+// '2026-10-05' -> '05/10/2026'
+export function fechaCorta(fecha) {
+  const [a, m, d] = String(fecha || '').split('-')
+  return a && m && d ? `${d}/${m}/${a}` : ''
+}
+
+// Mete una imagen de ancho `w` y alto `h` dentro de una caja sin deformarla: la escala hasta que
+// toque el lado que primero se acabe y la centra. Una foto vertical y una horizontal caben en el
+// mismo marco; estirarlas a 4:3 las dejaba chuecas.
+export function ajustarEn(w, h, cajaW, cajaH) {
+  if (!(w > 0) || !(h > 0)) return { dx: 0, dy: 0, w: cajaW, h: cajaH }
+  const escala = Math.min(cajaW / w, cajaH / h)
+  const ww = w * escala
+  const hh = h * escala
+  return { dx: (cajaW - ww) / 2, dy: (cajaH - hh) / 2, w: ww, h: hh }
+}
+
+// Encabezados cortos para la tabla de strings: la columna mide ~25 mm.
+export const TITULO_CORTO_STRING = {
+  mppt: 'MPPT', voc_teorico: 'Voc teór. (V)', voc_medido: 'Voc med. (V)',
+  isc: 'Isc/Imp (A)', aisl_pos: 'Aisl. + (MΩ)', aisl_neg: 'Aisl. − (MΩ)'
+}
+export const COLUMNAS_PARAMETRO = [
+  { t: 'Parámetro', ancho: 94 }, { t: 'Valor', ancho: 46, align: 'center' }, { t: 'Unidad', ancho: 46, align: 'center' }
+]
+
+// Pares de "Datos del equipo" para la orden. Lo que no hay no se imprime; la serie sí se dice
+// aunque falte, porque "pendiente" es información (una placa que no se pudo leer).
+export function datosEquipoOrden(eq, orden, ctx) {
+  if (!eq || (!eq.marca && !eq.modelo && !eq.tipo && !eq.numero_serie)) return []
+  const comb = ctx?.combustible || eq.atributos?.combustible
+  return [
+    ['Marca', eq.marca || ''],
+    ['Modelo', eq.modelo || ''],
+    ['Capacidad', eq.capacidad_kw ? `${eq.capacidad_kw} kW` : ''],
+    ['No. de serie', eq.numero_serie || 'Pendiente'],
+    ['Combustible', (comb && (nombreCombustible(comb) || comb)) || ''],
+    ['Ubicación', eq.ubicacion_equipo || ''],
+    ['Horómetro', orden?.horas_equipo != null ? `${orden.horas_equipo} h` : '']
+  ].filter(([, v]) => v)
 }
 
 export function nombreTipoServicio(tipo) {
@@ -120,8 +160,9 @@ async function fotoDataUrl(ruta) {
     // jsPDF NO valida la imagen: si le das cualquier cosa con cara de JPEG la incrusta y
     // el visor muestra un hueco. Se comprueba aquí decodificándola de verdad.
     const mapa = await createImageBitmap(data)
+    const medidas = { w: mapa.width, h: mapa.height }
     mapa.close()
-    return await blobADataUrl(data)
+    return { url: await blobADataUrl(data), ...medidas }
   } catch {
     return null      // archivo corrupto o formato que el navegador no abre
   }
@@ -139,120 +180,98 @@ async function firmaDataUrl(ruta) {
 }
 
 // Arma el PDF y devuelve un Blob. `tipo`: 'cliente' | 'interno'.
+// Mismo estilo que la cotización (encabezado de marca, bandas de sección, tablas con líneas):
+// las piezas de estilo viven en pdfEstilo.js.
 // jsPDF se carga aparte (arrastra html2canvas y dompurify, que aquí no se usan): solo el admin
 // lo necesita, y solo al generar un documento, así que no debe pesar en la carga del técnico.
 export async function construirPdfOrden(orden, nombreTecnico, nombreTecnico2, tipo) {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-  const ancho = doc.internal.pageSize.getWidth()
-  const alto = doc.internal.pageSize.getHeight()
-  const izq = 16
-  const der = ancho - 16
-  let y = 32
+  const L = crearLienzo(doc, paraPdf)
 
-  function saltoSiHaceFalta(alturaNecesaria) {
-    if (y + alturaNecesaria > alto - 20) { doc.addPage(); y = 20 }
-  }
-  function titulo(texto) {
-    saltoSiHaceFalta(12)
-    doc.setFont('helvetica', 'bold').setFontSize(12).setTextColor(...NOCHE)
-    doc.text(paraPdf(texto), izq, y)
-    y += 6
-    doc.setFont('helvetica', 'normal').setFontSize(10.5).setTextColor(...TEXTO)
-  }
-  function parrafo(texto) {
-    const lineas = doc.splitTextToSize(paraPdf(texto), der - izq)
-    saltoSiHaceFalta(lineas.length * 5 + 2)
-    doc.text(lineas, izq, y)
-    y += lineas.length * 5 + 3
-  }
-  function linea(texto) {
-    saltoSiHaceFalta(6)
-    doc.text(paraPdf(texto), izq, y)
-    y += 6
-  }
-
-  // Encabezado de marca.
-  doc.setFillColor(...NOCHE)
-  doc.rect(0, 0, ancho, 24, 'F')
-  const logo = await logoDataUrl()
-  if (logo) doc.addImage(logo, 'PNG', izq, 5, 14, 14)
-  doc.setFont('helvetica', 'bold').setFontSize(16).setTextColor(...CLARO)
-  doc.text('PowerMx', logo ? izq + 18 : izq, 15)
-  doc.setFont('helvetica', 'normal').setFontSize(10)
-  doc.text(`Orden de servicio OS-${orden.folio}`, der, 11, { align: 'right' })
-  doc.text(tipo === 'interno' ? 'Copia interna' : 'Orden de servicio', der, 17, { align: 'right' })
-  doc.setTextColor(...TEXTO)
-
-  // Datos del servicio.
   const cl = orden.clientes || {}
   const eq = orden.equipos || {}
   const ci = orden.citas || {}
-  linea(`Cliente: ${cl.nombre || '—'}`)
-  const equipo = descripcionEquipo(eq)
-  if (equipo) linea(`Equipo: ${equipo}${eq.numero_serie ? ` (serie ${eq.numero_serie})` : ''}`)
-  linea(`Servicio: ${nombreTipoServicio(orden.tipo_servicio)}`)
-  const fecha = fechaLarga(ci.fecha || orden.fecha)
-  linea(`Fecha: ${fecha || 'sin fecha'}${ci.hora ? ` · ${String(ci.hora).slice(0, 5)} h` : ''}`)
   const tecnicos = [nombreTecnico, nombreTecnico2].filter(Boolean).join(' y ')
-  if (tecnicos) linea(`Atendió: ${tecnicos}`)
-  y += 3
-
-  // ---- la revisión: el formato de mantenimiento que llenó el técnico ----
   const rev = revisionDe(orden)
   const formato = rev ? formatoDe(rev.tipo) : null
   const ctxRev = rev ? contextoDeRevision(rev.tipo, rev.datos, eq) : null
 
+  const nombreServicio = nombreTipoServicio(orden.tipo_servicio).toUpperCase()
+  L.encabezado({
+    logo: await logoDataUrl(),
+    titulo: `ORDEN DE SERVICIO — ${nombreServicio}${tipo === 'interno' ? ' · COPIA INTERNA' : ''}`
+  })
+
+  // ---- datos del servicio ----
+  const fecha = fechaCorta(ci.fecha || orden.fecha)
+  const dir = [cl.direccion, cl.colonia, cl.municipio].filter(Boolean).join(', ')
+  L.rejilla([
+    ['Folio', `OS-${orden.folio}`],
+    ['Fecha', fecha ? `${fecha}${ci.hora ? ` · ${String(ci.hora).slice(0, 5)} h` : ''}` : 'sin fecha'],
+    ['Cliente', cl.nombre || ''],
+    ['Servicio', nombreTipoServicio(orden.tipo_servicio)],
+    ['Teléfono', cl.telefono || ''],
+    ['Atendió', tecnicos],
+    ['Dirección', dir]
+  ].filter(([, v]) => v))
+
+  // ---- datos del equipo ----
+  const datosEq = datosEquipoOrden(eq, orden, ctxRev)
+  if (datosEq.length > 0) { L.barra('DATOS DEL EQUIPO'); L.rejilla(datosEq) }
+
+  // ---- dictamen: lo primero que el cliente quiere saber ----
   if (rev) {
-    // El dictamen va arriba de todo: es lo primero que el cliente quiere saber.
     const dic = DICTAMENES.find(([k]) => k === rev.datos.dictamen)
     if (dic) {
-      saltoSiHaceFalta(20)
-      doc.setFillColor(...CLARO)
-      doc.rect(izq, y - 5, der - izq, 16, 'F')
-      doc.setFont('helvetica', 'bold').setFontSize(12).setTextColor(...NOCHE)
-      doc.text(paraPdf(`Dictamen: ${dic[1]}`), izq + 3, y + 1)
-      doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...TEXTO)
-      doc.text(doc.splitTextToSize(paraPdf(dic[2]), der - izq - 6), izq + 3, y + 6)
-      y += 18
-      if (rev.datos.motivo_dictamen?.trim()) parrafo(rev.datos.motivo_dictamen.trim())
+      L.barra('DICTAMEN')
+      const descripcion = L.doc.splitTextToSize(paraPdf(dic[2]), L.util - 8)
+      const h = 11 + descripcion.length * 4.6
+      L.salto(h + 4)
+      doc.setFillColor(...CLARO).rect(L.m, L.y - 4, L.util, h, 'F')
+      doc.setDrawColor(...AZUL).setLineWidth(0.5).rect(L.m, L.y - 4, L.util, h)
+      doc.setFont('helvetica', 'bold').setFontSize(13).setTextColor(...AZUL)
+      doc.text(paraPdf(dic[1].toUpperCase()), L.m + 4, L.y + 2)
+      doc.setFont('helvetica', 'normal').setFontSize(9.5).setTextColor(...TEXTO)
+      doc.text(descripcion, L.m + 4, L.y + 8)
+      L.y += h + 3
+      if (rev.datos.motivo_dictamen?.trim()) L.caja(rev.datos.motivo_dictamen.trim())
     }
 
     const ll = rev.datos.llegada || {}
-    const condiciones = rev.tipo === 'solar'
-      ? [ll.clima && `Clima: ${ll.clima}`,
-         ll.irradiancia && `Irradiancia: ${ll.irradiancia} W/m²`,
-         ll.temp && `Temperatura ambiente: ${ll.temp} °C`]
-      : [ll.tipo_servicio && `Servicio tipo ${ll.tipo_servicio}`,
-         ctxRev.combustible && `Combustible: ${nombreCombustible(ctxRev.combustible) || ctxRev.combustible}`,
-         `${ctxRev.trifasico ? 'Trifásico' : 'Monofásico'}`]
-    const texto = condiciones.filter(Boolean).join(' · ')
-    if (texto) { linea(texto); y += 2 }
+    const llegada = (rev.tipo === 'solar'
+      ? [['Clima', ll.clima], ['Irradiancia', ll.irradiancia && `${ll.irradiancia} W/m²`],
+         ['Temperatura ambiente', ll.temp && `${ll.temp} °C`]]
+      : [['Tipo de servicio', ll.tipo_servicio],
+         ['Combustible', ctxRev.combustible && (nombreCombustible(ctxRev.combustible) || ctxRev.combustible)],
+         ['Fases', ctxRev.trifasico ? 'Trifásico' : 'Monofásico']]
+    ).filter(([, v]) => v)
+    if (llegada.length > 0) { L.barra('CONDICIONES DE LLEGADA'); L.rejilla(llegada) }
   }
 
-  titulo('Trabajo realizado')
-  parrafo(orden.trabajos_realizados?.trim() || 'Sin notas capturadas.')
+  L.barra('TRABAJO REALIZADO')
+  L.caja(orden.trabajos_realizados?.trim() || 'Sin notas capturadas.')
 
   if (rev) {
+    // ---- los puntos de revisión, sección por sección, en tabla con líneas ----
     for (const s of seccionesVisibles(formato, ctxRev)) {
-      const contestados = s.puntos.filter(p => rev.datos.puntos?.[p.clave]?.v)
-      if (contestados.length === 0) continue
-      titulo(`${s.clave}. ${s.titulo}`)
+      const filas = []
       for (const p of s.puntos) {
         const r = rev.datos.puntos?.[p.clave]
         if (!r?.v) continue
         const extras = (p.campos || [])
-          .map(([k, etiqueta]) => (r[k] ? `${etiqueta}: ${r[k]}` : null))
-          .filter(Boolean).join(' · ')
-        linea(`${p.clave}  ${p.titulo} — ${CALIFICACION_LARGA[r.v] || r.v}`)
-        if (extras) { doc.setFontSize(9.5); linea(`      ${extras}`); doc.setFontSize(10.5) }
-        if (r.obs?.trim()) {
-          doc.setFontSize(9.5)
-          parrafo(`      ${r.obs.trim()}`)
-          doc.setFontSize(10.5)
-        }
+          .map(([k, etiqueta]) => (r[k] ? `${etiqueta}: ${r[k]}` : null)).filter(Boolean).join(' · ')
+        const detalle = [extras, r.obs?.trim()].filter(Boolean).join('\n')
+        filas.push([p.clave, p.titulo, CALIFICACION_LARGA[r.v] || r.v, detalle])
       }
-      y += 2
+      if (filas.length === 0) continue
+      L.barra(`${s.clave}. ${s.titulo.toUpperCase()}`)
+      L.tabla([
+        { t: 'No.', ancho: 13, align: 'center' },
+        { t: 'Punto de revisión', ancho: 74 },
+        { t: 'Resultado', ancho: 23, align: 'center' },
+        { t: 'Datos y hallazgos', ancho: 76 }
+      ], filas)
     }
 
     // ---- mediciones ----
@@ -260,75 +279,86 @@ export async function construirPdfOrden(orden, nombreTecnico, nombreTecnico2, ti
     if (rev.tipo === 'solar') {
       const strings = (med.strings || []).filter(s => Object.values(s).some(v => v !== ''))
       if (strings.length > 0) {
-        titulo('Mediciones por string')
-        strings.forEach((s, i) => {
+        L.barra('MEDICIONES POR STRING')
+        const ancho = (L.util - 14 - 19) / COLUMNAS_STRING.length
+        L.tabla([
+          { t: 'String', ancho: 14, align: 'center' },
+          ...COLUMNAS_STRING.map(([k]) => ({ t: TITULO_CORTO_STRING[k] || k, ancho, align: 'center' })),
+          { t: 'Veredicto', ancho: 19, align: 'center' }
+        ], strings.map((s, i) => {
           const v = veredictoString(s)
-          const partes = COLUMNAS_STRING.map(([k, t]) => (s[k] ? `${t}: ${s[k]}` : null)).filter(Boolean)
-          linea(`String ${i + 1} — ${v ? VEREDICTOS[v] : 'sin veredicto'}`)
-          doc.setFontSize(9.5); parrafo(`      ${partes.join(' · ')}`); doc.setFontSize(10.5)
-        })
+          return [String(i + 1), ...COLUMNAS_STRING.map(([k]) => s[k] ?? ''), v ? VEREDICTOS[v] : '—']
+        }), { tamano: 8.2 })
       }
       const ac = AC_SOLAR.filter(c => aplica(c, ctxRev) && med.ac?.[c.clave])
       if (ac.length > 0) {
-        titulo('Parámetros eléctricos')
-        linea(ac.map(c => `${c.titulo}: ${med.ac[c.clave]} ${c.unidad}`).join(' · '))
+        L.barra('PARÁMETROS ELÉCTRICOS')
+        L.tabla(COLUMNAS_PARAMETRO, ac.map(c => [c.titulo, med.ac[c.clave], c.unidad || '']))
       }
       const banco = BANCO_SOLAR.filter(c => aplica(c, ctxRev) && med.banco?.[c.clave])
       if (banco.length > 0) {
-        titulo('Banco y tierra')
-        for (const c of banco) linea(`${c.titulo}: ${med.banco[c.clave]} ${c.unidad}`)
+        L.barra('BANCO Y TIERRA')
+        L.tabla(COLUMNAS_PARAMETRO, banco.map(c => [c.titulo, med.banco[c.clave], c.unidad || '']))
       }
     } else {
       const lecturas = LECTURAS_GEN.filter(c => aplica(c, ctxRev) &&
         (med.lecturas?.[c.clave]?.vacio || med.lecturas?.[c.clave]?.carga))
       if (lecturas.length > 0) {
-        titulo('Prueba de funcionamiento')
-        if (med.carga_pct) linea(`Prueba con carga al ${med.carga_pct} % de la capacidad.`)
-        for (const c of lecturas) {
+        L.barra('PRUEBA DE FUNCIONAMIENTO')
+        if (med.carga_pct) L.rejilla([['Carga de prueba', `${med.carga_pct} % de la capacidad`]])
+        L.tabla([
+          { t: 'Lectura', ancho: 94 },
+          { t: 'En vacío', ancho: 46, align: 'center' },
+          { t: 'Con carga', ancho: 46, align: 'center' }
+        ], lecturas.map(c => {
           const l = med.lecturas[c.clave]
-          const partes = [l.vacio && `en vacío ${l.vacio}`, l.carga && `con carga ${l.carga}`].filter(Boolean)
-          linea(`${c.titulo}${c.unidad ? ` (${c.unidad})` : ''}: ${partes.join(' · ')}`)
-        }
+          return [`${c.titulo}${c.unidad ? ` (${c.unidad})` : ''}`, l.vacio || '—', l.carga || '—']
+        }))
       }
       const t = med.transferencia || {}
       if (t.tipo || t.resultado) {
-        titulo('Prueba de transferencia')
+        L.barra('PRUEBA DE TRANSFERENCIA')
+        const filas = []
         const como = TIPOS_TRANSFERENCIA.find(([k]) => k === t.tipo)?.[1]
-        if (como) linea(`Cómo se probó: ${como}`)
-        for (const [k, etiqueta] of TRANSFERENCIA_GEN) if (t[k]) linea(`${etiqueta}: ${t[k]}`)
-        if (t.resultado) linea(`Resultado: ${t.resultado === 'aprobada' ? 'Aprobada' : 'No aprobada'}`)
+        if (como) filas.push(['Cómo se probó', como])
+        for (const [k, etiqueta] of TRANSFERENCIA_GEN) if (t[k]) filas.push([etiqueta, t[k]])
+        if (t.resultado) filas.push(['Resultado', t.resultado === 'aprobada' ? 'Aprobada' : 'No aprobada'])
+        L.tabla([{ t: 'Concepto', ancho: 94 }, { t: 'Resultado', ancho: 92 }], filas)
       }
     }
-    if (rev.datos.reporte_termico) linea('Se entrega reporte térmico por separado.')
+    if (rev.datos.reporte_termico) L.caja('Se entrega reporte térmico por separado.')
   }
 
-  if (orden.observaciones?.trim()) { titulo('Observaciones'); parrafo(orden.observaciones.trim()) }
-  if (orden.recomendaciones?.trim()) { titulo('Recomendaciones'); parrafo(orden.recomendaciones.trim()) }
+  if (orden.observaciones?.trim()) { L.barra('OBSERVACIONES'); L.caja(orden.observaciones.trim()) }
+  if (orden.recomendaciones?.trim()) { L.barra('RECOMENDACIONES'); L.caja(orden.recomendaciones.trim()) }
   if (orden.requiere_seguimiento) {
-    titulo('Seguimiento')
-    parrafo(`Requiere seguimiento${orden.fecha_seguimiento ? ` para el ${fechaLarga(orden.fecha_seguimiento)}` : ''}.`)
+    L.barra('SEGUIMIENTO')
+    L.caja(`Requiere seguimiento${orden.fecha_seguimiento ? ` para el ${fechaLarga(orden.fecha_seguimiento)}` : ''}.`)
   }
-  if (orden.horas_equipo != null) linea(`Horómetro del equipo: ${orden.horas_equipo}`)
 
   // Solo la copia interna lleva el material: sin costos, esa tabla nunca los tuvo.
   if (tipo === 'interno') {
     const usado = (orden.orden_surtido || []).filter(l => Number(l.cantidad_usada) > 0)
     if (usado.length > 0) {
-      titulo('Material usado (del almacén)')
-      for (const l of usado) linea(`${l.cantidad_usada} × ${l.sku} — ${l.nombre}${l.unidad ? ` ${l.unidad}` : ''}`)
-      y += 2
+      L.barra('MATERIAL USADO (DEL ALMACÉN)')
+      L.tabla([
+        { t: 'Cant.', ancho: 20, align: 'center' }, { t: 'SKU', ancho: 44 },
+        { t: 'Descripción', ancho: 96 }, { t: 'Unidad', ancho: 26, align: 'center' }
+      ], usado.map(l => [String(l.cantidad_usada), l.sku || '', l.nombre || '', l.unidad || '']))
     }
     const adicionales = (orden.refacciones || []).filter(r => r?.descripcion)
     if (adicionales.length > 0) {
-      titulo('Material adicional (no entregado por almacén)')
-      for (const r of adicionales) linea(`${r.cantidad || 1} × ${r.descripcion}`)
-      y += 2
+      L.barra('MATERIAL ADICIONAL (NO ENTREGADO POR ALMACÉN)')
+      L.tabla([{ t: 'Cant.', ancho: 20, align: 'center' }, { t: 'Descripción', ancho: 166 }],
+        adicionales.map(r => [String(r.cantidad || 1), r.descripcion]))
     }
   }
 
   // ---- evidencia fotográfica ----
-  // El papel solo podía apuntar "No. de fotos ___" y una carpeta; aquí la foto va dentro
-  // del documento y dice de qué punto es. Se limita el número para que el PDF siga
+  // El papel solo podía apuntar "No. de fotos ___" y una carpeta; aquí la foto va dentro del
+  // documento, en su marco, y dice de qué punto es. Dos por fila, mismo tamaño de espacio para
+  // todas (4:3): la foto se ajusta dentro sin deformarse, y una que no se pueda abrir deja su
+  // marco con el aviso en vez de tumbar la orden. Se limita el número para que el PDF siga
   // pesando lo que se puede mandar por WhatsApp.
   if (rev) {
     const conFoto = []
@@ -340,61 +370,76 @@ export async function construirPdfOrden(orden, nombreTecnico, nombreTecnico2, ti
       }
     }
     if (conFoto.length > 0) {
-      doc.addPage(); y = 20
-      titulo('Evidencia fotográfica')
+      doc.addPage(); L.y = 16
+      L.barra('EVIDENCIA FOTOGRÁFICA')
       const muestra = conFoto.slice(0, MAX_FOTOS_PDF)
       if (conFoto.length > muestra.length) {
-        parrafo(`Se anexan ${muestra.length} de ${conFoto.length} fotografías; el resto queda en el expediente.`)
+        L.caja(`Se anexan ${muestra.length} de ${conFoto.length} fotografías; el resto queda en el expediente.`)
       }
-      const anchoFoto = (der - izq - 6) / 2
+      const hueco = 6
+      const anchoMarco = (L.util - hueco) / 2
+      const altoFoto = anchoMarco * 0.75
+      const altoMarco = altoFoto + 11
       let columna = 0
-      let filaAlto = 0
-      for (const f of muestra) {
+      for (let n = 0; n < muestra.length; n++) {
+        const f = muestra[n]
+        if (columna === 0) L.salto(altoMarco + 4)
+        const x = L.m + columna * (anchoMarco + hueco)
+        const arriba = L.y - 4
+        doc.setDrawColor(...LINEA).setLineWidth(0.3).rect(x, arriba, anchoMarco, altoMarco)
+        doc.setFillColor(...ZEBRA).rect(x, arriba, anchoMarco, altoFoto, 'F')
         const imagen = await fotoDataUrl(f.ruta)
-        if (!imagen) continue
-        const altoFoto = anchoFoto * 0.75
-        if (columna === 0) { saltoSiHaceFalta(altoFoto + 12); filaAlto = altoFoto + 12 }
-        const x = izq + columna * (anchoFoto + 6)
-        try {
-          doc.addImage(imagen, 'JPEG', x, y, anchoFoto, altoFoto)
-        } catch {
-          // Una foto que no se puede pintar (archivo corrupto, formato raro) no puede
-          // tumbar la orden entera: se deja el hueco anotado y el documento sigue.
-          doc.setDrawColor(...TEXTO).rect(x, y, anchoFoto, altoFoto)
-          doc.setFontSize(9)
-          doc.text('Foto no legible', x + 4, y + altoFoto / 2)
+        let pintada = false
+        if (imagen) {
+          const caja = ajustarEn(imagen.w, imagen.h, anchoMarco - 2, altoFoto - 2)
+          try {
+            doc.addImage(imagen.url, 'JPEG', x + 1 + caja.dx, arriba + 1 + caja.dy, caja.w, caja.h)
+            pintada = true
+          } catch { /* se deja el aviso de abajo */ }
         }
-        doc.setFontSize(8.5)
-        doc.text(doc.splitTextToSize(paraPdf(f.punto), anchoFoto), x, y + altoFoto + 4)
-        doc.setFontSize(10.5)
+        if (!pintada) {
+          doc.setFont('helvetica', 'italic').setFontSize(9).setTextColor(...GRIS)
+          doc.text('Foto no disponible', x + anchoMarco / 2, arriba + altoFoto / 2, { align: 'center' })
+        }
+        doc.setDrawColor(...LINEA).line(x, arriba + altoFoto, x + anchoMarco, arriba + altoFoto)
+        doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...TEXTO)
+        const leyenda = doc.splitTextToSize(paraPdf(`Foto ${n + 1} — ${f.punto}`), anchoMarco - 4).slice(0, 2)
+        doc.text(leyenda, x + 2, arriba + altoFoto + 4)
         columna = columna === 0 ? 1 : 0
-        if (columna === 0) y += filaAlto
+        if (columna === 0) L.y += altoMarco + 3
       }
-      if (columna === 1) y += filaAlto
+      if (columna === 1) L.y += altoMarco + 3
     }
   }
 
-  titulo('Firma de recibido')
+  // ---- firmas ----
+  L.barra('FIRMA DE RECIBIDO')
   const firma = await firmaDataUrl(orden.firma_cliente)
+  const altoCaja = 36
+  const anchoCaja = (L.util - 6) / 2
+  L.salto(altoCaja + 6)
+  const arribaCaja = L.y - 4
+  for (let k = 0; k < 2; k++) {
+    const x = L.m + k * (anchoCaja + 6)
+    doc.setDrawColor(...LINEA).setLineWidth(0.3).rect(x, arribaCaja, anchoCaja, altoCaja)
+    doc.setDrawColor(...GRIS).setLineWidth(0.2).line(x + 8, arribaCaja + altoCaja - 9, x + anchoCaja - 8, arribaCaja + altoCaja - 9)
+    doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(...GRIS)
+    doc.text(k === 0 ? 'Firma del cliente (recibe de conformidad)' : 'Técnico responsable',
+      x + anchoCaja / 2, arribaCaja + altoCaja - 4.5, { align: 'center' })
+  }
   if (firma) {
-    saltoSiHaceFalta(30)
-    doc.addImage(firma, 'PNG', izq, y, 70, 28)
-    y += 32
+    try { doc.addImage(firma, 'PNG', L.m + (anchoCaja - 56) / 2, arribaCaja + 2, 56, 23) } catch { /* sin firma legible */ }
   } else {
-    parrafo('El cliente no firmó esta orden.')
+    doc.setFont('helvetica', 'italic').setFontSize(9).setTextColor(...GRIS)
+    doc.text('El cliente no firmó esta orden.', L.m + anchoCaja / 2, arribaCaja + 15, { align: 'center' })
   }
-
-  // Pie de página, en todas las hojas que haya.
-  const total = doc.internal.getNumberOfPages()
-  for (let p = 1; p <= total; p++) {
-    doc.setPage(p)
-    doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...TEXTO)
-    doc.text(
-      `PowerMx · OS-${orden.folio} · generado el ${fechaLarga(hoyLocal())} · ${tipo === 'interno' ? 'copia interna' : 'copia del cliente'} · página ${p} de ${total}`,
-      izq, alto - 10
-    )
+  if (nombreTecnico) {
+    doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(...TEXTO)
+    doc.text(paraPdf(nombreTecnico), L.m + anchoCaja + 6 + anchoCaja / 2, arribaCaja + altoCaja - 12, { align: 'center' })
   }
+  L.y += altoCaja + 2
 
+  L.pie(`PowerMx · OS-${orden.folio} · generado el ${fechaLarga(hoyLocal())} · ${tipo === 'interno' ? 'copia interna' : 'copia del cliente'}`)
   return doc.output('blob')
 }
 

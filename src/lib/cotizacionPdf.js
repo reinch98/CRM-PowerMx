@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from './supabase'
-import { paraPdf, fechaLarga } from './documentos.js'
+import { paraPdf, fechaLarga, fechaCorta } from './documentos.js'
 import { sumarDias } from './fechas.js'
 
 const NOCHE = [12, 21, 32]
@@ -49,11 +49,8 @@ export function folioCotizacion(c) {
   return `PMX-COT-${f || 'SINFECHA'}-${String(c.folio ?? '').padStart(4, '0')}`
 }
 
-// '2026-10-05' -> '05/10/2026'
-export function fechaCorta(fecha) {
-  const [a, m, d] = String(fecha || '').split('-')
-  return a && m && d ? `${d}/${m}/${a}` : ''
-}
+// La misma fecha corta que usa la orden ('2026-10-05' -> '05/10/2026').
+export { fechaCorta }
 
 export const tituloDeCotizacion = tipo => `COTIZACIÓN — ${NOMBRE_TIPO[tipo] || 'SERVICIOS'}`
 
