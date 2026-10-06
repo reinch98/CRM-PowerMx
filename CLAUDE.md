@@ -1564,7 +1564,7 @@ el menú"). Sin esto agrupar solo **acomoda**; con esto la barra **avisa**.
 - **Falta de esta tanda** (ver el artefacto "Navegación del CRM PowerMx"): un inicio que diga
   qué atender, y la barra inferior en el celular — en ese orden.
 
-### Inicio del admin (SQL 42, 29/09/2026) — SQL escrito, falta correrlo
+### Inicio del admin (SQL 42, 29/09/2026) — SQL aplicado y probado
 
 Paso 4 de la propuesta de interfaz. Antes el admin entraba a la Agenda, que muestra el calendario
 pero **no lo que está esperando**; ahora entra a **Inicio** (primera pantalla del área Servicio,
@@ -1583,8 +1583,8 @@ solo admin) y el técnico y el almacenista siguen entrando a su lista.
 - Medido en celular con mock del RPC: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px,
   0 px de desborde; el clic lleva a la pantalla correcta y como técnico no aparece Inicio.
   12 casos en Node (`pruebas/inicio.prueba.js`).
-- **Falta:** correr `42_inicio_admin.sql` y `42_prueba_inicio_admin.sql` (10 pasos); sin el SQL la
-  pantalla muestra el error explicado, no se rompe.
+- **Aplicado y probado por Caña el 29/09/2026** (`42_inicio_admin.sql` y su prueba; el paso 2 se corrigió
+  porque el trigger de citas ya crea su propio aviso, así que "subió 2" era lo correcto).
 
 ## Sincronización con el proveedor (SQL 44, 29/09/2026) — SQL aplicado y probado en Supabase
 
@@ -1839,6 +1839,73 @@ PROMOCIÓN, con un margen considerable pero comprándolo en Solarama".
   `armado.js` + pantalla "Paquetes solares"; luego "Sistema a la medida" en Cotizaciones.
 - **Siguen sin decidir:** si el precio publicado incluye IVA, y el híbrido A o B.
 
+## Cotizaciones: editar, PDF, pago y garantía, eliminar (05/10/2026)
+
+Cuatro cosas que no existían y que Caña pidió al usar el CRM de verdad. **SQL 59 y 60 aplicados y
+probados por Caña el 05/10/2026** (la prueba de la 60 es de 8 pasos con rollback).
+
+- **Editar** (`Cotizaciones.jsx`, botón en "Ver"): usa el MISMO formulario del alta, así que un campo
+  nuevo se agrega una sola vez. **Solo `borrador` y `enviada`** (`sePuedeEditar` en `cotizacionPdf.js`):
+  una aceptada ya apartó inventario con sus partidas, y cambiarlas por debajo dejaría el apartado en otra
+  cantidad; para editarla se pasa antes a Borrador. El `update` lleva `.in('estado', ['borrador','enviada'])`
+  y pide `select('id')`: si alguien la aceptó mientras se editaba, no toca ninguna fila y la pantalla lo dice.
+  Estado y `creada_por` no se tocan al editar.
+- **Forma de pago y garantía** (SQL 59, `cotizaciones.forma_pago` y `garantia`, texto libre y opcional).
+  Estaban en el formato de Excel de PowerMx pero en el CRM solo existían dentro de `condiciones`. La forma de
+  pago nueva trae de inicio "Anticipo del 60% para iniciar, saldo contra entrega." y esa línea **salió** de las
+  condiciones por omisión para no imprimirse dos veces; una cotización vieja que la lleve en las condiciones la
+  sigue mostrando ahí hasta que se edite. Un campo vacío no imprime su fila.
+- **PDF de la cotización** (`src/lib/cotizacionPdf.js`, botón "Descargar PDF"): conserva el formato de Excel que
+  PowerMx ya usaba —encabezado "PowerMx — Soluciones de Energía" con su contacto, título "COTIZACIÓN — <TIPO>",
+  datos del cliente, datos del equipo, conceptos, totales y condiciones— y lo mejora: **solo imprime los datos
+  que existen** (nada de "[ ]"), repite el encabezado de la tabla en cada hoja, numera las páginas y arma el
+  folio como `PMX-COT-AAAAMMDD-0001` (fecha + folio con ceros; es solo de presentación, no se guarda).
+  Una refacción **incluida** en el servicio (precio 0) se lee "Incluido", no "$0.00". **Nunca** sale
+  `notas_internas` ni costos; las partidas son las copiadas al cotizar, no el precio de hoy. El teléfono y el
+  correo del encabezado están fijos en `CONTACTO_EMPRESA` de `pdfEstilo.js`.
+- **Eliminar una cotización de prueba con sus citas y órdenes** (SQL 60, `eliminar_cotizacion(id, p_ejecutar)`,
+  solo admin). **Siempre en dos pasos:** sin `p_ejecutar` solo devuelve una vista previa (qué se borraría y qué
+  lo impide) y la pantalla pide confirmación antes del borrado de verdad. Cadena: cotización → citas
+  (`citas.cotizacion_id`) → órdenes (`ordenes_servicio.cita_id`; la orden no guarda la cotización). Borra
+  también sus pedidos, entregas sin firmar, surtido, solicitudes de material y los avisos de WhatsApp de la cita
+  que **aún no salieron** (`salida_wa` no tiene llave foránea hacia `avisos`: sin quitarlos saldría un mensaje
+  de una cita inexistente). **Se niega** si ya hubo efectos reales: entrega firmada o sin firma, devoluciones,
+  cualquier movimiento de inventario que no sea apartar/liberar, pedidos ya pedidos o recibidos o ligados a una
+  compra, una orden enviada al cliente, o un aviso de WhatsApp ya mandado. **Lo único del inventario que se
+  borra** son los `apartado`/`libera_apartado` de esa cotización, y solo si por producto quedan en cero: es la
+  única excepción a "el inventario solo se inserta", y el borrado queda en `auditoria` con el resumen. Una
+  cotización todavía Aceptada se cambia antes a Borrador (así libera lo apartado). Los archivos de Storage no se
+  borran. **No se probó en PGlite** (no había arnés a la mano): solo la corrida con rollback de Caña.
+  Reglas puras de la pantalla en `src/lib/eliminarCotizacion.js` (5 casos en Node).
+
+### PDF de la orden: formato nuevo (05/10/2026)
+
+El PDF de la orden (`construirPdfOrden` en `documentos.js`) se rehizo con el mismo estilo que la cotización.
+Las piezas de estilo viven en **`src/lib/pdfEstilo.js`** (`crearLienzo`: encabezado de dos bandas, título,
+barras de sección, rejilla de datos, **tablas con líneas en todas las celdas**, cajas de texto, pie con página).
+Recibe `paraPdf` como parámetro para no importar `documentos.js` y evitar un ciclo. **La cotización todavía trae
+su propio código de dibujo (copia del mismo estilo): conviene migrarla a `pdfEstilo.js`** para que no diverjan.
+- Los puntos de revisión van en tabla por sección (No. · Punto · Resultado · Datos y hallazgos); strings,
+  parámetros, banco, lecturas del generador y prueba de transferencia también. El dictamen va en recuadro propio.
+- **Fotos:** en marcos del mismo tamaño (4:3), dos por fila, con su leyenda "Foto N — punto". La foto se
+  **ajusta dentro sin deformarse** (`ajustarEn`; antes se estiraba a 4:3 y una vertical salía chueca) y para eso
+  `fotoDataUrl` ahora devuelve `{ url, w, h }`. Una foto que no abre deja su marco con "Foto no disponible".
+  Sin fotos, la sección no se imprime. Tope de 12 (`MAX_FOTOS_PDF`).
+- Firma: dos cajas (cliente y técnico responsable con su nombre).
+- Si generar el PDF falla con «mime type application/pdf is not supported», es el bucket `ordenes`, que nació
+  solo para imágenes: `53_bucket_ordenes_pdf.sql` le agrega `application/pdf` y sube el tope a 10 MB.
+- **Cómo se verificó sin verlo:** este entorno no puede rasterizar un PDF (no hay `pdftoppm` y el panel del
+  navegador no deja capturar uno local). Se generó con `node --import ./pruebas/registra.js` (necesita un
+  `FileReader` y `createImageBitmap` falsos para las fotos) y se leyeron las posiciones del texto con
+  `pdfjs-dist`: contenido, orden, 0 elementos fuera de la hoja y totales iguales a los del Excel. **El aspecto
+  real lo tiene que mirar una persona.**
+
+Dos tropiezos de esta tanda, por si se repiten: (1) en una prueba SQL, una función que escribe y la
+comprobación de lo que escribió **no pueden ir en la misma sentencia** (la sentencia no ve los cambios que la
+función hace dentro de ella; salió "existe aún: t" cuando ya estaba borrado); (2) en el Bash de esta
+herramienta, un heredoc largo con comillas y backticks puede romperse con «unexpected EOF»: crear el archivo con
+la herramienta de escritura y no con `cat <<`.
+
 ## Compras (SQL 41, 27/09/2026) — SQL escrito, falta correrlo
 
 La mitad que le faltaba al inventario. Se sabía qué salió y por qué; lo que **entraba**
@@ -1898,7 +1965,7 @@ entrada. Así que las dos puertas conviven y cada una cubre un caso real:
 - **Falta:** correr `41_compras.sql` y `41_prueba_compras.sql` (13 pasos), y dar de alta una
   pieza nueva desde la propia compra (hoy manda a Inventario y de regreso).
 
-- **Quitar un producto (SQL 43, 29/09/2026):** botón "Quitar" en Inventario → Catálogo, que llama a `quitar_producto(id)` (solo admin, queda en `auditoria`). **Borra de verdad solo si el producto nunca se movió** (ningún movimiento, entrega, surtido, paquete, pedido, solicitud ni compra lo toca); con historia lo **desactiva** (`activo` y `publicar` en false) porque las llaves foráneas impiden borrarlo y el inventario es un libro de movimientos. Se reactiva editando el producto. SQL escrito, falta correr `43_quitar_producto.sql` y su prueba.
+- **Quitar un producto (SQL 43, 29/09/2026):** botón "Quitar" en Inventario → Catálogo, que llama a `quitar_producto(id)` (solo admin, queda en `auditoria`). **Borra de verdad solo si el producto nunca se movió** (ningún movimiento, entrega, surtido, paquete, pedido, solicitud ni compra lo toca); con historia lo **desactiva** (`activo` y `publicar` en false) porque las llaves foráneas impiden borrarlo y el inventario es un libro de movimientos. Se reactiva editando el producto. **Aplicado y probado el 29/09/2026** (`43_quitar_producto.sql`, 4 de 4 "ok").
 
 ## Pantallas
 
