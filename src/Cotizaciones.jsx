@@ -8,6 +8,7 @@ import {
 } from './lib/preventivo'
 import { Alerta } from './ui'
 import { todasLasFilas } from './lib/paginar'
+import Expediente from './Expediente'
 import { renglonesDelResumen, previsualizarEliminacion, ejecutarEliminacion } from './lib/eliminarCotizacion'
 import {
   sePuedeEditar, construirPdfCotizacion, cargarClienteParaPdf, cargarEquipoParaPdf,
@@ -206,6 +207,7 @@ export default function Cotizaciones({ irA }) {
   const [detalle, setDetalle] = useState(null)
   const [editandoId, setEditandoId] = useState(null)   // cotización que se está editando (null = nueva)
   const [generandoPdf, setGenerandoPdf] = useState(null)
+  const [expedienteId, setExpedienteId] = useState(null)   // cotización cuyo expediente está abierto
   const [eliminando, setEliminando] = useState(null)   // { id, ocupado, bloqueos, resumen, listo }
 
   useEffect(() => { cargar() }, [])
@@ -615,6 +617,10 @@ export default function Cotizaciones({ irA }) {
       )}
 
       {/* ------------------------------------------------------------------ */}
+      {vista === 'expediente' && expedienteId && (
+        <Expediente cotizacionId={expedienteId} onVolver={() => setVista('lista')} />
+      )}
+
       {vista === 'lista' && (
         <>
           <div className="tabla-scroll">
@@ -683,6 +689,9 @@ export default function Cotizaciones({ irA }) {
                   {sePuedeEditar(c.estado)
                     ? <button onClick={() => editar(c)}>Editar</button>
                     : <span className="ayuda">Para editarla, cámbiala primero a Borrador.</span>}
+                  <button onClick={() => { setExpedienteId(c.id); setVista('expediente') }}>
+                    Expediente (ingresos y egresos)
+                  </button>
                   <button className="btn-peligro" disabled={eliminando?.id === c.id && eliminando.ocupado}
                     onClick={() => pedirEliminar(c)}>
                     Eliminar…
