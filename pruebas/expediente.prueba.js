@@ -98,3 +98,62 @@ test('toda categoría de gasto tiene su etiqueta', () => {
   for (const [k, t] of CATEGORIAS_EGRESO) assert.equal(etiquetaCategoria(k), t)
   assert.equal(etiquetaCategoria('cobro'), 'Cobro')
 })
+
+import { normalizarTicket, normalizarBanco, formDesdeTicket, formDesdeBanco } from '../src/lib/expediente.js'
+
+test('un ticket leído se normaliza: números, fecha válida y categoría conocida', () => {
+  const t = normalizarTicket({
+    establecimiento: ' Gasolinera Norte ', fecha: '2026-10-06', total: '$1,045.50', litros: 40.2,
+    combustible: 'magna', categoria: 'gasolina', folio: 'T-99', iva: null
+  })
+  assert.equal(t.establecimiento, 'Gasolinera Norte')
+  assert.equal(t.total, 1045.5)
+  assert.equal(t.litros, 40.2)
+  assert.equal(t.categoria, 'gasolina')
+  assert.equal(t.iva, null)
+  assert.equal(normalizarTicket({ fecha: '6/10/2026', categoria: 'inventada' }).fecha, '')
+  assert.equal(normalizarTicket({ categoria: 'inventada' }).categoria, '')
+  assert.equal(normalizarTicket(null).total, null)
+})
+
+test('un comprobante bancario leído se normaliza', () => {
+  const b = normalizarBanco({ monto: '1,500', fecha: '2026-10-02', forma: 'transferencia', referencia: ' SPEI-1 ', banco: 'BBVA' })
+  assert.equal(b.monto, 1500)
+  assert.equal(b.forma, 'transferencia')
+  assert.equal(b.referencia, 'SPEI-1')
+  assert.equal(normalizarBanco({ forma: 'bitcoin' }).forma, '')
+})
+
+test('el ticket llena el formulario de gasto y cambia el tipo si no era el que estaba', () => {
+  const form = { fecha: '2026-10-07', categoria: 'tecnico', concepto: '', monto: '', iva: '', tecnico_id: '', notas: '' }
+  const f = formDesdeTicket(normalizarTicket({
+    establecimiento: 'Gasolinera Norte', fecha: '2026-10-06', total: 1045.5, litros: 40.2, combustible: 'magna',
+    categoria: 'gasolina', folio: 'T-99'
+  }), form)
+  assert.equal(f.categoria, 'gasolina')
+  assert.equal(f.fecha, '2026-10-06')
+  assert.equal(f.monto, '1045.5')
+  assert.equal(f.concepto, '40.2 L magna · Gasolinera Norte')
+  assert.equal(f.referencia, 'T-99')
+})
+
+test('lo que el ticket no trae NO pisa lo que ya estaba capturado', () => {
+  const form = { fecha: '2026-10-07', categoria: 'viaticos', concepto: 'Comida', monto: '300', iva: '41.38', tecnico_id: '', notas: '' }
+  const f = formDesdeTicket(normalizarTicket({ notas: 'borroso' }), form)
+  assert.deepEqual({ ...f, referencia: undefined }, { ...form, referencia: undefined })
+  assert.equal(f.monto, '300')
+  assert.equal(f.iva, '41.38')
+})
+
+test('el comprobante bancario llena el cobro: monto, fecha, forma, referencia y banco', () => {
+  const form = { fecha: '2026-10-07', monto: '', forma: 'efectivo', referencia: '', notas: '' }
+  const f = formDesdeBanco(normalizarBanco({
+    monto: 2900, fecha: '2026-10-05', forma: 'transferencia', referencia: 'MBAN123', banco: 'BBVA', ordenante: 'Hotel X'
+  }), form)
+  assert.equal(f.monto, '2900')
+  assert.equal(f.forma, 'transferencia')
+  assert.equal(f.referencia, 'MBAN123')
+  assert.equal(f.notas, 'Banco: BBVA · De: Hotel X')
+  // sin forma leída se queda la que estaba
+  assert.equal(formDesdeBanco(normalizarBanco({ monto: 10 }), form).forma, 'efectivo')
+})

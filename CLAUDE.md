@@ -1959,6 +1959,95 @@ función hace dentro de ella; salió "existe aún: t" cuando ya estaba borrado);
 herramienta, un heredoc largo con comillas y backticks puede romperse con «unexpected EOF»: crear el archivo con
 la herramienta de escritura y no con `cat <<`.
 
+## Expediente de ingresos y egresos por cotización (SQL 61, 07/10/2026)
+
+Pedido de Caña: por cada cotización, un flujo de ingresos y egresos con comprobantes, y al cerrar la
+operación, la utilidad. **SQL 61 aplicado y probado por Caña el 07/10/2026** (9 pasos con rollback).
+Pantalla `src/Expediente.jsx` (botón "Expediente" en el detalle de una cotización), reglas y llamadas en
+`src/lib/expediente.js` (36 casos en Node). Solo admin: aquí vive el dinero.
+
+**Decisiones de Caña, que mandan todo el cálculo:**
+- **El ingreso es la cotización** (su base sin IVA, `total − iva`), no lo cobrado. Los **cobros** se registran uno
+  por uno y se comprueban con la operación bancaria (foto o PDF); "cobrado", "comprobado con el banco" y
+  "por cobrar" se ven aparte de la utilidad.
+- **El material NO se captura en el expediente: lo dicta la cotización.** Cada partida con `producto_id` ×
+  `productos.costo` (el costo real). Las facturas de compra entran al **almacén general** (Compras) y lo que
+  no se use se queda ahí; a la cotización se le carga solo lo que ella pide. Una pieza sin costo capturado
+  cuenta como cero y **se avisa** ("la utilidad sale inflada").
+- **Sin IVA:** utilidad = base − material − otros egresos sin IVA. Un ticket sin factura cuenta **completo**
+  (su IVA no se recupera); un gasto con factura registra su IVA aparte (`iva`) y se cuenta sin él.
+- **Pago de técnicos y uso del vehículo: manuales** (monto escrito por Caña). Más adelante se puede sugerir
+  una tarifa; hoy no hay.
+- Otros egresos: gasolina, viáticos, otro, cada uno con su ticket (foto o PDF) opcional.
+
+**Cómo está hecho:** tabla `expediente_movimientos` (ingreso = categoría `cobro`; egreso = `gasolina`,
+`vehiculo`, `tecnico`, `viaticos`, `otro`), bucket `finanzas` privado y solo admin. **Todas las cifras las
+calcula la base** (`expediente_resumen`), una sola fórmula; la pantalla solo las muestra.
+- **Cerrar** (`cerrar_expediente`) congela una foto de las cifras en `cotizaciones.expediente_cierre`: un cambio
+  de costo en el catálogo ya no mueve la utilidad de un trabajo cerrado. Con avisos pendientes (falta cobrar,
+  cobros sin comprobante, piezas sin costo, sin pago de técnicos, cotización no aceptada) **no cierra salvo
+  que se pida** ("Cerrar de todos modos"): cerrar con algo sin comprobar es una decisión, no un descuido.
+- Cerrado, **dos triggers** impiden tocar sus movimientos y las partidas/importes de la cotización
+  (`_expediente_cerrado_bloquea`, `_cotizacion_cerrada_bloquea`). Se **reabre** con un motivo (obligatorio)
+  que queda en `auditoria`. Cerrar y reabrir también quedan ahí.
+- Borrar una cotización de prueba (SQL 60) arrastra sus movimientos por `on delete cascade`.
+- **Tropiezo del SQL:** `v_avisos := v_avisos || 'texto'` con un texto literal sin tipo falla («malformed array
+  literal»): Postgres lo lee como un arreglo. Con `format(...)` sí funciona (devuelve texto); con un literal va
+  `array_append(arr, 'texto'::text)`. La prueba lo atrapó al primer intento.
+- **Tropiezo de React:** cargar datos con `useEffect(() => { cargar() }, [])` donde `cargar` hace `setState` marca
+  `react-hooks/set-state-in-effect`; el patrón que pasa el lint es `leer().then(d => { if (vivo) aplicar(d) })`
+  (como en `Inicio.jsx`).
+- Medido en celular: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde.
+
+### Leer comprobantes con IA (Edge Function `leer-comprobante`, SQL 62) — escrita; falta correr el SQL y desplegar
+
+Una sola función con **tres modos**: `factura` (factura de proveedor con sus líneas → Compras), `ticket` (gasto →
+Expediente) y `banco` (comprobante de SPEI, depósito o ficha → cobro del Expediente). Reglas de las tres:
+- **Solo PROPONE; nada se guarda en la función.** Cada pantalla muestra lo leído para que Caña lo revise y
+  corrija, y recién entonces se registra: un importe o una cantidad mal leídos contaminarían el costo real, la
+  utilidad o lo cobrado. Es el mismo criterio de `leer-placa`. Los avisos dicen "Esto lo leyó la IA y puede equivocarse".
+- Solo admin (saldo de la API), `verify_jwt = false` con su bloque en `config.toml`, baja el archivo **con la sesión de
+  quien pregunta**, tope de 10 MB, y cada modo solo lee su bucket (`factura` → `compras`; `ticket`/`banco` →
+  `finanzas`). El texto del documento es **dato, no instrucción**. Modelo `claude-sonnet-5`. Se despliega con
+  `npx supabase functions deploy leer-comprobante`.
+- El archivo se **sube una sola vez** (para leerlo) y esa misma ruta es la que se guarda como comprobante: no se
+  vuelve a subir al registrar.
+
+**Facturas de material** (`src/FacturaLeida.jsx`, `src/lib/factura.js`, 22 casos en Node): bloque "Leer una factura"
+en Compras. Cada renglón se **empata con el catálogo** y la pantalla dice con palabra qué tan segura es la
+pareja: **Segura** (el código de ESE proveedor ya estaba ligado a la pieza, en `producto_proveedores`),
+**Revisa** (mismo SKU, o nombre casi igual: se preselecciona), **Dudosa** (candidatos flojos: no se preselecciona
+nada) o **Sin pareja** (se propone pieza nueva). El empate por nombre usa un coeficiente de Dice sobre las
+palabras y **castiga fuerte** si las dos traen claves con números y no comparten ninguna (el aceite 15W40 no
+se confunde con el 10W30; un filtro de aire no se empata con uno de aceite). Por línea se elige: una pieza del
+catálogo, buscar otra, **crear una pieza nueva** u omitir (un flete, por ejemplo). Se avisa **"No cuadra"** si las
+líneas leídas no suman el subtotal impreso (un renglón perdido o un precio mal leído), si hay renglones
+incompletos que se descartaron, si es en dólares o si los precios ya traen IVA (se dividen entre 1.16: el
+costo se guarda sin IVA).
+- **`registrar_compra_de_factura` (SQL 62)** hace todo en **una sola transacción**: crea las piezas nuevas,
+  guarda el código del proveedor de cada pieza (así la próxima factura de ese proveedor se empata sola) y
+  llama a `registrar_compra` (SQL 41). Si algo falla —un SKU repetido, una cantidad en cero— no queda NADA a
+  medias. Una pieza nueva nace **sin publicar y sin precio** (`publicar` es `true` por omisión en la tabla: se
+  fuerza a `false`), ligada al proveedor y a su código (`productos.proveedor` / `proveedor_sku`, y de ahí el
+  trigger de la 51 llena `producto_proveedores`). El SKU propuesto es el código del proveedor; si no hay,
+  se escribe a mano.
+- **El costo del catálogo:** se actualiza solo si la pieza no tenía ninguno o si Caña marca la casilla (una
+  compra de urgencia a sobreprecio no reescribe el costo sin que alguien lo decida); una pieza nueva siempre
+  toma el de la factura.
+- El nombre del proveedor se reconoce aunque cambie cómo viene impreso ("CUMMINS MEXICO S.A. DE C.V." →
+  "Cummins México") para no partir un proveedor en dos; el campo ofrece los ya conocidos.
+- El bucket `compras` ahora acepta también fotos; el archivo leído queda en `compras.archivo_pdf` (la columna se
+  llama "pdf" pero guarda también la foto).
+- **Gasolina, viáticos y otros gastos por foto** (Expediente → "Registrar un gasto"): el botón "Leer el
+  comprobante y llenar los datos" propone tipo, fecha, monto, IVA si viene desglosado, litros y combustible,
+  y guarda el folio del ticket como referencia. **Lo que el ticket no trae no pisa lo ya capturado.** Un cobro
+  hace lo mismo con el comprobante bancario (monto, fecha, forma, clave de rastreo y banco).
+- **No probado con documentos reales:** todo se vio en el emulador con una función simulada. Falta correr la
+  prueba del SQL 62 en Supabase, desplegar la función y probar con facturas y tickets de verdad (cómo lee
+  tus PDF y fotos, y cuánto saldo gasta cada lectura).
+- **Falta:** una tarifa sugerida para técnicos y vehículo; contar expedientes por cerrar en el Inicio y en los
+  globos de las pestañas.
+
 ## Compras (SQL 41, 27/09/2026) — SQL escrito, falta correrlo
 
 La mitad que le faltaba al inventario. Se sabía qué salió y por qué; lo que **entraba**

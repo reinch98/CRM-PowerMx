@@ -137,28 +137,136 @@ export async function cargarMovimientos(cotizacionId) {
   }
 }
 
-// Sube el comprobante (si hay) y luego guarda el movimiento con su ruta. Si el archivo no sube,
-// no se guarda nada: un cobro "comprobado" sin archivo sería mentira.
-export async function guardarMovimiento(fila, archivo) {
+// Sube un comprobante (foto o PDF) al bucket y devuelve su ruta. Una foto del celular se encoge
+// antes de subir. Se separa de guardar para poder LEERLO antes de registrar sin subirlo dos veces.
+export async function subirComprobante(cotizacionId, archivo) {
   try {
-    let ruta = null
-    let nombre = null
-    if (archivo) {
-      if (!archivoValido(archivo)) return { error: 'El comprobante tiene que ser una foto o un PDF.' }
-      const pdf = esPdf(archivo)
-      const cuerpo = pdf ? archivo : await redimensionar(archivo, 2000, 0.85)
-      ruta = rutaComprobante(fila.cotizacion_id, archivo.name, pdf)
-      nombre = archivo.name || (pdf ? 'comprobante.pdf' : 'comprobante.jpg')
-      const { error: eSub } = await supabase.storage.from(BUCKET)
-        .upload(ruta, cuerpo, { upsert: true, contentType: pdf ? 'application/pdf' : 'image/jpeg' })
-      if (eSub) return { error: `No se pudo subir el comprobante: ${textoDeError(eSub)}` }
+    if (!archivoValido(archivo)) return { error: 'El comprobante tiene que ser una foto o un PDF.' }
+    const pdf = esPdf(archivo)
+    const cuerpo = pdf ? archivo : await redimensionar(archivo, 2000, 0.85)
+    const ruta = rutaComprobante(cotizacionId, archivo.name, pdf)
+    const { error } = await supabase.storage.from(BUCKET)
+      .upload(ruta, cuerpo, { upsert: true, contentType: pdf ? 'application/pdf' : 'image/jpeg' })
+    if (error) return { error: `No se pudo subir el comprobante: ${textoDeError(error)}` }
+    return { ruta, nombre: archivo.name || (pdf ? 'comprobante.pdf' : 'comprobante.jpg') }
+  } catch (err) {
+    return { error: textoDeError(err) }
+  }
+}
+
+// Guarda el movimiento. El comprobante es el archivo elegido (se sube aquí) o uno que ya se subió
+// para leerlo (`subido`). Si el archivo no sube no se guarda nada: un cobro "comprobado" sin
+// archivo sería mentira.
+export async function guardarMovimiento(fila, archivo, subido) {
+  try {
+    let ruta = subido?.ruta || null
+    let nombre = subido?.nombre || null
+    if (!ruta && archivo) {
+      const r = await subirComprobante(fila.cotizacion_id, archivo)
+      if (r.error) return { error: r.error }
+      ruta = r.ruta
+      nombre = r.nombre
     }
     const { error } = await supabase.from('expediente_movimientos')
       .insert([{ ...fila, archivo: ruta, archivo_nombre: nombre }])
     if (error) return { error: textoDeError(error) }
     return { ok: true }
-  } catch (e) {
-    return { error: textoDeError(e) }
+  } catch (err) {
+    return { error: textoDeError(err) }
+  }
+}
+
+// ---- leer el comprobante con IA (Edge Function `leer-comprobante`): solo propone ----
+
+const texto = v => (typeof v === 'string' ? v.trim() : '')
+const aNumero = v => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null
+  if (typeof v !== 'string') return null
+  const limpio = v.replace(/[^0-9.,-]/g, '').replace(/,/g, '')
+  const n = Number(limpio)
+  return limpio === '' || limpio === '-' || limpio === '.' || !Number.isFinite(n) ? null : n
+}
+const fechaValida = v => (/^\d{4}-\d{2}-\d{2}$/.test(texto(v)) ? texto(v) : '')
+const claveEn = (v, lista) => (lista.some(([k]) => k === v) ? v : '')
+
+export function normalizarTicket(l) {
+  const x = l && typeof l === 'object' ? l : {}
+  return {
+    establecimiento: texto(x.establecimiento),
+    fecha: fechaValida(x.fecha),
+    total: aNumero(x.total),
+    iva: aNumero(x.iva),
+    litros: aNumero(x.litros),
+    combustible: texto(x.combustible),
+    folio: texto(x.folio),
+    categoria: claveEn(texto(x.categoria), CATEGORIAS_EGRESO),
+    concepto: texto(x.concepto),
+    notas: texto(x.notas)
+  }
+}
+
+export function normalizarBanco(l) {
+  const x = l && typeof l === 'object' ? l : {}
+  return {
+    monto: aNumero(x.monto),
+    fecha: fechaValida(x.fecha),
+    forma: claveEn(texto(x.forma), FORMAS_COBRO),
+    referencia: texto(x.referencia),
+    banco: texto(x.banco),
+    ordenante: texto(x.ordenante),
+    beneficiario: texto(x.beneficiario),
+    concepto: texto(x.concepto),
+    notas: texto(x.notas)
+  }
+}
+
+const aTexto = n => (n == null ? '' : String(n))
+
+// Lo leído de un ticket llena el formulario de gasto; lo que no se leyó se queda como estaba.
+export function formDesdeTicket(l, form) {
+  const detalle = [
+    l.litros != null ? `${l.litros} L${l.combustible ? ' ' + l.combustible : ''}` : '',
+    l.establecimiento
+  ].filter(Boolean).join(' · ')
+  return {
+    ...form,
+    categoria: l.categoria || form.categoria,
+    fecha: l.fecha || form.fecha,
+    monto: l.total != null ? aTexto(l.total) : form.monto,
+    iva: l.iva != null ? aTexto(l.iva) : form.iva,
+    concepto: l.concepto || detalle || form.concepto,
+    referencia: l.folio || form.referencia
+  }
+}
+
+// Lo leído de un comprobante bancario llena el formulario de cobro.
+export function formDesdeBanco(l, form) {
+  const notas = [l.banco && `Banco: ${l.banco}`, l.ordenante && `De: ${l.ordenante}`].filter(Boolean).join(' · ')
+  return {
+    ...form,
+    fecha: l.fecha || form.fecha,
+    monto: l.monto != null ? aTexto(l.monto) : form.monto,
+    forma: l.forma || form.forma,
+    referencia: l.referencia || form.referencia,
+    notas: notas || form.notas
+  }
+}
+
+// modo: 'ticket' (gastos) | 'banco' (cobros)
+export async function leerComprobante(ruta, modo) {
+  try {
+    const { data, error } = await supabase.functions.invoke('leer-comprobante', { body: { ruta, modo } })
+    if (error) {
+      // La función devuelve el motivo en el cuerpo; `invoke` solo trae el código.
+      let detalle = ''
+      try { detalle = (await error.context?.json())?.error || '' } catch { /* sin cuerpo */ }
+      return { error: detalle || 'No se pudo leer el comprobante.' }
+    }
+    if (data?.error) return { error: data.error }
+    if (!data?.ok) return { error: 'No entendí lo que devolvió el modelo.' }
+    return { lectura: modo === 'banco' ? normalizarBanco(data.leido) : normalizarTicket(data.leido) }
+  } catch (err) {
+    return { error: textoDeError(err) }
   }
 }
 

@@ -5,7 +5,8 @@ import { Alerta } from './ui'
 import {
   CATEGORIAS_EGRESO, FORMAS_COBRO, pesos, etiquetaCategoria, estadoComprobante, textoUtilidad,
   validarMovimiento, filaDeMovimiento, cargarResumen, cargarMovimientos, guardarMovimiento,
-  borrarMovimiento, cerrarExpediente, reabrirExpediente, urlComprobante
+  borrarMovimiento, cerrarExpediente, reabrirExpediente, urlComprobante,
+  subirComprobante, leerComprobante, formDesdeTicket, formDesdeBanco
 } from './lib/expediente'
 
 // ---------------------------------------------------------------------------
@@ -48,24 +49,49 @@ function Comprobante({ m }) {
   )
 }
 
-function FormMovimiento({ tipo, tecnicos, onGuardar }) {
+function FormMovimiento({ tipo, cotizacionId, tecnicos, onGuardar }) {
   const [form, setForm] = useState(tipo === 'ingreso' ? vacioCobro() : vacioGasto())
   const [archivo, setArchivo] = useState(null)
   const [error, setError] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const [version, setVersion] = useState(0)   // cambia la llave del input de archivo para vaciarlo
+  const [subido, setSubido] = useState(null)   // comprobante ya subido para leerlo: { ruta, nombre }
+  const [leyendo, setLeyendo] = useState(false)
+  const [leido, setLeido] = useState(null)       // { ok, notas } tras leerlo con la IA
   const cambiar = (campo, valor) => setForm(f => ({ ...f, [campo]: valor }))
   const esCobro = tipo === 'ingreso'
+
+  function elegirArchivo(f) {
+    setArchivo(f); setSubido(null); setLeido(null)
+  }
+
+  // Sube el comprobante UNA vez, lo lee y llena el formulario. Solo propone: el admin revisa y
+  // corrige antes de registrar. Si la lectura falla, el archivo ya quedó subido y se captura a mano.
+  async function leer() {
+    setError(''); setLeyendo(true)
+    let ya = subido
+    if (!ya) {
+      const sub = await subirComprobante(cotizacionId, archivo)
+      if (sub.error) { setLeyendo(false); return setError(sub.error) }
+      ya = { ruta: sub.ruta, nombre: sub.nombre }
+      setSubido(ya)
+    }
+    const r = await leerComprobante(ya.ruta, esCobro ? 'banco' : 'ticket')
+    setLeyendo(false)
+    if (r.error) return setError(`${r.error} Captura los datos a mano: el comprobante ya quedó adjunto.`)
+    setForm(f => (esCobro ? formDesdeBanco(r.lectura, f) : formDesdeTicket(r.lectura, f)))
+    setLeido({ notas: r.lectura.notas })
+  }
 
   async function enviar(e) {
     e.preventDefault()
     const problema = validarMovimiento(form, tipo)
     if (problema) return setError(problema)
     setError(''); setOcupado(true)
-    const texto = await onGuardar(form, archivo)
+    const texto = await onGuardar(form, archivo, subido)
     setOcupado(false)
     if (texto) return setError(texto)
-    setForm(esCobro ? vacioCobro() : vacioGasto()); setArchivo(null); setVersion(v => v + 1)
+    setForm(esCobro ? vacioCobro() : vacioGasto()); setArchivo(null); setSubido(null); setLeido(null); setVersion(v => v + 1)
   }
 
   return (
@@ -130,8 +156,22 @@ function FormMovimiento({ tipo, tecnicos, onGuardar }) {
       <label className="campo">
         <span>{esCobro ? 'Comprobante bancario (foto o PDF)' : 'Ticket o comprobante (foto o PDF, opcional)'}</span>
         <input key={version} type="file" accept="image/*,application/pdf"
-          onChange={e => setArchivo(e.target.files?.[0] || null)} />
+          onChange={e => elegirArchivo(e.target.files?.[0] || null)} />
       </label>
+      {archivo && (
+        <div style={{ marginBottom: 10 }}>
+          <button type="button" disabled={leyendo || ocupado} onClick={leer}>
+            {leyendo ? 'Leyendo el comprobante…' : (leido ? 'Leer otra vez' : 'Leer el comprobante y llenar los datos')}
+          </button>
+          <p className="ayuda">Opcional. La IA propone los datos y tú los revisas antes de registrar.</p>
+        </div>
+      )}
+      {leido && (
+        <Alerta tipo="info" palabra="Revisa">
+          Esto lo leyó la IA y puede equivocarse: confirma el monto, la fecha y lo demás antes de
+          registrar.{leido.notas ? ` La IA anotó: ${leido.notas}` : ''}
+        </Alerta>
+      )}
       <button type="submit" className="btn-primario" disabled={ocupado}>
         {ocupado ? 'Guardando…' : (esCobro ? 'Registrar cobro' : 'Registrar gasto')}
       </button>
@@ -179,11 +219,11 @@ export default function Expediente({ cotizacionId, onVolver }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cotizacionId])
 
-  async function agregar(tipo, form, archivo) {
+  async function agregar(tipo, form, archivo, subido) {
     setMensaje('')
     const quien = (await supabase.auth.getUser()).data.user?.email
     const fila = filaDeMovimiento(form, tipo, cotizacionId, quien)
-    const r = await guardarMovimiento(fila, archivo)
+    const r = await guardarMovimiento(fila, archivo, subido)
     if (r.error) return r.error
     setAvisosCierre(null)
     setMensaje(tipo === 'ingreso' ? 'Cobro registrado.' : 'Gasto registrado.')
@@ -282,7 +322,8 @@ export default function Expediente({ cotizacionId, onVolver }) {
         {!cerrado && (
           <details className="tarjeta">
             <summary className="resumen">Registrar un cobro</summary>
-            <FormMovimiento tipo="ingreso" tecnicos={tecnicos} onGuardar={(f, a) => agregar('ingreso', f, a)} />
+            <FormMovimiento tipo="ingreso" cotizacionId={cotizacionId} tecnicos={tecnicos}
+              onGuardar={(f, a, s) => agregar('ingreso', f, a, s)} />
           </details>
         )}
       </section>
@@ -354,7 +395,8 @@ export default function Expediente({ cotizacionId, onVolver }) {
         {!cerrado && (
           <details className="tarjeta">
             <summary className="resumen">Registrar un gasto (gasolina, vehículo, técnico, viáticos…)</summary>
-            <FormMovimiento tipo="egreso" tecnicos={tecnicos} onGuardar={(f, a) => agregar('egreso', f, a)} />
+            <FormMovimiento tipo="egreso" cotizacionId={cotizacionId} tecnicos={tecnicos}
+              onGuardar={(f, a, s) => agregar('egreso', f, a, s)} />
           </details>
         )}
       </section>

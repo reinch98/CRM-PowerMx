@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Leer una factura de proveedor y registrarla como compra (Edge Function `leer-factura`, SQL 62).
+// Leer una factura de proveedor y registrarla como compra (Edge Function `leer-comprobante`, modo factura, SQL 62).
 //
 // La función solo PROPONE. Aquí viven las reglas para revisar lo leído antes de que entre nada al
 // almacén: normalizar la lectura, empatar cada línea con una pieza del catálogo (por el código
@@ -332,7 +332,7 @@ export async function subirParaLeer(archivo) {
 
 export async function leerFactura(ruta) {
   try {
-    const { data, error } = await supabase.functions.invoke('leer-factura', { body: { ruta } })
+    const { data, error } = await supabase.functions.invoke('leer-comprobante', { body: { ruta, modo: 'factura' } })
     if (error) {
       // La función devuelve el motivo en el cuerpo; `invoke` solo trae el código.
       let detalle = ''

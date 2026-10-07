@@ -439,10 +439,10 @@ verify_jwt = false
 verify_jwt = false
 
 # ---------------------------------------------------------------------------
-# Lectura de facturas de proveedor (foto o PDF): la llama el CRM con la sesión del admin y la
+# Lectura de comprobantes (factura de proveedor, ticket de gasto o comprobante bancario; foto o PDF): la llama el CRM con la sesión del admin y la
 # función valida ella misma con auth.getUser. Solo propone; no guarda nada.
 # ---------------------------------------------------------------------------
-[functions.leer-factura]
+[functions.leer-comprobante]
 verify_jwt = false
 
 # ---------------------------------------------------------------------------

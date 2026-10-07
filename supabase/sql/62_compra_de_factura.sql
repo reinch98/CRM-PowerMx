@@ -1,7 +1,7 @@
 -- ---------------------------------------------------------------------------
 -- 62_compra_de_factura.sql — registrar una compra leída de una factura (foto o PDF).
 --
--- La función `leer-factura` solo PROPONE (proveedor, folio, líneas); el admin revisa cada línea
+-- La función `leer-comprobante` (modo factura) solo PROPONE (proveedor, folio, líneas); el admin revisa cada línea
 -- y decide: una pieza que ya existe en el catálogo, una pieza NUEVA, o no es material. Esto
 -- registra lo decidido en UNA transacción:
 --
