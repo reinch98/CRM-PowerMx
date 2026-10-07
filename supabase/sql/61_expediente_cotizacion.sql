@@ -191,7 +191,7 @@ begin
     v_avisos := v_avisos || format('%s pieza(s) de la cotización sin costo capturado: la utilidad sale inflada.', v_sin_costo);
   end if;
   if not v_hay_tecnico then
-    v_avisos := v_avisos || 'No hay pago de técnicos capturado.';
+    v_avisos := array_append(v_avisos, 'No hay pago de técnicos capturado.'::text);
   end if;
 
   return jsonb_build_object(
