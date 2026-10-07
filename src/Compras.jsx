@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alerta } from './ui'
+import FacturaLeida from './FacturaLeida'
 import {
   cargarCompras, cargarPedidosPorRecibir, cargarProductos, registrarCompra, cancelarCompra,
   adjuntarArchivo, urlDeArchivo, totalesDeCompra, problemasDeCompra, cambioDeCosto,
@@ -35,6 +36,7 @@ export default function Compras() {
   const [lineas, setLineas] = useState([])
   const [buscar, setBuscar] = useState('')
   const [abierto, setAbierto] = useState(false)
+  const [leyendo, setLeyendo] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [cancelando, setCancelando] = useState('')
   const [motivo, setMotivo] = useState('')
@@ -158,6 +160,17 @@ export default function Compras() {
 
       {error && <Alerta tipo="error">{error}</Alerta>}
       {mensaje && <Alerta tipo="ok">{mensaje}</Alerta>}
+
+      {/* ---- leer una factura (foto o PDF) ---- */}
+      <details className="tarjeta" open={leyendo} onToggle={e => setLeyendo(e.currentTarget.open)}>
+        <summary className="resumen">📄 Leer una factura (foto o PDF)</summary>
+        <div style={{ marginTop: 12 }}>
+          <FacturaLeida
+            productos={productos}
+            proveedoresConocidos={[...new Set(compras.map(c => c.proveedor))]}
+            onRegistrada={texto => { setMensaje(texto); setLeyendo(false); cargarTodo() }} />
+        </div>
+      </details>
 
       {/* ---- registrar ---- */}
       <details className="tarjeta" open={abierto}
