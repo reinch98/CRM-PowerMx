@@ -991,6 +991,59 @@ No contesta ni agenda nada: eso sigue siendo a mano desde la pantalla WhatsApp.
 - El **token de Meta no interviene aquí**: recibir no lo usa. Que el token temporal de 24 h
   venza no apaga la bandeja; hará falta uno permanente cuando el CRM **mande** por la API.
 
+## Envío por la API de WhatsApp — fase 3 (04/10/2026) — código escrito, sin desplegar
+
+PowerMx quedó **verificado en Meta el 04/10/2026**. Lo que faltaba para que la cola de la 56 salga sola:
+- **SQL 58** (`58_envio_whatsapp.sql` + prueba de solo lectura): política `ordenes_bot_lee_enviados` — el bot
+  lee **solo** `ordenes/enviados/` (las copias que el admin ya decidió mandar), nada de fotos, firmas,
+  expedientes ni placas; comprobado en PGlite (de tres objetos ve solo el de `enviados/`). Al final,
+  comentados, los pasos de pg_cron + pg_net cada minuto con el secreto en el **Vault**
+  (`enviar_whatsapp_cron`) y el mismo valor como `CRON_SECRET` en la función.
+- **Edge Function `enviar-whatsapp`** (`[functions.enviar-whatsapp] verify_jwt = false`): entra como `bot`,
+  `tomar_salida(20)`, manda a `graph.facebook.com/<versión>/<PHONE_ID>/messages`, `marcar_salida`. El PDF va
+  como encabezado de documento con un **enlace firmado de 1 h** (Meta lo descarga), sin subir medios.
+  La llama el reloj (`x-cron-secret`) o un admin con su sesión. Secretos nuevos: `WHATSAPP_TOKEN`
+  (permanente, usuario del sistema), `WHATSAPP_PHONE_ID`, `CRON_SECRET`; opcional `WHATSAPP_API_VERSION`.
+- **Reglas puras en `supabase/functions/_shared/whatsapp.js`** (JS plano: lo importan las dos funciones Deno
+  y `pruebas/enviarWhatsapp.prueba.js`, 12 casos): `cuerpoMensaje` (variables **con nombre** →
+  `parameter_name`), `leerRespuesta` (temporal: 429, 5xx, 130429, 131016…; permanente: 131047, 131026,
+  132000, 132001, 190… con su explicación en palabras), `esBaja`, `errorDeAcuse`.
+- **Webhook `whatsapp`**: guarda los acuses (`statuses` → `registrar_estado_wa`) y registra **BAJA** (texto
+  "BAJA"/"STOP" o el botón de baja de Meta → `registrar_baja`); a quien pide baja no se le despierta al agente.
+- Sin Deno en la PC: la sintaxis de las funciones se revisa con `node --check archivo.ts` (Node 24 quita los
+  tipos); los tipos solo los ve el deploy.
+- **Puesta en marcha (07/10/2026):** número real +52 999 648 5577 conectado (nombre "PowerMx" en revisión);
+  usuario del sistema con la app `crm-powermx` y la cuenta de WhatsApp asignadas (sin activos asignados con
+  "Administrar app" encendido, "Generar token" dice "No hay permisos disponibles"); secretos puestos; SQL 58
+  y su prueba 5 de 5; las dos funciones desplegadas; pg_cron y pg_net activados; reloj `enviar-whatsapp`
+  cada minuto y `recordatorios-de-cita` a las 14:00 UTC. El reloj respondió `200 {"apagado":true}`.
+- **La contraseña de la cuenta `bot` estaba desfasada** de `BOT_PASSWORD` (`Invalid login credentials`): el
+  webhook, `solicitud-web` y `convertir.js` entran con la misma cuenta, así que también estaban fallando. Se
+  puso una nueva el 07/10/2026 con `update auth.users set encrypted_password = extensions.crypt(...)`.
+  **Diagnóstico sin revelar secretos:** comparar `encode(sha256(convert_to(valor,'UTF8')),'hex')` con la columna
+  DIGEST de Edge Functions → Secrets, y `encrypted_password = extensions.crypt(valor, encrypted_password)` para
+  saber si la base acepta la clave. Hacer el cambio y la comprobación **en una sola consulta** (CTE +
+  `returning`) para que la clave se escriba una vez: pegarla dos veces fue lo que dio "false" la primera vez.
+  En un `update`, el editor de Supabase dice "No rows returned" aunque sí haya cambiado una fila.
+- **El webhook no recibía nada del número real** (0 invocaciones): la cuenta de WhatsApp de PowerMx
+  (WABA `1796756035003895`) **no estaba suscrita a la app**; el número de prueba vivía en otra cuenta que sí.
+  Se arregló el 07/10/2026 con `POST https://graph.facebook.com/v23.0/<WABA_ID>/subscribed_apps` con el token
+  del usuario del sistema → `{"success":true}`. Con `GET` al mismo endpoint se revisa (`{"data":[]}` = sin suscribir).
+  Toda cuenta de WhatsApp nueva (p. ej. la de Dutton) necesita este paso; dar de alta el webhook en la app no basta.
+- **Identificadores (no son secretos):** app `crm-powermx` 937584876092739 · cuenta de WhatsApp (WABA)
+  1796756035003895, la del número real y la que tiene método de pago · número +52 999 648 5577 → **PHONE_ID
+  1418656331321052** (`WHATSAPP_PHONE_ID`). Hay otra WABA "PowerMx" (1581244847351078) sin número real ni pago:
+  no se usa. Para comprobar el token y el PHONE_ID: `GET /v23.0/<WABA_ID>/phone_numbers?fields=id,display_phone_number,status`.
+  La app estaba **"Sin publicar"** (modo Desarrollo); se publicó el 07/10/2026 (Publicar → Publicar).
+- **El webhook del 22/09 vivía en OTRA app** (la del número de prueba): `crm-powermx` no tenía URL de devolución
+  de llamada. El 07/10/2026 se configuró en crm-powermx (WhatsApp → Configuración: URL de la función `whatsapp`,
+  token de verificación nuevo, campo **messages** suscrito) y se reemplazaron `WHATSAPP_VERIFY_TOKEN` y
+  `WHATSAPP_APP_SECRET` por los de crm-powermx (la firma se calcula con la clave secreta de la app que manda el
+  aviso). **Mensajes del número real llegando a la bandeja desde el 07/10/2026, y la primera respuesta
+  enviada por la API (cola → reloj → `enviar-whatsapp` → Meta) llegó al celular de Caña el mismo día.** Checklist para una cuenta nueva:
+  (1) webhook en la app correcta + `messages`, (2) `subscribed_apps` de la WABA, (3) app publicada, (4) los
+  secretos de ESA app.
+
 ## Campañas mensuales de WhatsApp (SQL 57, 03/10/2026) — aplicado y probado en Supabase el 03/10/2026 (9 de 9 "ok")
 
 Sobre la cola de la 56. Solo clientes de PowerMx (los "PowerMx (confirmó)" de la hoja Asignación del

@@ -445,3 +445,10 @@ verify_jwt = false
 # ---------------------------------------------------------------------------
 [functions.solicitud-web]
 verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# enviar-whatsapp (fase 3): la despierta pg_cron, que no trae un token de Supabase. La
+# función valida por su cuenta (x-cron-secret o la sesión de un admin).
+# ---------------------------------------------------------------------------
+[functions.enviar-whatsapp]
+verify_jwt = false

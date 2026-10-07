@@ -1,5 +1,6 @@
 // ---------------------------------------------------------------------------
-// Webhook de WhatsApp — fase 2 del plan: los mensajes que entran caen en la bandeja.
+// Webhook de WhatsApp — los mensajes que entran caen en la bandeja; los acuses de lo que
+// manda el CRM (fase 3) actualizan la cola de salida; "BAJA" apaga el marketing a ese número.
 //
 // Meta llama esta función cada vez que alguien le escribe al número de PowerMx.
 // Aquí NO se contesta nada y NO se agenda nada: solo se guarda el mensaje con
@@ -23,6 +24,7 @@
 // ---------------------------------------------------------------------------
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { esBaja, errorDeAcuse } from "../_shared/whatsapp.js";
 
 // Meta reintenta si no contesta rápido; mejor un 200 seco que hacerlo esperar.
 const OK = () => new Response("ok", { status: 200 });
@@ -200,13 +202,31 @@ Deno.serve(async (req) => {
           // Un mensaje que falla no debe tumbar a los demás del mismo aviso.
           if (error) { console.error("No se pudo guardar", m.id, error.message); continue; }
 
+          // "BAJA" (o el botón de baja de marketing de Meta): no más campañas a ese número.
+          // El mensaje ya quedó guardado arriba; aquí solo se anota la baja (SQL 56) y no
+          // se despierta al agente: a quien pidió que no le escriban no se le contesta solo.
+          if (esBaja(datos.p_texto)) {
+            if (!data?.repetido) {
+              const { error: eb } = await sb.rpc("registrar_baja", { p_telefono: m.from, p_origen: "whatsapp", p_nota: datos.p_texto });
+              if (eb) console.error("No se pudo registrar la baja", m.from, eb.message);
+            }
+            continue;
+          }
+
           // El agente contesta APARTE: pensar tarda segundos y Meta reintenta el aviso si
           // no le respondemos rápido. Si el agente está apagado, la llamada no hace nada.
           if (data?.conversacion_id && !data?.repetido) despertarAgente(data.conversacion_id);
         }
 
-        // Los acuses de entrega (`statuses`) todavía no se guardan: hacen falta
-        // cuando el CRM mande por la API, no mientras se responda a mano.
+        // Acuses de lo que mandó el CRM por la API (SQL 56): enviado → entregado → leído, o
+        // fallido con su motivo. La base solo deja avanzar el estado, así que un acuse que
+        // llega tarde o repetido no hace retroceder nada.
+        for (const st of valor.statuses ?? []) {
+          const { error } = await sb.rpc("registrar_estado_wa", {
+            p_wa_message_id: st.id, p_estado: st.status, p_error: errorDeAcuse(st),
+          });
+          if (error) console.error("No se pudo guardar el acuse", st.id, error.message);
+        }
       }
     }
   } catch (e) {
