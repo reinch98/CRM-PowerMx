@@ -375,11 +375,18 @@ function PuntoRevision({ punto, valor, puedeEditar, onCambio, onFoto }) {
         <>
           <div className="fila">
             {puedeEditar && (
-              <label className="btn boton-archivo">
-                ＋ Foto del hallazgo
-                <input type="file" accept="image/*" capture="environment" multiple
-                  className="oculto-accesible" onChange={e => onFoto(e)} />
-              </label>
+              <>
+                <label className="btn boton-archivo">
+                  ＋ Foto del hallazgo
+                  <input type="file" accept="image/*" capture="environment" multiple
+                    className="oculto-accesible" onChange={e => onFoto(e)} />
+                </label>
+                <label className="btn boton-archivo">
+                  De la galería
+                  <input type="file" accept="image/*" multiple
+                    className="oculto-accesible" onChange={e => onFoto(e)} />
+                </label>
+              </>
             )}
             {(valor?.fotos?.length > 0) && (
               <span className="etiqueta">
@@ -757,11 +764,18 @@ function RevisionOrden({ orden, puedeEditar }) {
                     </span>
                   )}
                   {puedeEditar && orden.equipo_id && (
-                    <label className="btn boton-archivo">
-                      {lista ? 'Cambiar la foto' : '＋ Foto de la placa'}
-                      <input type="file" accept="image/*" capture="environment"
-                        className="oculto-accesible" onChange={e => agregarPlaca(p.rol, e)} />
-                    </label>
+                    <>
+                      <label className="btn boton-archivo">
+                        {lista ? 'Cambiar la foto' : '＋ Foto de la placa'}
+                        <input type="file" accept="image/*" capture="environment"
+                          className="oculto-accesible" onChange={e => agregarPlaca(p.rol, e)} />
+                      </label>
+                      <label className="btn boton-archivo">
+                        De la galería
+                        <input type="file" accept="image/*"
+                          className="oculto-accesible" onChange={e => agregarPlaca(p.rol, e)} />
+                      </label>
+                    </>
                   )}
                 </div>
               )
@@ -1387,11 +1401,18 @@ function DetalleOrden({ orden, yo, esAdmin, nombres, cola, enLinea, onVolver, on
           <div className="campo">
             <span>Mis fotos</span>
             {puedoEditar && (
-              <label className="btn btn-primario boton-archivo">
-                ＋ Agregar fotos
-                <input type="file" accept="image/*" capture="environment" multiple
-                  className="oculto-accesible" onChange={agregarFotos} />
-              </label>
+              <div className="fila" style={{ flexWrap: 'wrap' }}>
+                <label className="btn btn-primario boton-archivo">
+                  ＋ Tomar fotos
+                  <input type="file" accept="image/*" capture="environment" multiple
+                    className="oculto-accesible" onChange={agregarFotos} />
+                </label>
+                <label className="btn boton-archivo">
+                  Elegir de la galería
+                  <input type="file" accept="image/*" multiple
+                    className="oculto-accesible" onChange={agregarFotos} />
+                </label>
+              </div>
             )}
             {fotos.length > 0 && (
               <div className="fotos">
