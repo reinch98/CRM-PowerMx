@@ -157,3 +157,54 @@ test('el comprobante bancario llena el cobro: monto, fecha, forma, referencia y 
   // sin forma leída se queda la que estaba
   assert.equal(formDesdeBanco(normalizarBanco({ monto: 10 }), form).forma, 'efectivo')
 })
+
+import { verificacionDeCobro, estadoCobro, textoCobranza } from '../src/lib/expediente.js'
+
+test('un cobro con el monto capturado igual al leído queda verificado', () => {
+  assert.equal(verificacionDeCobro({ monto: '2900', monto_leido: '2900' }).estado, 'verificado')
+  assert.equal(verificacionDeCobro({ monto: '2900.004', monto_leido: '2900' }).estado, 'verificado')
+})
+
+test('si lo capturado no coincide con lo leído, no cuadra y lo dice en pesos', () => {
+  const v = verificacionDeCobro({ monto: '1900', monto_leido: '1800' })
+  assert.equal(v.estado, 'no_coincide')
+  assert.match(v.texto, /1,800/)
+  assert.match(v.texto, /1,900/)
+})
+
+test('sin lectura del comprobante el cobro suma pero no puede cerrar la cobranza', () => {
+  assert.equal(verificacionDeCobro({ monto: '500', monto_leido: '' }).estado, 'sin_leer')
+  assert.equal(verificacionDeCobro({ monto: '500' }).estado, 'sin_leer')
+})
+
+test('el cobro guarda el monto que leyó la IA y si fue leído', () => {
+  const leido = filaDeMovimiento({ monto: '2900', fecha: '2026-10-07', monto_leido: '2900' }, 'ingreso', 'c1')
+  assert.equal(leido.leido_ia, true)
+  assert.equal(leido.monto_leido, 2900)
+  const nada = filaDeMovimiento({ monto: '2900', fecha: '2026-10-07', monto_leido: '' }, 'ingreso', 'c1')
+  assert.equal(nada.leido_ia, false)
+  assert.equal(nada.monto_leido, null)
+  const gasto = filaDeMovimiento({ categoria: 'gasolina', monto: '100', fecha: '2026-10-07', monto_leido: '100' }, 'egreso', 'c1')
+  assert.equal(gasto.leido_ia, false)
+  assert.equal(gasto.monto_leido, null)
+})
+
+test('el comprobante bancario deja guardado el monto leído para comparar', () => {
+  const f = formDesdeBanco(normalizarBanco({ monto: 2900, referencia: 'X' }), { fecha: '2026-10-07', monto: '', forma: 'efectivo', referencia: '', notas: '', monto_leido: '' })
+  assert.equal(f.monto_leido, '2900')
+  assert.equal(f.monto, '2900')
+})
+
+test('el estado de un cobro ya guardado se dice con palabra', () => {
+  assert.equal(estadoCobro({ archivo: null }), 'Sin comprobante')
+  assert.equal(estadoCobro({ archivo: 'x', leido_ia: false }), 'Comprobante sin verificar')
+  assert.equal(estadoCobro({ archivo: 'x', leido_ia: true, monto_leido: 1800, monto: 1900 }), 'Comprobante sin verificar')
+  assert.equal(estadoCobro({ archivo: 'x', leido_ia: true, monto_leido: 1900, monto: 1900 }), 'Verificado con el comprobante')
+})
+
+test('la cobranza se dice con palabra', () => {
+  assert.equal(textoCobranza('pendiente'), 'Sin cobros')
+  assert.equal(textoCobranza('parcial'), 'Cobro parcial')
+  assert.equal(textoCobranza('liquidada'), 'Cobrada')
+  assert.equal(textoCobranza('rara'), '—')
+})

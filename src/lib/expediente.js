@@ -36,6 +36,11 @@ const num = v => {
   const n = Number(v)
   return Number.isFinite(n) ? n : 0
 }
+const numONull = v => {
+  if (v === '' || v == null) return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
 const vacioANull = v => {
   const t = typeof v === 'string' ? v.trim() : v
   return t === '' || t == null ? null : t
@@ -54,6 +59,33 @@ export function textoUtilidad(utilidad) {
   if (n < 0) return 'Pérdida'
   return 'Sin utilidad'
 }
+
+// ---- verificación del cobro con el comprobante leído por la IA ----
+
+// El cobro solo CUENTA para cerrar la cobranza si lo capturado coincide con lo que la IA leyó en el
+// comprobante (la base lo vuelve a comprobar). Esto lo dice en pantalla mientras se captura.
+export function verificacionDeCobro(form) {
+  const leido = numONull(form?.monto_leido)
+  if (leido == null) {
+    return { estado: 'sin_leer', etiqueta: 'Sin leer', texto: 'Este cobro suma, pero sin leer su comprobante no puede cerrar la cobranza solo.' }
+  }
+  const monto = num(form?.monto)
+  if (Math.abs(monto - leido) <= 0.01) {
+    return { estado: 'verificado', etiqueta: 'Verificado', texto: `El monto coincide con el comprobante (${pesos(leido)}).` }
+  }
+  return { estado: 'no_coincide', etiqueta: 'No cuadra', texto: `El comprobante dice ${pesos(leido)} y escribiste ${pesos(monto)}.` }
+}
+
+// El estado de un cobro ya guardado, con palabra.
+export function estadoCobro(m) {
+  if (!m?.archivo) return 'Sin comprobante'
+  const leido = numONull(m.monto_leido)
+  if (m.leido_ia && leido != null && Math.abs(leido - num(m.monto)) <= 0.01) return 'Verificado con el comprobante'
+  return 'Comprobante sin verificar'
+}
+
+export const textoCobranza = estado =>
+  ({ pendiente: 'Sin cobros', parcial: 'Cobro parcial', liquidada: 'Cobrada' }[estado] || '—')
 
 // ---- captura ----
 
@@ -87,6 +119,8 @@ export function filaDeMovimiento(form, tipo, cotizacionId, quien) {
     forma: esIngreso ? vacioANull(form.forma) : null,
     referencia: vacioANull(form.referencia),
     tecnico_id: !esIngreso && form.categoria === 'tecnico' ? vacioANull(form.tecnico_id) : null,
+    leido_ia: esIngreso && numONull(form.monto_leido) != null,
+    monto_leido: esIngreso ? numONull(form.monto_leido) : null,
     notas: vacioANull(form.notas),
     creado_por: quien || 'crm'
   }
@@ -248,6 +282,8 @@ export function formDesdeBanco(l, form) {
     monto: l.monto != null ? aTexto(l.monto) : form.monto,
     forma: l.forma || form.forma,
     referencia: l.referencia || form.referencia,
+    // El monto que leyó la IA queda aparte de lo capturado: si no coinciden, el cobro no verifica nada.
+    monto_leido: l.monto != null ? aTexto(l.monto) : (form.monto_leido ?? ''),
     notas: notas || form.notas
   }
 }
@@ -277,6 +313,42 @@ export async function borrarMovimiento(id) {
     return { ok: true }
   } catch (e) {
     return { error: textoDeError(e) }
+  }
+}
+
+export async function liquidarCobranza(cotizacionId, motivo) {
+  try {
+    const { data, error } = await supabase.rpc('liquidar_cobranza', { p_cotizacion: cotizacionId, p_motivo: motivo })
+    if (error) return { error: textoDeError(error) }
+    return { respuesta: data }
+  } catch (err) {
+    return { error: textoDeError(err) }
+  }
+}
+
+export async function reabrirCobranza(cotizacionId) {
+  try {
+    const { data, error } = await supabase.rpc('reabrir_cobranza', { p_cotizacion: cotizacionId })
+    if (error) return { error: textoDeError(error) }
+    return { respuesta: data }
+  } catch (err) {
+    return { error: textoDeError(err) }
+  }
+}
+
+// ¿Esa clave de rastreo ya se usó en otro cobro? Una misma transferencia contada dos veces haría
+// pasar por cobrado lo que no se cobró. Solo avisa: un pago puede repartirse legítimamente.
+export async function referenciaRepetida(referencia) {
+  const ref = String(referencia ?? '').trim()
+  if (!ref) return null
+  try {
+    const { data } = await supabase.from('expediente_movimientos')
+      .select('cotizacion_id, monto, cotizaciones(folio)')
+      .eq('tipo', 'ingreso').eq('referencia', ref).limit(1)
+    const r = data?.[0]
+    return r ? { folio: r.cotizaciones?.folio ?? null, monto: r.monto } : null
+  } catch {
+    return null
   }
 }
 

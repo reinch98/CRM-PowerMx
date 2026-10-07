@@ -1999,6 +1999,32 @@ calcula la base** (`expediente_resumen`), una sola fórmula; la pantalla solo la
   (como en `Inicio.jsx`).
 - Medido en celular: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde.
 
+### La cobranza se cierra sola con el comprobante leído (SQL 63, 07/10/2026) — escrito; falta correrlo
+
+Pedido de Caña: "la cotización se cierra cuando la IA lee el comprobante y se cuadra con la cotización".
+**Se entendió como el lado del INGRESO** (la cobranza); **no cierra el expediente**, porque ese lleva la utilidad y
+necesita los gastos (`cerrar_expediente` sigue siendo aparte). **No toca `cotizaciones.estado`** (aceptada, etc.):
+esa columna mueve inventario y es otra cosa; la cobranza es una dimensión nueva (`cobranza_estado`).
+- Cada cobro guarda además el **monto que leyó la IA** (`monto_leido`, `leido_ia`). Un cobro está **verificado** si
+  tiene archivo, lo leyó la IA y lo capturado coincide con lo leído (±1 centavo): así un monto tecleado mal, o un
+  comprobante que no es de ese pago, no cierran nada.
+- **`liquidada`** = lo verificado alcanza el total de la cotización (con IVA, ±$1); **`parcial`** = hay cobros pero lo
+  verificado no alcanza; **`pendiente`** = sin cobros. **Lo recalcula la BASE sola** (triggers sobre los movimientos y
+  sobre el total de la cotización): borrar el cobro que la cerraba la vuelve a abrir. Un cobro en efectivo o con el
+  comprobante sin leer suma a "parcial" pero **no puede liquidar solo**.
+- **Una diferencia legítima** (una retención de ISR o IVA, un descuento acordado) se da por liquidada **a mano con motivo
+  escrito** (\`liquidar_cobranza\`); esa decisión no se recalcula sola hasta \`reabrir_cobranza\`. Con el expediente
+  cerrado no se puede cambiar la cobranza (reábrelo primero).
+- Pantalla: "Cobranza: Sin cobros / Cobro parcial / Cobrada" con palabra, en el Expediente y en la lista de Cotizaciones;
+  cada cobro dice "Verificado con el comprobante", "Comprobante sin verificar" o "Sin comprobante"; al capturar, una
+  línea en vivo dice **"Verificado / No cuadra / Sin leer"** comparando lo tecleado con lo que leyó la IA, y avisa si el
+  cobro es mayor que lo que falta. Una **clave de rastreo repetida** pide confirmación (una misma transferencia contada
+  dos veces haría pasar por cobrado lo que no se cobró); solo avisa, porque un pago puede repartirse.
+- \`expediente_resumen\` (redefinida en la 63) trae \`ingreso.cobranza\` y \`ingreso.verificado\`, y avisos nuevos: cobrado de
+  más y cobros con comprobante sin leer o que no cuadran.
+- Pruebas: 12 pasos SQL (\`63_prueba_cobranza_cotizacion.sql\`) y 7 casos en Node.
+- **Falta:** mostrar "cobranza pendiente" de las cotizaciones aceptadas en el Inicio y en los globos.
+
 ### Leer comprobantes con IA (Edge Function `leer-comprobante`, SQL 62) — escrita; falta correr el SQL y desplegar
 
 Una sola función con **tres modos**: `factura` (factura de proveedor con sus líneas → Compras), `ticket` (gasto →

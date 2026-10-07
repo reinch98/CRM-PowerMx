@@ -9,6 +9,7 @@ import {
 import { Alerta } from './ui'
 import { todasLasFilas } from './lib/paginar'
 import Expediente from './Expediente'
+import { textoCobranza } from './lib/expediente'
 import { renglonesDelResumen, previsualizarEliminacion, ejecutarEliminacion } from './lib/eliminarCotizacion'
 import {
   sePuedeEditar, construirPdfCotizacion, cargarClienteParaPdf, cargarEquipoParaPdf,
@@ -642,6 +643,10 @@ export default function Cotizaciones({ irA }) {
                     <td align="right">{pesos(c.total)}</td>
                     <td>
                       <span className={`estado estado-${c.estado}`}>{c.estado}</span>
+                      {/* El lado del ingreso: se cierra solo cuando los comprobantes leídos cuadran. */}
+                      {(c.estado === 'aceptada' || c.cobranza_estado !== 'pendiente') && (
+                        <div className="ayuda">Cobro: {textoCobranza(c.cobranza_estado)}</div>
+                      )}
                       {/* La propuso el agente de WhatsApp: hay que revisarla antes de enviarla.
                           Va con palabra y no solo con color, como todo estado del proyecto. */}
                       {c.origen === 'whatsapp' && (

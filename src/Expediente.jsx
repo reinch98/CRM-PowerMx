@@ -6,7 +6,8 @@ import {
   CATEGORIAS_EGRESO, FORMAS_COBRO, pesos, etiquetaCategoria, estadoComprobante, textoUtilidad,
   validarMovimiento, filaDeMovimiento, cargarResumen, cargarMovimientos, guardarMovimiento,
   borrarMovimiento, cerrarExpediente, reabrirExpediente, urlComprobante,
-  subirComprobante, leerComprobante, formDesdeTicket, formDesdeBanco
+  subirComprobante, leerComprobante, formDesdeTicket, formDesdeBanco,
+  estadoCobro, textoCobranza, verificacionDeCobro, liquidarCobranza, reabrirCobranza, referenciaRepetida
 } from './lib/expediente'
 
 // ---------------------------------------------------------------------------
@@ -18,7 +19,7 @@ import {
 // Todas las cifras las calcula la base; esta pantalla solo las muestra.
 // ---------------------------------------------------------------------------
 
-const vacioCobro = () => ({ fecha: hoyLocal(), monto: '', forma: 'transferencia', referencia: '', notas: '' })
+const vacioCobro = () => ({ fecha: hoyLocal(), monto: '', forma: 'transferencia', referencia: '', notas: '', monto_leido: '' })
 const vacioGasto = () => ({ fecha: hoyLocal(), categoria: 'tecnico', concepto: '', monto: '', iva: '', tecnico_id: '', notas: '' })
 
 async function abrirComprobante(ruta) {
@@ -38,10 +39,12 @@ function Dato({ etiqueta, valor, fuerte }) {
   )
 }
 
-function Comprobante({ m }) {
+function Comprobante({ m, cobro }) {
+  const texto = cobro ? estadoCobro(m) : estadoComprobante(m)
+  const bien = cobro ? texto.startsWith('Verificado') : !!m.archivo
   return (
     <span>
-      <span className={`estado ${m.archivo ? 'estado-aceptada' : 'estado-pendiente'}`}>{estadoComprobante(m)}</span>
+      <span className={`estado ${bien ? 'estado-aceptada' : 'estado-pendiente'}`}>{texto}</span>
       {m.archivo && (
         <button type="button" style={{ marginLeft: 6 }} onClick={() => abrirComprobante(m.archivo)}>Ver</button>
       )}
@@ -49,7 +52,7 @@ function Comprobante({ m }) {
   )
 }
 
-function FormMovimiento({ tipo, cotizacionId, tecnicos, onGuardar }) {
+function FormMovimiento({ tipo, cotizacionId, tecnicos, porCobrar, onGuardar }) {
   const [form, setForm] = useState(tipo === 'ingreso' ? vacioCobro() : vacioGasto())
   const [archivo, setArchivo] = useState(null)
   const [error, setError] = useState('')
@@ -63,6 +66,8 @@ function FormMovimiento({ tipo, cotizacionId, tecnicos, onGuardar }) {
 
   function elegirArchivo(f) {
     setArchivo(f); setSubido(null); setLeido(null)
+    // Otro archivo: lo que se leyó del anterior ya no vale.
+    setForm(fm => ({ ...fm, monto_leido: '' }))
   }
 
   // Sube el comprobante UNA vez, lo lee y llena el formulario. Solo propone: el admin revisa y
@@ -166,6 +171,20 @@ function FormMovimiento({ tipo, cotizacionId, tecnicos, onGuardar }) {
           <p className="ayuda">Opcional. La IA propone los datos y tú los revisas antes de registrar.</p>
         </div>
       )}
+      {esCobro && (() => {
+        const v = verificacionDeCobro(form)
+        const de = Number(form.monto) > Number(porCobrar) + 1
+        return (
+          <>
+            <p className="ayuda"><strong>{v.etiqueta}:</strong> {v.texto}</p>
+            {de && Number(form.monto) > 0 && (
+              <Alerta tipo="aviso" palabra="Es más de lo que falta">
+                Este cobro es mayor que lo que falta por cobrar ({pesos(porCobrar)}). Revisa el monto.
+              </Alerta>
+            )}
+          </>
+        )
+      })()}
       {leido && (
         <Alerta tipo="info" palabra="Revisa">
           Esto lo leyó la IA y puede equivocarse: confirma el monto, la fecha y lo demás antes de
@@ -189,6 +208,8 @@ export default function Expediente({ cotizacionId, onVolver }) {
   const [reabriendo, setReabriendo] = useState(false)
   const [motivo, setMotivo] = useState('')
   const [ocupado, setOcupado] = useState(false)
+  const [liquidando, setLiquidando] = useState(false)
+  const [motivoLiq, setMotivoLiq] = useState('')
 
   // Lee todo junto; aplicar() lo pone en pantalla. Se separan para que el efecto de arranque no
   // llame a setState directamente (solo dentro del .then) y para poder recargar tras cada cambio.
@@ -223,6 +244,14 @@ export default function Expediente({ cotizacionId, onVolver }) {
     setMensaje('')
     const quien = (await supabase.auth.getUser()).data.user?.email
     const fila = filaDeMovimiento(form, tipo, cotizacionId, quien)
+    if (tipo === 'ingreso') {
+      const rep = await referenciaRepetida(fila.referencia)
+      if (rep && !window.confirm(
+        `La clave «${fila.referencia}» ya está en otro cobro${rep.folio ? ` de la cotización ${rep.folio}` : ''} por ${pesos(rep.monto)}. ` +
+        '¿Registrarla de todos modos? Una misma transferencia contada dos veces haría pasar por cobrado lo que no se cobró.')) {
+        return 'No se registró: esa clave de rastreo ya estaba en otro cobro.'
+      }
+    }
     const r = await guardarMovimiento(fila, archivo, subido)
     if (r.error) return r.error
     setAvisosCierre(null)
@@ -246,6 +275,24 @@ export default function Expediente({ cotizacionId, onVolver }) {
     if (e) return setError(e)
     if (respuesta?.ok === false) return setAvisosCierre(respuesta.avisos || [])
     setAvisosCierre(null); setMensaje('Expediente cerrado: las cifras quedaron congeladas.')
+    cargar()
+  }
+
+  async function liquidar() {
+    setOcupado(true); setError('')
+    const { error: e } = await liquidarCobranza(cotizacionId, motivoLiq)
+    setOcupado(false)
+    if (e) return setError(e)
+    setLiquidando(false); setMotivoLiq(''); setMensaje('Cobranza dada por liquidada.')
+    cargar()
+  }
+
+  async function reabrirLaCobranza() {
+    setOcupado(true); setError('')
+    const { error: e } = await reabrirCobranza(cotizacionId)
+    setOcupado(false)
+    if (e) return setError(e)
+    setMensaje('Cobranza reabierta: se volvió a calcular con los cobros verificados.')
     cargar()
   }
 
@@ -296,7 +343,44 @@ export default function Expediente({ cotizacionId, onVolver }) {
         <Dato etiqueta="Total de la cotización" valor={pesos(ing.total)} fuerte />
         <Dato etiqueta="Cobrado" valor={pesos(ing.cobrado)} />
         <Dato etiqueta="De eso, comprobado con el banco" valor={pesos(ing.comprobado)} />
+        <Dato etiqueta="De eso, verificado (comprobante leído y cuadrado)" valor={pesos(ing.verificado)} />
         <Dato etiqueta="Por cobrar" valor={pesos(ing.por_cobrar)} fuerte />
+        <div style={{ marginTop: 8 }}>
+          <span className={`estado ${ing.cobranza.estado === 'liquidada' ? 'estado-aceptada' : 'estado-pendiente'}`}>
+            Cobranza: {textoCobranza(ing.cobranza.estado)}
+          </span>
+          {ing.cobranza.estado === 'liquidada' && (
+            <span className="ayuda" style={{ marginLeft: 8 }}>
+              {ing.cobranza.manual
+                ? `Dada por liquidada a mano: ${ing.cobranza.nota}`
+                : 'Se cerró sola: los comprobantes leídos cuadran con el total de la cotización.'}
+            </span>
+          )}
+          {ing.cobranza.estado !== 'liquidada' && Number(ing.cobrado) > 0 && Number(ing.cobranza.falta_verificar) > 0 && (
+            <span className="ayuda" style={{ marginLeft: 8 }}>
+              Falta verificar con comprobante leído: {pesos(ing.cobranza.falta_verificar)}.
+            </span>
+          )}
+        </div>
+        {!cerrado && ing.cobranza.manual && (
+          <button type="button" style={{ marginTop: 6 }} disabled={ocupado} onClick={reabrirLaCobranza}>Reabrir la cobranza</button>
+        )}
+        {!cerrado && !ing.cobranza.manual && ing.cobranza.estado !== 'liquidada' && Number(ing.cobrado) > 0 && (
+          !liquidando ? (
+            <button type="button" style={{ marginTop: 6 }} onClick={() => setLiquidando(true)}>Dar por liquidada…</button>
+          ) : (
+            <div style={{ marginTop: 6 }}>
+              <label className="campo">
+                <span>¿Por qué se da por liquidada? * (una retención, un descuento…)</span>
+                <input value={motivoLiq} onChange={e => setMotivoLiq(e.target.value)} />
+              </label>
+              <div className="fila" style={{ flexWrap: 'wrap' }}>
+                <button type="button" className="btn-primario" disabled={ocupado} onClick={liquidar}>Dar por liquidada</button>
+                <button type="button" onClick={() => { setLiquidando(false); setMotivoLiq('') }}>Cancelar</button>
+              </div>
+            </div>
+          )
+        )}
 
         <div className="tabla-scroll" style={{ marginTop: 10 }}>
           <table>
@@ -310,7 +394,7 @@ export default function Expediente({ cotizacionId, onVolver }) {
                   <td>{FORMAS_COBRO.find(([k]) => k === m.forma)?.[1] || m.forma || '—'}</td>
                   <td>{m.referencia || '—'}</td>
                   <td align="right">{pesos(m.monto)}</td>
-                  <td><Comprobante m={m} /></td>
+                  <td><Comprobante m={m} cobro /></td>
                   {!cerrado && <td><button className="btn-peligro" onClick={() => quitar(m)}>Quitar</button></td>}
                 </tr>
               ))}
@@ -322,7 +406,7 @@ export default function Expediente({ cotizacionId, onVolver }) {
         {!cerrado && (
           <details className="tarjeta">
             <summary className="resumen">Registrar un cobro</summary>
-            <FormMovimiento tipo="ingreso" cotizacionId={cotizacionId} tecnicos={tecnicos}
+            <FormMovimiento tipo="ingreso" cotizacionId={cotizacionId} tecnicos={tecnicos} porCobrar={ing.por_cobrar}
               onGuardar={(f, a, s) => agregar('ingreso', f, a, s)} />
           </details>
         )}
