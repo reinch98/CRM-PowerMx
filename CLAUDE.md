@@ -2023,7 +2023,15 @@ esa columna mueve inventario y es otra cosa; la cobranza es una dimensión nueva
 - `expediente_resumen` (redefinida en la 63) trae `ingreso.cobranza` y `ingreso.verificado`, y avisos nuevos: cobrado de
   más y cobros con comprobante sin leer o que no cuadran.
 - Pruebas: 12 pasos SQL (`63_prueba_cobranza_cotizacion.sql`) y 7 casos en Node.
-- **Falta:** mostrar "cobranza pendiente" de las cotizaciones aceptadas en el Inicio y en los globos.
+- **En el Inicio (SQL 64, 07/10/2026 — escrito; falta correrlo):** `inicio_admin()` ganó dos avisos sobre las cotizaciones
+  **aceptadas** con la cobranza sin liquidar, con cuánto falta por cobrar: **"… con más de 30 días sin cobrarse por
+  completo"** (nivel alto, "Atender hoy": una venta ya ganada que se queda sin cobrar) y **"… sin cobrarse por completo"**
+  (nivel medio). La antigüedad es la de la fecha de la cotización. Si ya se cobró todo pero falta leer o cuadrar el
+  comprobante, dice "cobrado: falta verificar el comprobante" en vez de "$0 por cobrar". Llevan a Cotizaciones. No hizo falta
+  tocar `Inicio.jsx`: dibuja cualquier aviso que mande la base. La 64 es la función completa de la 42 con esos dos renglones
+  más (`create or replace` no permite agregar un renglón sin repetirla entera).
+- **Falta:** el contador en los globos de las pestañas (`pendientes_admin`): se dejó fuera a propósito porque las
+  cotizaciones aceptadas con cobro abierto pueden ser muchas y un globo que siempre marca un número alto deja de leerse.
 
 ### Leer comprobantes con IA (Edge Function `leer-comprobante`, SQL 62) — escrita; falta correr el SQL y desplegar
 
