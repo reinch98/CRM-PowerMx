@@ -2079,8 +2079,15 @@ costo se guarda sin IVA).
 - **No probado con documentos reales:** todo se vio en el emulador con una función simulada. Falta correr la
   prueba del SQL 62 en Supabase, desplegar la función y probar con facturas y tickets de verdad (cómo lee
   tus PDF y fotos, y cuánto saldo gasta cada lectura).
-- **Falta:** una tarifa sugerida para técnicos y vehículo; contar expedientes por cerrar en el Inicio y en los
-  globos de las pestañas.
+- **Expedientes por cerrar en el Inicio (SQL 65, 07/10/2026 — escrito; falta correrlo):** `inicio_admin()` avisa de las
+  cotizaciones **aceptadas ya cobradas** (cobranza liquidada, SQL 63) cuyo expediente sigue **abierto**: faltan los
+  gastos y cerrar para conocer la utilidad. **"… cobradas hace más de 15 días con el expediente sin cerrar"** es nivel
+  alto ("Atender hoy": una operación que terminó de cobrarse y de la que nadie sabe cuánto dejó) y **"… con el
+  expediente por cerrar"** es nivel medio. Los días cuentan desde que se liquidó la cobranza. Cerrar el expediente la
+  saca de la lista. Es la función completa de la 64 con dos renglones más. Probado con la diferencia antes/después
+  (`65_prueba_inicio_expedientes.sql`, 4 pasos).
+- **Falta:** una tarifa sugerida para técnicos y vehículo, y contar estos avisos en los globos de las pestañas (se dejó
+  fuera a propósito: ver arriba).
 
 ## Compras (SQL 41, 27/09/2026) — SQL escrito, falta correrlo
 
