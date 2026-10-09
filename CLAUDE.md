@@ -2769,4 +2769,13 @@ registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Fina
 - **Indicadores (`.kpi-valor`):** en celular, con dos por fila, "$50,000.00" se partía en dos renglones.
   Ahora la cifra va con `clamp(20px, 5.4vw, 26px)` y los indicadores de Finanzas e Impuestos usan
   `pesosRedondos` (sin centavos); el detalle conserva los centavos.
-- **Falta (F2–F3):** ZIP del SAT (hoy se eligen los XML sueltos); que el contador confirme las tasas.
+- **ZIP de la descarga masiva del SAT (09/10/2026):** se suelta en Finanzas → Por revisar y sus XML siguen
+  el mismo camino que uno suelto (sin IA, con propuesta, sin duplicados). `src/lib/zip.js` lee el ZIP **sin
+  dependencias**: directorio central a mano + `DecompressionStream('deflate-raw')` (navegador y Node).
+  Ignora carpetas y lo que no es `.xml` (el `Metadata.txt` del SAT); omite con motivo lo cifrado, lo dañado
+  y lo que pesa de más; topes de 500 archivos, 2 MB por XML (contando los bytes REALES al descomprimir:
+  una bomba que miente en su tamaño se corta) y 60 MB en total; ZIP64 se rechaza con mensaje. El resultado
+  de la subida muestra un resumen ("37 registrados · 2 ya estaban · 1 con problema") y siempre a la vista
+  lo que falló; lo demás va plegado. 6 pruebas en Node (ZIP armados con `zlib`) y prueba de punta a punta
+  en el emulador con un ZIP armado en el navegador (3 registrados, 1 dañado reportado, el .txt ignorado).
+- **Falta:** que el contador confirme las tasas de RESICO.

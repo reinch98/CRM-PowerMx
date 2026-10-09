@@ -3,6 +3,7 @@ import { Alerta } from './ui'
 import { hoyLocal } from './lib/fechas'
 import { etiquetaTipoComprobante, etiquetaFormaPagoSat } from './lib/cfdi'
 import Impuestos from './Impuestos'
+import { leerZip, esZip } from './lib/zip'
 import {
   CATEGORIAS_GASTO, CATEGORIAS_CAPITAL, FORMAS_PAGO, ETIQUETA_CONFIANZA,
   etiquetaCategoria, esIngreso, pesos, pesosRedondos, fechaMerida, fechaLegible, avisosDeCfdi, formularioDeAprobacion,
@@ -258,8 +259,54 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
   )
 }
 
-const TEXTO_RESULTADO = { nuevo: 'Registrado', duplicado: 'Ya estaba', error: 'No se pudo' }
-const CLASE_RESULTADO = { nuevo: 'estado-aprobado', duplicado: 'estado-revisa', error: 'estado-error' }
+const TEXTO_RESULTADO = { nuevo: 'Registrado', duplicado: 'Ya estaba', error: 'No se pudo', zip: 'ZIP abierto' }
+const CLASE_RESULTADO = { nuevo: 'estado-aprobado', duplicado: 'estado-revisa', error: 'estado-error', zip: 'estado-enviada' }
+
+function RenglonResultado({ r }) {
+  return (
+    <li className="renglon">
+      <div>
+        <div className="renglon-titulo">{r.nombre}</div>
+        {r.error && <div className="renglon-datos">{r.error}</div>}
+        {r.detalle && <div className="renglon-datos">{r.detalle}</div>}
+        {r.estado === 'duplicado' && <div className="renglon-datos">Ese archivo ya se había subido.</div>}
+      </div>
+      <span className={`estado ${CLASE_RESULTADO[r.estado]}`}>{TEXTO_RESULTADO[r.estado]}</span>
+    </li>
+  )
+}
+
+// Con 50 archivos de un golpe, lo que importa es el resumen y lo que falló; el resto va plegado.
+function Resultados({ resultados }) {
+  const cuenta = e => resultados.filter(r => r.estado === e).length
+  const aLaVista = resultados.filter(r => r.estado === 'error' || r.estado === 'zip')
+  const resto = resultados.filter(r => r.estado !== 'error' && r.estado !== 'zip')
+  const partes = [
+    cuenta('nuevo') && `${cuenta('nuevo')} ${cuenta('nuevo') === 1 ? 'registrado' : 'registrados'}`,
+    cuenta('duplicado') && `${cuenta('duplicado')} ya ${cuenta('duplicado') === 1 ? 'estaba' : 'estaban'}`,
+    cuenta('error') && `${cuenta('error')} con problema`
+  ].filter(Boolean)
+  return (
+    <div className="tarjeta" style={{ marginTop: 12 }} aria-live="polite">
+      {partes.length > 0 && <p style={{ marginTop: 0, fontWeight: 700 }}>{partes.join(' · ')}</p>}
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+        {aLaVista.map((r, i) => <RenglonResultado key={`v${i}`} r={r} />)}
+      </ul>
+      {resto.length > 0 && (resto.length <= 5 ? (
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          {resto.map((r, i) => <RenglonResultado key={`r${i}`} r={r} />)}
+        </ul>
+      ) : (
+        <details>
+          <summary className="resumen">Ver todos ({resto.length})</summary>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {resto.map((r, i) => <RenglonResultado key={`r${i}`} r={r} />)}
+          </ul>
+        </details>
+      ))}
+    </div>
+  )
+}
 
 function Bandeja({ documentos, cuentas, sinRfc, irAAjustes, onCambio }) {
   const [arrastrando, setArrastrando] = useState(false)
@@ -268,10 +315,26 @@ function Bandeja({ documentos, cuentas, sinRfc, irAAjustes, onCambio }) {
   const [mensaje, setMensaje] = useState('')
 
   async function procesar(lista) {
-    const archivos = Array.from(lista || [])
-    if (!archivos.length) return
-    setMensaje(''); setResultados([]); setSubiendo({ hecho: 0, total: archivos.length })
+    const elegidos = Array.from(lista || [])
+    if (!elegidos.length) return
+    setMensaje(''); setResultados([]); setSubiendo({ hecho: 0, total: elegidos.length })
     const salida = []
+    // Un ZIP (la descarga masiva del SAT) se abre aquí y sus XML siguen el mismo camino que uno suelto.
+    const archivos = []
+    for (const a of elegidos) {
+      if (!esZip(a)) { archivos.push(a); continue }
+      const z = await leerZip(await a.arrayBuffer())
+      if (z.error) { salida.push({ nombre: a.name, estado: 'error', error: z.error }); continue }
+      salida.push({
+        nombre: a.name, estado: 'zip',
+        detalle: `${z.archivos.length} XML ${z.archivos.length === 1 ? 'encontrado' : 'encontrados'}` +
+          (z.omitidos.length ? `; ${z.omitidos.length} no se pudieron abrir` : '')
+      })
+      for (const o of z.omitidos) salida.push({ nombre: o.nombre, estado: 'error', error: o.motivo })
+      for (const x of z.archivos) archivos.push(new File([x.bytes], x.nombre, { type: 'text/xml' }))
+    }
+    setResultados([...salida])
+    setSubiendo({ hecho: 0, total: archivos.length })
     for (const [i, a] of archivos.entries()) {
       const r = await subirDocumento(a)
       salida.push({ nombre: a.name, ...r, estado: r.estado || 'error' })
@@ -294,28 +357,14 @@ function Bandeja({ documentos, cuentas, sinRfc, irAAjustes, onCambio }) {
         onDragOver={e => { e.preventDefault(); setArrastrando(true) }}
         onDragLeave={() => setArrastrando(false)}
         onDrop={e => { e.preventDefault(); setArrastrando(false); procesar(e.dataTransfer.files) }}>
-        <input type="file" multiple accept=".xml,text/xml,application/xml,application/pdf,image/jpeg,image/png,image/webp"
+        <input type="file" multiple
+          accept=".xml,.zip,text/xml,application/xml,application/zip,application/x-zip-compressed,application/pdf,image/jpeg,image/png,image/webp"
           className="oculto-accesible" onChange={e => { procesar(e.target.files); e.target.value = '' }} disabled={!!subiendo} />
         <strong>{subiendo ? `Subiendo ${subiendo.hecho} de ${subiendo.total}…` : 'Sube facturas y tickets'}</strong>
-        <span className="ayuda">XML del SAT (se leen sin IA), PDF o fotos. Elige varios a la vez o arrástralos aquí.</span>
+        <span className="ayuda">XML del SAT (se leen sin IA), el ZIP de la descarga masiva del SAT, PDF o fotos. Elige varios a la vez o arrástralos aquí.</span>
       </label>
 
-      {resultados.length > 0 && (
-        <div className="tarjeta" style={{ marginTop: 12 }} aria-live="polite">
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {resultados.map((r, i) => (
-              <li key={i} className="renglon">
-                <div>
-                  <div className="renglon-titulo">{r.nombre}</div>
-                  {r.error && <div className="renglon-datos">{r.error}</div>}
-                  {r.estado === 'duplicado' && <div className="renglon-datos">Ese archivo ya se había subido.</div>}
-                </div>
-                <span className={`estado ${CLASE_RESULTADO[r.estado]}`}>{TEXTO_RESULTADO[r.estado]}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {resultados.length > 0 && <Resultados resultados={resultados} />}
 
       {mensaje && <Alerta tipo="ok">{mensaje}</Alerta>}
 
