@@ -642,3 +642,92 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
   border: 2px solid var(--linea);
   border-radius: 12px;
 }
+
+/* ---------------------------------------------------------------------------
+   Finanzas y comisiones (SQL 66–67)
+   --------------------------------------------------------------------------- */
+
+/* Indicadores: la cifra grande y su nombre en palabras. Se acomodan solos de 1 a 4 por fila. */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.kpi {
+  padding: 14px 16px;
+  background: var(--blanco);
+  border: 2px solid var(--linea);
+  border-radius: var(--radio);
+  min-width: 0;
+}
+.kpi-nombre { display: block; color: var(--texto-2); font-weight: 600; }
+.kpi-valor {
+  display: block;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-nota { display: block; color: var(--texto-2); }
+/* El principal: azul noche con la cifra en blanco (18.4 de contraste), no en ámbar. */
+.kpi-principal { background: var(--noche); border-color: var(--noche); color: var(--blanco); }
+.kpi-principal .kpi-nombre, .kpi-principal .kpi-nota { color: var(--claro); }
+/* Ocupa la fila entera: la cifra que más importa va sola arriba y las demás debajo, en pares. */
+.kpi-ancho { grid-column: 1 / -1; }
+
+/* Zona para soltar archivos. Es un <label> que envuelve al input: todo el recuadro se toca. */
+.zona-subida {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  padding: 24px 16px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--blanco);
+  border: 3px dashed var(--borde);
+  border-radius: var(--radio);
+  min-height: 140px;
+}
+.zona-subida:focus-within { outline: 3px solid var(--noche); outline-offset: 2px; }
+.zona-subida[data-arrastrando='true'] { background: var(--info-fondo); border-color: var(--info); }
+.zona-subida strong { font-size: 19px; }
+
+/* Renglón de una lista: título y datos a la izquierda, estado y cifra a la derecha. */
+.renglon {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 2px solid var(--linea);
+}
+.renglon:last-child { border-bottom: none; }
+.renglon-titulo { font-weight: 700; overflow-wrap: anywhere; }
+.renglon-datos { color: var(--texto-2); overflow-wrap: anywhere; }
+.renglon-lado { display: grid; justify-items: end; gap: 4px; text-align: right; }
+.monto { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.monto-salida::before { content: '− '; }
+.monto-entrada::before { content: '+ '; }
+
+.encabezado-grupo {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 18px 0 4px;
+  font-weight: 700;
+}
+
+/* Barras de un desglose: decorativas; la cifra va SIEMPRE escrita al lado. */
+.barra-desglose { height: 10px; background: var(--claro); border-radius: 999px; overflow: hidden; }
+.barra-desglose > span { display: block; height: 100%; background: var(--noche); border-radius: 999px; }
+
+.cambio-mes { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.cambio-mes strong { flex: 1; text-align: center; font-size: 19px; text-transform: capitalize; }
+.cambio-mes button { min-width: var(--objetivo); }
+
+.estado-aprobado { color: var(--ok); }
+.estado-revisa { color: var(--aviso); }
+.estado-error { color: var(--error); }

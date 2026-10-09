@@ -25,6 +25,9 @@ const Proveedor = lazy(() => import('./Proveedor'))
 const Tarifas = lazy(() => import('./Tarifas'))
 const Tecnicos = lazy(() => import('./Tecnicos'))
 const Agente = lazy(() => import('./Agente'))
+const Finanzas = lazy(() => import('./Finanzas'))
+const PagosTecnicos = lazy(() => import('./PagosTecnicos'))
+const Comisiones = lazy(() => import('./Comisiones'))
 
 // Qué pantallas ve cada rol. El menú y el contenido salen de aquí, así que
 // agregar una pantalla es agregar un renglón, no tocar el resto.
@@ -46,6 +49,10 @@ const PANTALLAS = {
   tarifas:      { titulo: 'Precios',      componente: Tarifas,      roles: ['admin'] },
   usuarios:     { titulo: 'Usuarios',     componente: Tecnicos,     roles: ['admin'] },
   agente:       { titulo: 'Agente',       componente: Agente,       roles: ['admin'] },
+  finanzas:     { titulo: 'Finanzas',     componente: Finanzas,     roles: ['admin'] },
+  pagos:        { titulo: 'Pago a técnicos', componente: PagosTecnicos, roles: ['admin'] },
+  // Solo el técnico: el admin ve lo mismo, con montos y acciones, en "Pago a técnicos".
+  comisiones:   { titulo: 'Comisiones',   componente: Comisiones,   roles: ['tecnico'] },
 }
 
 // ---------------------------------------------------------------------------
@@ -62,10 +69,11 @@ const PANTALLAS = {
 // mes al final.
 // ---------------------------------------------------------------------------
 const GRUPOS = [
-  { clave: 'servicio', titulo: 'Servicio', pantallas: ['inicio', 'agenda', 'ordenes'] },
+  { clave: 'servicio', titulo: 'Servicio', pantallas: ['inicio', 'agenda', 'ordenes', 'comisiones'] },
   { clave: 'clientes', titulo: 'Clientes', pantallas: ['solicitudes', 'whatsapp', 'clientes', 'contactos', 'equipos'] },
   { clave: 'ventas',   titulo: 'Ventas',   pantallas: ['cotizaciones', 'tarifas'] },
   { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones', 'compras', 'proveedor'] },
+  { clave: 'finanzas', titulo: 'Finanzas', pantallas: ['finanzas', 'pagos'] },
   { clave: 'ajustes',  titulo: 'Ajustes',  pantallas: ['usuarios', 'agente'] },
 ]
 

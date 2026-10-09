@@ -2589,3 +2589,80 @@ dejó para el final porque exigían que las piezas usadas quedaran estructuradas
   piezas, su frecuencia en palabras y la cantidad típica, y un botón para agregarlas.
   10 casos en Node; medido en celular: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos <
   48 px, 0 px de desborde.
+
+## ERP · F1: finanzas, CFDI y pago a técnicos (SQL 66–67, 09/10/2026) — escrito, falta correrlo
+
+**Decisiones de Caña (09/10/2026) que mandan el diseño:**
+- **RESICO persona física (626) con IVA mensual.** ISR sobre lo COBRADO e IVA por flujo de efectivo:
+  un movimiento se fecha el día que se pagó o cobró, no el de la factura. "Deducible" no aplica en
+  RESICO; lo que importa es si el IVA es **acreditable** (con CFDI y pagado). Tasas y límite anual:
+  validarlas con el contador antes de construir el reporte (F3).
+- **Lo personal NO vive en el CRM** (BBVA es personal; Banorte, el negocio). Solo existen
+  `retiro_dueno` (egreso) y `aportacion` (ingreso), que **no** cuentan como gasto ni ingreso del negocio.
+- **Técnicos sin alta en el IMSS, pago fijo por tipo de servicio.** No hay nómina legal (ISR, IMSS,
+  aguinaldo, timbrado): es control interno. `tecnicos_pago` ya guarda esquema y `alta_imss` por si un día
+  hace falta. Riesgo laboral y cómo se documenta el pago: pendiente con el contador.
+- **Facturas desde el portal del SAT** (sin PAC). El CRM recibe el XML. Para timbrar desde el CRM hace
+  falta un PAC + CSD + claves SAT de productos y servicios + complemento de pago si es PPD.
+- **Contador con el software del SAT:** el entregable será un paquete mensual (resumen + XML), no pólizas.
+- Dutton queda fuera. ~50 documentos de gasto al mes.
+
+**SQL 66 — pago a técnicos.** `tecnicos_pago`, `tarifas_pago_tecnico` (tipo de servicio × rol
+responsable/ayudante, general o por persona, con vigencia: cambiar un monto = tarifa nueva con fecha),
+`pagos_tecnico` (propuesto → aprobado → pagado | cancelado; un solo borrador por técnico) y
+`pagos_tecnico_lineas` (copian la tarifa del momento; **una orden se paga una vez por técnico**, índice
+único sobre líneas activas). `proponer_pago_tecnico` junta órdenes CERRADAS sin pagar; **sin tarifa no se
+paga ni se inventa**, se avisa. `ajustar_` (bono/descuento/anticipo), `quitar_linea_`, `aprobar_`,
+`cancelar_` y `por_pagar_tecnicos()`. Prueba: `66_prueba_pago_tecnicos.sql` (10 pasos).
+
+**SQL 67 — libro único, documentos, CFDI y comisiones.**
+- `expediente_movimientos` **es el libro único**: `cotizacion_id` ya es opcional (gastos generales) y gana
+  `cuenta_id`, `cfdi_id`, `documento_id`, `compra_id`. Categorías nuevas (material, herramienta, renta,
+  servicios, software, comisiones bancarias, impuestos, publicidad, pago a proveedor, retiro, aportación,
+  otro ingreso) con restricciones con nombre; **un cobro siempre lleva cotización** (la cobranza y la
+  utilidad cuelgan de ahí). El Expediente de una cotización no cambia: solo suma su `cotizacion_id`.
+  **Costo del trabajo ≠ flujo de caja:** pagar la factura de un proveedor es `pago_proveedor` sin
+  cotización; el material ya se cuenta en la utilidad por `productos.costo`.
+- `empresa_fiscal` (una fila: tu RFC; **decide el sentido** de un CFDI y rechaza los que no son tuyos),
+  `cuentas_financieras` (siembra Banorte negocio y Efectivo), `cfdi` (UUID único, en minúsculas),
+  `documentos` (bandeja y bitácora: huella SHA-256 única, lo extraído, la propuesta, la corrección del
+  admin, quién aprobó) y `reglas_clasificacion` (RFC del proveedor → categoría, aprendida al aprobar).
+  CFDI y documentos **no se borran** desde el CRM (sin política de delete).
+- `registrar_documento`, `registrar_cfdi`, `aprobar_documento` (gasto pagado → movimiento; "aún no la
+  pago" → sin movimiento, queda por pagar para la F4; archivar → solo respaldo), `rechazar_documento`,
+  `sugerir_cotizaciones_para_cfdi` y `ligar_cfdi_cotizacion` (facturas emitidas).
+- `registrar_pago_tecnico` se **reemplaza** (6 argumentos, con `p_cuenta`): además de cargar al expediente
+  de cada cotización, carga al libro general lo que no tiene cotización (pólizas, bonos, descuentos).
+- **`mis_comisiones()`** (técnico, solo lo suyo por `auth.uid()`): orden cerrada = "En revisión" **sin
+  monto**; con el pago aprobado = "Aprobada" con su monto; registrado = "Pagada". Bonos y descuentos
+  aprobados también se ven. Nunca precios ni datos de la cotización.
+- Bucket `finanzas` acepta XML. Prueba: `67_prueba_libro_financiero.sql` (12 pasos).
+
+**Orden para ponerlo en marcha:** `68_registro_migraciones.sql` (de otra sesión; los 64–67 terminan con su
+registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Finanzas → Ajustes: capturar el RFC
+→ Pago a técnicos → Tarifas: capturar los montos (y decidir si el ayudante cobra).
+
+**Pantallas (construidas y medidas en el emulador con un Supabase falso; sin ver contra la base real):**
+- **Finanzas** (área nueva, admin): *Por revisar* — zona para soltar varios archivos; el XML se lee **en el
+  navegador sin IA** (`src/lib/cfdi.js`); PDF y fotos se leen con IA bajo pedido (reusa
+  `leer-comprobante` modo ticket). Cada tarjeta propone categoría con su **confianza en palabra**
+  (Seguro / Revisa / Elige tú, según CÓMO se decidió: regla aprendida, clave SAT o palabras) y con
+  confianza alta se aprueba **con un toque**. Avisos: no cuadra, PPD, moneda extranjera, retenciones.
+  *Libro del mes* — ingresos, gastos, resultado e IVA acreditable (solo gastos con CFDI), retiros y
+  aportaciones aparte, desglose por categoría y movimientos sin documento. *Ajustes* — RFC y cuentas.
+- **Pago a técnicos** (admin): Por pagar (armar el pago por periodo) · Pagos (bonos, quitar, aprobar,
+  registrar con cuenta, cancelar con motivo) · Tarifas.
+- **Comisiones** (técnico; su barra queda Agenda · Órdenes · Comisiones): por cobrar, pagado este mes,
+  en revisión; filtros por estado; agrupado por mes; copia local `cache_comisiones` para verlas sin señal
+  (probado apagando el falso: muestra lo guardado con aviso).
+- Medido en celular (375 px): 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de
+  desborde en las tres pantallas y todas sus pestañas. Pruebas en Node: `cfdi` (10), `finanzas` (19),
+  `comisiones` (6); `npm test` 484, lint y build en verde.
+- **linkedom no soporta `getElementsByTagName('*')` en XML**: el lector recorre `childNodes` (igual en el
+  navegador).
+- Patrones de otros CRM del giro que se adoptaron: estado de la comisión separado del de la orden
+  ("cerrada" no es "aprobada para pago"), bonos y descuentos visibles como en ServiceTitan, y mostrar
+  solo lo que la tarea necesita (las tarjetas seguras van plegadas).
+- **Falta (F2–F3):** contar documentos por revisar y pagos por aprobar en Inicio y en los globos;
+  ZIP del SAT (hoy se eligen los XML sueltos); cuentas por pagar con los CFDI aprobados sin movimiento;
+  el reporte mensual RESICO y el paquete para el contador.
