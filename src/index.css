@@ -733,3 +733,23 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
 .estado-aprobado { color: var(--ok); }
 .estado-revisa { color: var(--aviso); }
 .estado-error { color: var(--error); }
+
+/* ---------------------------------------------------------------------------
+   Gráficas del tablero (SQL 74)
+   Series validadas con la guía de visualización (scripts/validate_palette.js, modo claro): azul y
+   naranja, separación para daltonismo ΔE 24.7, contraste ≥ 3:1 sobre blanco. Son color de MARCA de dato:
+   el texto nunca va en estos colores. El ámbar de la marca no sirve aquí (2.1:1 sobre blanco).
+   --------------------------------------------------------------------------- */
+:root {
+  --serie-1: #2a78d6;
+  --serie-2: #eb6834;
+}
+.muestra { display: inline-block; width: 16px; height: 16px; border-radius: 4px; flex: none; }
+.grafica { display: block; max-width: 640px; overflow: visible; }
+/* El SVG escala con su caja: en el celular más angosto el viewBox de 340 se dibuja en ~308 px (×0.906).
+   19 unidades quedan en ~17.2 px reales; con 17 quedaban en 15.4 y violaban el mínimo (lo atrapó la
+   medición midiendo el texto en pantalla, no el atributo). */
+.grafica .eje { font-size: 19px; font-weight: 600; fill: var(--texto-2); }
+.grafica rect[tabindex] { cursor: pointer; outline: none; }
+.grafica rect[tabindex]:focus-visible { stroke: var(--noche); stroke-width: 3; }
+.detalle-grafica { margin: 0 0 8px; min-height: 3em; }

@@ -26,6 +26,7 @@ const Tarifas = lazy(() => import('./Tarifas'))
 const Tecnicos = lazy(() => import('./Tecnicos'))
 const Agente = lazy(() => import('./Agente'))
 const Finanzas = lazy(() => import('./Finanzas'))
+const Tablero = lazy(() => import('./Tablero'))
 const PagosTecnicos = lazy(() => import('./PagosTecnicos'))
 const Comisiones = lazy(() => import('./Comisiones'))
 
@@ -49,6 +50,7 @@ const PANTALLAS = {
   tarifas:      { titulo: 'Precios',      componente: Tarifas,      roles: ['admin'] },
   usuarios:     { titulo: 'Usuarios',     componente: Tecnicos,     roles: ['admin'] },
   agente:       { titulo: 'Agente',       componente: Agente,       roles: ['admin'] },
+  tablero:      { titulo: 'Tablero',      componente: Tablero,      roles: ['admin'] },
   finanzas:     { titulo: 'Finanzas',     componente: Finanzas,     roles: ['admin'] },
   pagos:        { titulo: 'Pago a técnicos', componente: PagosTecnicos, roles: ['admin'] },
   // Solo el técnico: el admin ve lo mismo, con montos y acciones, en "Pago a técnicos".
@@ -73,7 +75,7 @@ const GRUPOS = [
   { clave: 'clientes', titulo: 'Clientes', pantallas: ['solicitudes', 'whatsapp', 'clientes', 'contactos', 'equipos'] },
   { clave: 'ventas',   titulo: 'Ventas',   pantallas: ['cotizaciones', 'tarifas'] },
   { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones', 'compras', 'proveedor'] },
-  { clave: 'finanzas', titulo: 'Finanzas', pantallas: ['finanzas', 'pagos'] },
+  { clave: 'finanzas', titulo: 'Finanzas', pantallas: ['tablero', 'finanzas', 'pagos'] },
   { clave: 'ajustes',  titulo: 'Ajustes',  pantallas: ['usuarios', 'agente'] },
 ]
 
