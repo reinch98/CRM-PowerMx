@@ -55,6 +55,9 @@ const num = v => {
   return Number.isFinite(n) ? n : 0
 }
 export const pesos = v => num(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
+// Para los indicadores grandes: sin centavos (el detalle los conserva).
+export const pesosRedondos = v =>
+  num(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 })
 const redondear = n => Math.round(n * 100) / 100
 
 // La fecha de un CFDI es una hora (con zona); el movimiento se fecha por DÍA de Mérida.

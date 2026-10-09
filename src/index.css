@@ -664,7 +664,9 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
 .kpi-nombre { display: block; color: var(--texto-2); font-weight: 600; }
 .kpi-valor {
   display: block;
-  font-size: 26px;
+  /* En celular, dos indicadores por fila dejan ~134 px: la cifra se encoge con la pantalla (nunca
+     por debajo de 20 px) y los indicadores muestran pesos sin centavos, para no partir "$50,000.0|0". */
+  font-size: clamp(20px, 5.4vw, 26px);
   font-weight: 800;
   line-height: 1.2;
   overflow-wrap: anywhere;

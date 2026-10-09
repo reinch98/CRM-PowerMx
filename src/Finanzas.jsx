@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { Alerta } from './ui'
 import { hoyLocal } from './lib/fechas'
 import { etiquetaTipoComprobante, etiquetaFormaPagoSat } from './lib/cfdi'
+import Impuestos from './Impuestos'
 import {
   CATEGORIAS_GASTO, CATEGORIAS_CAPITAL, FORMAS_PAGO, ETIQUETA_CONFIANZA,
-  etiquetaCategoria, esIngreso, pesos, fechaMerida, fechaLegible, avisosDeCfdi, formularioDeAprobacion,
+  etiquetaCategoria, esIngreso, pesos, pesosRedondos, fechaMerida, fechaLegible, avisosDeCfdi, formularioDeAprobacion,
   validarAprobacion, resumenLibro, rangoDeMes, mesAnterior, nombreDeMes, validarMovimientoLibre,
   subirDocumento, leerDocumentoConIA, listarBandeja, aprobarDocumento, rechazarDocumento,
   sugerirCotizaciones, ligarCfdiCotizacion, urlDocumento, cargarLibro, guardarMovimientoLibre,
@@ -441,12 +442,12 @@ function PorPagar({ datos, cuentas, onCambio }) {
       <div className="kpis">
         <div className="kpi kpi-principal">
           <span className="kpi-nombre">Por pagar</span>
-          <span className="kpi-valor">{pesos(datos.total)}</span>
+          <span className="kpi-valor">{pesosRedondos(datos.total)}</span>
           <span className="kpi-nota">{datos.cuentas.length} {datos.cuentas.length === 1 ? 'factura' : 'facturas'}</span>
         </div>
         <div className="kpi">
           <span className="kpi-nombre">Vencido</span>
-          <span className="kpi-valor">{pesos(datos.vencido)}</span>
+          <span className="kpi-valor">{pesosRedondos(datos.vencido)}</span>
           <span className="kpi-nota">{vencidas} {vencidas === 1 ? 'factura vencida' : 'facturas vencidas'}</span>
         </div>
       </div>
@@ -573,22 +574,22 @@ function Libro({ cuentas }) {
       <div className="kpis" aria-busy={cargando}>
         <div className="kpi">
           <span className="kpi-nombre">Ingresos</span>
-          <span className="kpi-valor">{pesos(r.ingresos)}</span>
+          <span className="kpi-valor">{pesosRedondos(r.ingresos)}</span>
           <span className="kpi-nota">Cobrado en el mes</span>
         </div>
         <div className="kpi">
           <span className="kpi-nombre">Gastos</span>
-          <span className="kpi-valor">{pesos(r.gastos)}</span>
+          <span className="kpi-valor">{pesosRedondos(r.gastos)}</span>
           <span className="kpi-nota">Pagado en el mes</span>
         </div>
         <div className="kpi kpi-principal">
           <span className="kpi-nombre">{r.resultado >= 0 ? 'Quedó a favor' : 'Faltó'}</span>
-          <span className="kpi-valor">{pesos(Math.abs(r.resultado))}</span>
+          <span className="kpi-valor">{pesosRedondos(Math.abs(r.resultado))}</span>
           <span className="kpi-nota">Ingresos menos gastos</span>
         </div>
         <div className="kpi">
           <span className="kpi-nombre">IVA acreditable</span>
-          <span className="kpi-valor">{pesos(r.iva_acreditable)}</span>
+          <span className="kpi-valor">{pesosRedondos(r.iva_acreditable)}</span>
           <span className="kpi-nota">De gastos pagados con CFDI</span>
         </div>
       </div>
@@ -762,6 +763,7 @@ export default function Finanzas() {
     ['bandeja', `Por revisar (${datos?.documentos.length ?? 0})`],
     ['por_pagar', `Por pagar (${datos?.porPagar.cuentas.length ?? 0})`],
     ['libro', 'Libro del mes'],
+    ['impuestos', 'Impuestos'],
     ['ajustes', 'Ajustes']
   ]
 
@@ -781,6 +783,7 @@ export default function Finanzas() {
       )}
       {datos && pestana === 'por_pagar' && <PorPagar datos={datos.porPagar} cuentas={cuentasActivas} onCambio={recargar} />}
       {datos && pestana === 'libro' && <Libro cuentas={cuentasActivas} />}
+      {datos && pestana === 'impuestos' && <Impuestos empresa={datos.empresa} />}
       {datos && pestana === 'ajustes' && (
         <Ajustes key={datos.empresa?.updated_at || 'vacio'} empresa={datos.empresa} cuentas={datos.cuentas} onCambio={recargar} />
       )}
