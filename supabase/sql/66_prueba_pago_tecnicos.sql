@@ -95,19 +95,27 @@ select set_config('app.p5', concat(
        then 'ok' else 'FALLO' end,
   ' — aprobado; el segundo intento no cambia nada'), true);
 
--- 6) Registrar el pago: queda pagado y SOLO la orden con cotización (600) carga un egreso 'tecnico'.
+-- 6) Registrar el pago: queda pagado; la orden con cotización (600) va a SU expediente y, desde el 67,
+--    lo que no tiene cotización (correctivo 900 − anticipo 200 = 700) va al libro general. Dos movimientos.
 select set_config('app.r6', registrar_pago_tecnico(current_setting('app.pago')::uuid, 'transferencia', 'SPEI-66', '2001-01-31')::text, true);
 select set_config('app.p6', concat(
   case when (select estado from pagos_tecnico where id = current_setting('app.pago')::uuid) = 'pagado'
-        and (current_setting('app.r6')::jsonb ->> 'expedientes_cargados')::int = 1
+        and (current_setting('app.r6')::jsonb ->> 'expedientes_cargados')::int = 2
         and (select count(*) from expediente_movimientos
               where cotizacion_id = current_setting('app.cot')::uuid and categoria = 'tecnico') = 1
         and (select monto from expediente_movimientos
               where cotizacion_id = current_setting('app.cot')::uuid and categoria = 'tecnico') = 600
+        and (select count(*) from expediente_movimientos
+              where cotizacion_id is null and categoria = 'tecnico' and monto = 700
+                and notas = format('Pago a técnicos PAGO-%s', (select folio from pagos_tecnico where id = current_setting('app.pago')::uuid))) = 1
        then 'ok' else 'FALLO' end,
-  ' — pagado; egreso al expediente: ',
+  ' — pagado; al expediente: ',
   coalesce((select monto::text from expediente_movimientos
-             where cotizacion_id = current_setting('app.cot')::uuid and categoria = 'tecnico'), 'ninguno')), true);
+             where cotizacion_id = current_setting('app.cot')::uuid and categoria = 'tecnico'), 'ninguno'),
+  ', al libro general: ',
+  coalesce((select monto::text from expediente_movimientos
+             where cotizacion_id is null and categoria = 'tecnico'
+               and notas = format('Pago a técnicos PAGO-%s', (select folio from pagos_tecnico where id = current_setting('app.pago')::uuid))), 'ninguno')), true);
 
 -- 7) Registrar de nuevo no repite el egreso.
 select set_config('app.r7', registrar_pago_tecnico(current_setting('app.pago')::uuid, 'transferencia', 'SPEI-66', '2001-01-31')::text, true);

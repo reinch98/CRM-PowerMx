@@ -2656,7 +2656,15 @@ responsable/ayudante, general o por persona, con vigencia: cambiar un monto = ta
 paga ni se inventa**, se avisa. `ajustar_` (bono/descuento/anticipo), `quitar_linea_`, `aprobar_`,
 `cancelar_` y `por_pagar_tecnicos()`. Prueba: `66_prueba_pago_tecnicos.sql` (10 pasos).
 
-**SQL 70 (09/10/2026, escrito; falta correrlo) — va aparte porque el 66 y el 67 ya estaban aplicados:**
+**SQL 70 (09/10/2026) — aplicado y probado (6/6) con la CLI; va aparte porque el 66 y el 67 ya estaban
+aplicados.** Corte vigente: 2026-10-09. Con el 70 encima se repitieron las pruebas del 66 (10/10) y del 67
+(12/12); el paso 6 del 66 se actualizó: desde el 67 registrar un pago carga DOS movimientos (el de la
+cotización y el del libro general), no uno.
+
+**Correr SQL sin el editor web:** `npx supabase db query --linked -f supabase/sql/<archivo>.sql` lo corre
+contra el proyecto ligado por la Management API (CLI 2.117), con el mismo rol que el editor, y devuelve
+las filas en JSON. Sirve igual para las pruebas con `begin/rollback`. Evita copiar a mano y el editor
+web, que mutila los bloques plpgsql. Una consulta suelta: `npx supabase db query --linked "select …"`.
 - **El ayudante cobra al menos 300 por servicio** (Caña, 09/10/2026): se siembra esa tarifa general
   de 300 para los cinco tipos de servicio. Un servicio que pague más lleva su propia tarifa; la del
   responsable la captura Caña.
