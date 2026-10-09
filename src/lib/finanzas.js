@@ -135,6 +135,32 @@ export function avisosDeCfdi(c) {
 
 const FORMA_DESDE_SAT = { '01': 'efectivo', '03': 'transferencia', '04': 'tarjeta', '28': 'tarjeta' }
 
+// 'AAAA-MM-DD' + n días, sin pasar por UTC (a medianoche en UTC el día se correría en Mérida).
+export function sumarDias(iso, n) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''))
+  if (!m) return ''
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + n)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Cuánto falta para que venza una factura, en palabras y con su clase (nunca solo color).
+export function estadoVencimiento(dias) {
+  if (dias == null || Number.isNaN(Number(dias))) return { etiqueta: 'Sin vencimiento', clase: 'estado-borrador', nivel: 'sin' }
+  const d = Number(dias)
+  if (d < 0) return { etiqueta: `Vencida hace ${-d} ${d === -1 ? 'día' : 'días'}`, clase: 'estado-error', nivel: 'vencida' }
+  if (d === 0) return { etiqueta: 'Vence hoy', clase: 'estado-revisa', nivel: 'pronto' }
+  if (d <= 7) return { etiqueta: `Vence en ${d} ${d === 1 ? 'día' : 'días'}`, clase: 'estado-revisa', nivel: 'pronto' }
+  return { etiqueta: `Vence en ${d} días`, clase: 'estado-enviada', nivel: 'tiempo' }
+}
+
+export function validarPagoCfdi(form, saldo) {
+  const monto = num(form.monto)
+  if (!(monto > 0)) return 'Escribe cuánto pagaste.'
+  if (monto > num(saldo) + 0.01) return `El pago no puede ser mayor que lo que falta (${pesos(saldo)}).`
+  if (!form.fecha) return 'Escribe la fecha del pago.'
+  return ''
+}
+
 // Valores iniciales del formulario de aprobación, a partir del CFDI y de lo propuesto.
 export function formularioDeAprobacion(doc, cfdi, propuesta) {
   const ia = doc?.metodo === 'ia' ? doc?.propuesta || {} : {}
@@ -145,6 +171,8 @@ export function formularioDeAprobacion(doc, cfdi, propuesta) {
     iva: cfdi ? String(cfdi.iva_trasladado ?? '') : ia.iva != null ? String(ia.iva) : '',
     fecha: cfdi ? fechaMerida(cfdi.fecha) : ia.fecha || '',
     pagado: cfdi ? cfdi.metodo_pago !== 'PPD' : true,
+    // Si queda por pagar: 30 días después de la factura, como propone la base. Se puede cambiar.
+    vence: cfdi ? sumarDias(fechaMerida(cfdi.fecha), 30) : '',
     cuenta_id: '',
     forma: FORMA_DESDE_SAT[cfdi?.forma_pago] || 'transferencia',
     concepto: cfdi?.nombre_emisor || ia.concepto || '',
@@ -177,6 +205,7 @@ export function paraEnviarAprobacion(form) {
     iva: vacio(form.iva) ? null : num(form.iva),
     fecha: v(form.fecha),
     pagado: !!form.pagado,
+    vence: form.pagado ? null : v(form.vence),
     cuenta_id: v(form.cuenta_id),
     forma: v(form.forma),
     concepto: v(form.concepto),
@@ -396,6 +425,36 @@ export async function sugerirCotizaciones(cfdiId) {
 export async function ligarCfdiCotizacion(cfdiId, cotizacionId) {
   return intentar(async () => {
     const r = await supabase.rpc('ligar_cfdi_cotizacion', { p_cfdi: cfdiId, p_cotizacion: cotizacionId })
+    if (r.error) return { error: textoDeError(r.error) }
+    return { ok: true }
+  })
+}
+
+// ---- cuentas por pagar (SQL 72) ----
+
+export async function cargarPorPagar() {
+  return intentar(async () => {
+    const r = await supabase.rpc('cuentas_por_pagar')
+    if (r.error) return { error: textoDeError(r.error) }
+    const d = r.data || {}
+    return { total: num(d.total), vencido: num(d.vencido), cuentas: Array.isArray(d.cuentas) ? d.cuentas : [] }
+  })
+}
+
+export async function pagarCfdi(cfdiId, form) {
+  return intentar(async () => {
+    const r = await supabase.rpc('pagar_cfdi', {
+      p_cfdi: cfdiId, p_monto: num(form.monto), p_fecha: form.fecha || null,
+      p_cuenta: form.cuenta_id || null, p_forma: form.forma || null, p_referencia: (form.referencia || '').trim() || null
+    })
+    if (r.error) return { error: textoDeError(r.error) }
+    return { ok: true, saldo: num(r.data?.saldo) }
+  })
+}
+
+export async function programarPagoCfdi(cfdiId, vence, categoria) {
+  return intentar(async () => {
+    const r = await supabase.rpc('programar_pago_cfdi', { p_cfdi: cfdiId, p_vence: vence, p_categoria: categoria || null })
     if (r.error) return { error: textoDeError(r.error) }
     return { ok: true }
   })

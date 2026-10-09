@@ -2733,5 +2733,23 @@ registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Fina
   siempre hay). Inicio: pagos aprobados sin registrar (alto), pagos por aprobar y documentos (medio),
   órdenes sin pagar desde el corte, tarifa del responsable y RFC sin capturar (bajo). Inicio.jsx y App.jsx
   no se tocaron.
-- **Falta (F2–F3):** ZIP del SAT (hoy se eligen los XML sueltos); cuentas por pagar con los CFDI aprobados
-  sin movimiento; el reporte mensual RESICO y el paquete para el contador.
+- **SQL 72 — cuentas por pagar (09/10/2026), aplicado y probado (7/7) con la CLI**; tras él se repitieron
+  las pruebas del 67 (12/12) y el 71 (4/4). `cfdi` gana `por_pagar`, `categoria` y `vence`.
+  `aprobar_documento` (redefinida desde la viva) con "Aún no la pago" deja la factura por pagar con su
+  vencimiento (por omisión, fecha de la factura + 30 días, en Mérida). El **saldo no se guarda**:
+  `_saldo_cfdi` = total − egresos que citan el CFDI. `cuentas_por_pagar()`, `pagar_cfdi` (pagos parciales,
+  IVA proporcional al pago, cada pago es un egreso del libro sin cotización) y `programar_pago_cfdi`
+  (cambiar vencimiento o categoría; sirve para una factura archivada que resultó no estar pagada). Avisos:
+  vencidas = alto en Inicio y suman al globo de Finanzas; vencen en 7 días = medio. Pantalla: pestaña
+  **Por pagar** en Finanzas (total, vencido, tarjetas con "Vencida hace N días" / "Vence en N días",
+  Registrar pago, Cambiar vencimiento) y campo "Vence" al aprobar como "Aún no la pago". Medido en celular.
+- **Trampa al generar SQL con JavaScript:** en `texto.replace(ancla, nuevo)`, los `$'`, `$&` y `$$` del texto
+  NUEVO son patrones especiales (`$'` = "lo que sigue a la coincidencia"). Se comió un `': $'` del 72 y es
+  la misma causa del daño que tuvieron el 64 y el 65. Usar siempre `texto.replace(ancla, () => nuevo)`.
+- **Datos fiscales capturados (09/10/2026)** desde la Constancia de Situación Fiscal de Caña, en
+  `empresa_fiscal` (no se copian aquí). **RESICO desde el 22/09/2026** (septiembre es mes parcial para el
+  reporte); además tiene régimen de sueldos y salarios, que el CRM no lleva. Actividades registradas:
+  reparación de maquinaria industrial, comercio de equipo eléctrico e instalaciones eléctricas.
+  Obligaciones de RESICO: ISR e IVA mensuales a más tardar el día 17 del mes siguiente.
+- **Falta (F2–F3):** ZIP del SAT (hoy se eligen los XML sueltos); el reporte mensual RESICO y el paquete
+  para el contador (empieza el 22/09/2026).

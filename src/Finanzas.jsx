@@ -8,7 +8,8 @@ import {
   validarAprobacion, resumenLibro, rangoDeMes, mesAnterior, nombreDeMes, validarMovimientoLibre,
   subirDocumento, leerDocumentoConIA, listarBandeja, aprobarDocumento, rechazarDocumento,
   sugerirCotizaciones, ligarCfdiCotizacion, urlDocumento, cargarLibro, guardarMovimientoLibre,
-  listarCuentas, guardarCuenta, cargarEmpresaFiscal, guardarEmpresaFiscal
+  listarCuentas, guardarCuenta, cargarEmpresaFiscal, guardarEmpresaFiscal,
+  estadoVencimiento, validarPagoCfdi, cargarPorPagar, pagarCfdi, programarPagoCfdi
 } from './lib/finanzas'
 
 // ---------------------------------------------------------------------------
@@ -98,7 +99,12 @@ function FormGasto({ form, cambiar, cuentas, conCfdi }) {
           </Campo>
         </div>
       ) : (
-        <p className="ayuda">Se guarda la factura como <strong>por pagar</strong>: no entra al libro ni acredita IVA hasta que la pagues.</p>
+        <>
+          <Campo etiqueta="Vence">
+            <input type="date" value={form.vence} onChange={e => cambiar('vence', e.target.value)} />
+          </Campo>
+          <p className="ayuda">Se guarda como <strong>por pagar</strong>: no entra al libro ni acredita IVA hasta que la pagues. La verás en la pestaña Por pagar.</p>
+        </>
       )}
     </>
   )
@@ -319,6 +325,140 @@ function Bandeja({ documentos, cuentas, sinRfc, irAAjustes, onCambio }) {
       {documentos.map(d => (
         <TarjetaDocumento key={d.id} doc={d} cuentas={cuentas}
           onListo={texto => { setMensaje(texto); onCambio() }} />
+      ))}
+    </>
+  )
+}
+
+// ---- cuentas por pagar (SQL 72) ----
+
+function TarjetaPorPagar({ c, cuentas, onListo }) {
+  const [modo, setModo] = useState('')   // '' | 'pagar' | 'vence'
+  const [form, setForm] = useState({ monto: String(c.saldo), fecha: hoyLocal(), cuenta_id: '', forma: 'transferencia', referencia: '' })
+  const [vence, setVence] = useState(c.vence || '')
+  const [error, setError] = useState('')
+  const [ocupado, setOcupado] = useState(false)
+  const cambiar = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const e = estadoVencimiento(c.dias)
+  const folio = [c.serie, c.folio].filter(Boolean).join('-')
+
+  async function pagar() {
+    const problema = validarPagoCfdi(form, c.saldo)
+    if (problema) return setError(problema)
+    setError(''); setOcupado(true)
+    const r = await pagarCfdi(c.cfdi_id, form)
+    setOcupado(false)
+    if (r.error) return setError(r.error)
+    onListo(r.saldo > 0.01
+      ? `Pago registrado. A ${c.proveedor} todavía le debes ${pesos(r.saldo)}.`
+      : `Factura de ${c.proveedor} pagada por completo.`)
+  }
+  async function guardarVence() {
+    if (!vence) return setError('Escribe la fecha de vencimiento.')
+    setError(''); setOcupado(true)
+    const r = await programarPagoCfdi(c.cfdi_id, vence, null)
+    setOcupado(false)
+    if (r.error) return setError(r.error)
+    onListo('Vencimiento actualizado.')
+  }
+
+  return (
+    <section className="tarjeta" aria-label={`${c.proveedor}: ${e.etiqueta}`}>
+      {/* El nombre del proveedor va a todo lo ancho: los de las facturas son largos ("… SA de CV"). */}
+      <div className="renglon-titulo">{c.proveedor}</div>
+      <div className="renglon-datos">
+        {[folio && `Folio ${folio}`, fechaLegible(c.fecha), etiquetaCategoria(c.categoria), c.metodo_pago].filter(Boolean).join(' · ')}
+      </div>
+      {Number(c.pagado) > 0 && <div className="renglon-datos">Pagado {pesos(c.pagado)} de {pesos(c.total)}</div>}
+      <div className="fila" style={{ justifyContent: 'space-between', marginTop: 8 }}>
+        <span className={`estado ${e.clase}`}>{e.etiqueta}</span>
+        <span className="monto" style={{ fontSize: 22 }}>{pesos(c.saldo)}</span>
+      </div>
+      {error && <Alerta tipo="error">{error}</Alerta>}
+
+      {modo === 'pagar' && (
+        <div style={{ marginTop: 8 }}>
+          <div className="rejilla-2">
+            <Campo etiqueta="Monto pagado *">
+              <input type="number" inputMode="decimal" min="0" step="0.01" value={form.monto} onChange={ev => cambiar('monto', ev.target.value)} />
+            </Campo>
+            <Campo etiqueta="Fecha del pago *">
+              <input type="date" value={form.fecha} onChange={ev => cambiar('fecha', ev.target.value)} />
+            </Campo>
+            <Campo etiqueta="Cuenta">
+              <select value={form.cuenta_id} onChange={ev => cambiar('cuenta_id', ev.target.value)}>
+                <option value="">— Sin especificar —</option>
+                {cuentas.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+              </select>
+            </Campo>
+            <Campo etiqueta="Forma">
+              <select value={form.forma} onChange={ev => cambiar('forma', ev.target.value)}>
+                {FORMAS_PAGO.map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+              </select>
+            </Campo>
+            <Campo etiqueta="Referencia (opcional)">
+              <input value={form.referencia} onChange={ev => cambiar('referencia', ev.target.value)} placeholder="Clave de rastreo" />
+            </Campo>
+          </div>
+          <p className="ayuda">Puede ser un pago parcial. El IVA se acredita en proporción a lo que pagas.</p>
+          <div className="fila">
+            <button type="button" className="btn-primario" disabled={ocupado} onClick={pagar}>
+              {ocupado ? 'Guardando…' : `Registrar pago de ${pesos(form.monto)}`}
+            </button>
+            <button type="button" onClick={() => { setModo(''); setError('') }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {modo === 'vence' && (
+        <div style={{ marginTop: 8 }}>
+          <Campo etiqueta="Nueva fecha de vencimiento">
+            <input type="date" value={vence} onChange={ev => setVence(ev.target.value)} />
+          </Campo>
+          <div className="fila">
+            <button type="button" className="btn-primario" disabled={ocupado} onClick={guardarVence}>Guardar fecha</button>
+            <button type="button" onClick={() => { setModo(''); setError('') }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {!modo && (
+        <div className="fila" style={{ marginTop: 8 }}>
+          <button type="button" className="btn-primario" onClick={() => setModo('pagar')}>Registrar pago</button>
+          <button type="button" onClick={() => setModo('vence')}>Cambiar vencimiento</button>
+          {c.archivo && <button type="button" onClick={() => abrirArchivo(c.archivo)}>Ver factura</button>}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function PorPagar({ datos, cuentas, onCambio }) {
+  const [mensaje, setMensaje] = useState('')
+  const vencidas = datos.cuentas.filter(c => Number(c.dias) < 0).length
+  return (
+    <>
+      <div className="kpis">
+        <div className="kpi kpi-principal">
+          <span className="kpi-nombre">Por pagar</span>
+          <span className="kpi-valor">{pesos(datos.total)}</span>
+          <span className="kpi-nota">{datos.cuentas.length} {datos.cuentas.length === 1 ? 'factura' : 'facturas'}</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-nombre">Vencido</span>
+          <span className="kpi-valor">{pesos(datos.vencido)}</span>
+          <span className="kpi-nota">{vencidas} {vencidas === 1 ? 'factura vencida' : 'facturas vencidas'}</span>
+        </div>
+      </div>
+      {mensaje && <Alerta tipo="ok">{mensaje}</Alerta>}
+      {datos.cuentas.length === 0 && (
+        <div className="tarjeta">
+          <p style={{ margin: 0 }}>No debes nada a proveedores. Una factura queda aquí cuando la apruebas como "Aún no la pago".</p>
+        </div>
+      )}
+      {datos.cuentas.map(c => (
+        <TarjetaPorPagar key={`${c.cfdi_id}-${c.saldo}-${c.vence}`} c={c} cuentas={cuentas}
+          onListo={t => { setMensaje(t); onCambio() }} />
       ))}
     </>
   )
@@ -597,10 +737,11 @@ function Ajustes({ empresa, cuentas, onCambio }) {
 }
 
 async function leerBase() {
-  const [b, c, e] = await Promise.all([listarBandeja(), listarCuentas(), cargarEmpresaFiscal()])
+  const [b, c, e, p] = await Promise.all([listarBandeja(), listarCuentas(), cargarEmpresaFiscal(), cargarPorPagar()])
   return {
     documentos: b.documentos || [], cuentas: c.cuentas || [], empresa: e.empresa || {},
-    error: b.error || c.error || e.error || ''
+    porPagar: p.error ? { total: 0, vencido: 0, cuentas: [] } : p,
+    error: b.error || c.error || e.error || p.error || ''
   }
 }
 
@@ -619,6 +760,7 @@ export default function Finanzas() {
   const cuentasActivas = (datos?.cuentas || []).filter(c => c.activa)
   const PESTANAS = [
     ['bandeja', `Por revisar (${datos?.documentos.length ?? 0})`],
+    ['por_pagar', `Por pagar (${datos?.porPagar.cuentas.length ?? 0})`],
     ['libro', 'Libro del mes'],
     ['ajustes', 'Ajustes']
   ]
@@ -637,6 +779,7 @@ export default function Finanzas() {
         <Bandeja documentos={datos.documentos} cuentas={cuentasActivas} sinRfc={!datos.empresa?.rfc}
           irAAjustes={() => setPestana('ajustes')} onCambio={recargar} />
       )}
+      {datos && pestana === 'por_pagar' && <PorPagar datos={datos.porPagar} cuentas={cuentasActivas} onCambio={recargar} />}
       {datos && pestana === 'libro' && <Libro cuentas={cuentasActivas} />}
       {datos && pestana === 'ajustes' && (
         <Ajustes key={datos.empresa?.updated_at || 'vacio'} empresa={datos.empresa} cuentas={datos.cuentas} onCambio={recargar} />

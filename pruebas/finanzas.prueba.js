@@ -3,8 +3,41 @@ import assert from 'node:assert/strict'
 import {
   proponerGasto, accionSugerida, avisosDeCfdi, formularioDeAprobacion, validarAprobacion,
   paraEnviarAprobacion, resumenLibro, rangoDeMes, mesAnterior, nombreDeMes, fechaMerida,
-  validarMovimientoLibre, validarEmpresaFiscal, etiquetaCategoria, esIngreso, sha256Hex
+  validarMovimientoLibre, validarEmpresaFiscal, etiquetaCategoria, esIngreso, sha256Hex,
+  sumarDias, estadoVencimiento, validarPagoCfdi
 } from '../src/lib/finanzas.js'
+
+test('sumar días sin correrse por UTC, cruzando mes y año', () => {
+  assert.equal(sumarDias('2026-09-01', 30), '2026-10-01')
+  assert.equal(sumarDias('2026-12-15', 30), '2027-01-14')
+  assert.equal(sumarDias('', 30), '')
+})
+
+test('una factura PPD propone vencer 30 días después', () => {
+  const f = formularioDeAprobacion({}, { sentido: 'recibido', tipo_comprobante: 'I', metodo_pago: 'PPD', fecha: '2026-09-01T16:00:00+00:00', total: 1160, iva_trasladado: 160 }, null)
+  assert.equal(f.pagado, false)
+  assert.equal(f.vence, '2026-10-01')
+  assert.equal(paraEnviarAprobacion(f).vence, '2026-10-01')
+  assert.equal(paraEnviarAprobacion({ ...f, pagado: true }).vence, null)
+})
+
+test('vencimiento en palabras, nunca solo color', () => {
+  assert.equal(estadoVencimiento(-1).etiqueta, 'Vencida hace 1 día')
+  assert.equal(estadoVencimiento(-5).etiqueta, 'Vencida hace 5 días')
+  assert.equal(estadoVencimiento(0).etiqueta, 'Vence hoy')
+  assert.equal(estadoVencimiento(1).etiqueta, 'Vence en 1 día')
+  assert.equal(estadoVencimiento(3).nivel, 'pronto')
+  assert.equal(estadoVencimiento(20).nivel, 'tiempo')
+  assert.equal(estadoVencimiento(null).etiqueta, 'Sin vencimiento')
+})
+
+test('validar un pago a proveedor', () => {
+  assert.equal(validarPagoCfdi({ monto: '580', fecha: '2026-10-09' }, 1160), '')
+  assert.equal(validarPagoCfdi({ monto: '1160.005', fecha: '2026-10-09' }, 1160), '')
+  assert.match(validarPagoCfdi({ monto: '1200', fecha: '2026-10-09' }, 1160), /mayor/)
+  assert.match(validarPagoCfdi({ monto: '', fecha: '2026-10-09' }, 1160), /cuánto/)
+  assert.match(validarPagoCfdi({ monto: '10', fecha: '' }, 1160), /fecha/)
+})
 
 const cfdiGas = {
   sentido: 'recibido', tipo_comprobante: 'I', nombre_emisor: 'SERVICIO LAS AMERICAS SA DE CV',
