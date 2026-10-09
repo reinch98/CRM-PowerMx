@@ -3,6 +3,7 @@ import { Alerta } from './ui'
 import { hoyLocal } from './lib/fechas'
 import { etiquetaTipoComprobante, etiquetaFormaPagoSat } from './lib/cfdi'
 import Impuestos from './Impuestos'
+import Conciliacion from './Conciliacion'
 import { leerZip, esZip } from './lib/zip'
 import {
   CATEGORIAS_GASTO, CATEGORIAS_CAPITAL, FORMAS_PAGO, ETIQUETA_CONFIANZA,
@@ -812,6 +813,7 @@ export default function Finanzas() {
     ['bandeja', `Por revisar (${datos?.documentos.length ?? 0})`],
     ['por_pagar', `Por pagar (${datos?.porPagar.cuentas.length ?? 0})`],
     ['libro', 'Libro del mes'],
+    ['banco', 'Banco'],
     ['impuestos', 'Impuestos'],
     ['ajustes', 'Ajustes']
   ]
@@ -832,6 +834,7 @@ export default function Finanzas() {
       )}
       {datos && pestana === 'por_pagar' && <PorPagar datos={datos.porPagar} cuentas={cuentasActivas} onCambio={recargar} />}
       {datos && pestana === 'libro' && <Libro cuentas={cuentasActivas} />}
+      {datos && pestana === 'banco' && <Conciliacion cuentas={datos.cuentas} />}
       {datos && pestana === 'impuestos' && <Impuestos empresa={datos.empresa} />}
       {datos && pestana === 'ajustes' && (
         <Ajustes key={datos.empresa?.updated_at || 'vacio'} empresa={datos.empresa} cuentas={datos.cuentas} onCambio={recargar} />

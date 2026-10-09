@@ -1,9 +1,10 @@
 // ---------------------------------------------------------------------------
-// Leer un comprobante (foto o PDF) y PROPONER sus datos. Tres modos:
+// Leer un comprobante (foto o PDF) y PROPONER sus datos. Cuatro modos:
 //
-//   factura → factura o nota de compra de un proveedor, con sus líneas de producto (Compras, SQL 62)
-//   ticket  → ticket o factura de un gasto: gasolina, casetas, comida, hospedaje (Expediente, SQL 61)
-//   banco   → comprobante de una operación bancaria: SPEI, depósito, ficha (cobros del Expediente)
+//   factura       → factura o nota de compra de un proveedor, con sus líneas (Compras, SQL 62)
+//   ticket        → ticket o factura de un gasto: gasolina, casetas, comida, hospedaje (Expediente, SQL 61)
+//   banco         → comprobante de una operación bancaria: SPEI, depósito, ficha (cobros del Expediente)
+//   estado_cuenta → estado de cuenta del banco con todos sus movimientos (Conciliación, SQL 75)
 //
 // **Nada se guarda aquí.** La función devuelve lo que leyó; la pantalla lo muestra para que el
 // admin lo revise y corrija, y recién entonces se registra. Un importe o una cantidad mal leídos
@@ -26,8 +27,9 @@ const MODELO = "claude-sonnet-5";
 const MAX_BYTES = 10 * 1024 * 1024;
 // Solo estos buckets, y cada modo con el suyo: la función baja el archivo con la sesión de quien
 // pregunta, pero así tampoco se puede pedir leer cualquier ruta de cualquier bucket.
-const BUCKET_DE = { factura: "compras", ticket: "finanzas", banco: "finanzas" } as Record<string, string>;
-const MAX_TOKENS_DE = { factura: 8000, ticket: 1500, banco: 1500 } as Record<string, number>;
+const BUCKET_DE = { factura: "compras", ticket: "finanzas", banco: "finanzas", estado_cuenta: "finanzas" } as Record<string, string>;
+// Un estado de cuenta trae decenas de renglones: necesita mucho más espacio de respuesta.
+const MAX_TOKENS_DE = { factura: 8000, ticket: 1500, banco: 1500, estado_cuenta: 16000 } as Record<string, number>;
 
 // El texto de un documento es DATO, no instrucción: si trae frases que parezcan órdenes
 // ("ignora lo anterior"), aquí solo pueden acabar dentro de un campo de texto.
@@ -99,6 +101,32 @@ Claves (todas opcionales):
   beneficiario     quién recibió, si se ve
   concepto         el concepto o motivo escrito en la operación
   notas            lo que no pudiste leer o te pareció dudoso
+
+${REGLAS_COMUNES}`,
+
+  estado_cuenta: `Lees estados de cuenta bancarios de México (Banorte, BBVA, Santander…) de una cuenta de
+negocio. Extrae el encabezado y TODOS los movimientos del detalle, en el orden en que aparecen.
+
+Claves (todas opcionales salvo movimientos):
+  banco            nombre del banco
+  cuenta_ultimos4  SOLO los últimos 4 dígitos de la cuenta o CLABE. Nunca el número completo.
+  periodo_desde    primer día del periodo del estado
+  periodo_hasta    último día del periodo del estado
+  saldo_inicial    saldo anterior / inicial del periodo
+  saldo_final      saldo final / al corte
+  total_abonos     total de depósitos o abonos, si viene impreso
+  total_cargos     total de retiros o cargos, si viene impreso
+  movimientos      arreglo, una entrada por renglón del DETALLE de movimientos, con:
+                     fecha        AAAA-MM-DD; si el renglón solo trae día y mes, toma el año del periodo
+                     descripcion  el texto del renglón, tal como viene (puede ser largo; no lo resumas)
+                     referencia   número de referencia, folio o clave de rastreo si aparece en el renglón
+                     cargo        importe si es retiro o cargo (dinero que SALE); omítelo si no aplica
+                     abono        importe si es depósito o abono (dinero que ENTRA); omítelo si no aplica
+                     saldo        saldo del renglón, si aparece
+  notas            lo que no pudiste leer o te pareció dudoso (páginas ilegibles, renglones cortados)
+
+NO incluyas como movimiento: el saldo inicial, los subtotales, el resumen del periodo, publicidad,
+gráficas ni tablas de comisiones informativas. Cada renglón tiene cargo O abono, nunca los dos.
 
 ${REGLAS_COMUNES}`,
 };

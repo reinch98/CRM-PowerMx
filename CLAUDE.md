@@ -2796,4 +2796,25 @@ registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Fina
   la pareja noche/pizarra FALLÓ por gris y por oscura). El texto nunca va en el color de la serie.
   **Trampa:** un SVG con `viewBox` escala su texto con la caja: 17 unidades se veían a 15.4 px en un celular
   de 375. Medir el texto en pantalla (`getBoundingClientRect` × escala), no el atributo; el eje va en 19.
-- **Falta:** que el contador confirme las tasas de RESICO.
+- **SQL 75 — Conciliación bancaria (09/10/2026), aplicado y probado (9/9) con la CLI.** Tablas `estados_cuenta`
+  (periodo, saldos, si cuadra) y `movimientos_banco` (un renglón por movimiento del banco; `estado` pendiente /
+  conciliado / ignorado; `movimiento_id` único hacia `expediente_movimientos`). **Subir dos estados que se
+  traslapan no duplica:** cada renglón lleva una `huella` (md5 de fecha, monto, descripción, referencia y
+  cuántas veces se repite igual en el mismo PDF, para que dos cargos idénticos del mismo día sean dos) y
+  `(cuenta_id, huella)` es único. `proponer_conciliacion` busca en el libro movimientos del **mismo sentido y
+  monto exacto**, ±7 días, sin conciliar, de esa cuenta o sin cuenta (hasta 5 por renglón); es **"seguro"** si
+  hay un solo candidato y ese candidato no le sirve a otro renglón pendiente. `conciliar_seguros` concilia
+  solo esos; al elegir a mano, el que queda se puede volver seguro. Conciliar le pone la cuenta al movimiento
+  del libro si no tenía. `registrar_desde_banco` crea el movimiento en el libro (comisiones, retiros,
+  aportaciones) y lo concilia; un cobro no se registra ahí: va en el Expediente de su cotización.
+  `ignorar_movimiento_banco` exige motivo (traspasos entre cuentas propias); `desconciliar_movimiento` regresa
+  a pendiente. `resumen_conciliacion` trae también **"en el libro pero no en el banco"** (esa cuenta y periodo).
+  La IA lee el PDF: `leer-comprobante` ganó el modo **`estado_cuenta`** (desplegado; 16,000 tokens de
+  respuesta, y si no alcanzan pide partir el PDF; solo los últimos 4 dígitos de la cuenta). Pantalla: pestaña
+  **Banco** de Finanzas (`src/Conciliacion.jsx`, `src/lib/conciliacion.js`, 7 pruebas en Node): subir el PDF
+  → revisar lo leído (si cuadra saldo inicial + entradas − salidas = final, cuántos renglones no se pudieron
+  leer, y si la cuenta del PDF no es la elegida) → guardar → por renglón "Es: …" con cada candidato,
+  "Registrar como…" o "Ignorar…", y "Conciliar los seguros (n)". Medida en celular con el Supabase falso: 0
+  textos < 17 px, 0 contrastes < 4.5, 0 px de desborde. **Sin probar con un PDF real de Banorte** (qué tan bien
+  lee y cuánto saldo gasta).
+- **Falta:** que el contador confirme las tasas de RESICO; probar la conciliación con un estado de Banorte real.
