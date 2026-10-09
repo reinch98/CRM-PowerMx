@@ -185,6 +185,29 @@ export async function infoOrdenes(ids) {
   }
 }
 
+// Desde qué fecha las órdenes se pagan por el sistema (SQL 66). Lo anterior se pagó a mano.
+export async function cargarCorte() {
+  try {
+    const r = await supabase.from('pagos_tecnico_config').select('pagar_desde').eq('id', true).maybeSingle()
+    if (r.error) return { error: textoDeError(r.error) }
+    return { pagar_desde: r.data?.pagar_desde || '' }
+  } catch (e) {
+    return { error: textoDeError(e) }
+  }
+}
+
+export async function guardarCorte(fecha) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha || '')) return { error: 'Escribe la fecha.' }
+  try {
+    const r = await supabase.from('pagos_tecnico_config')
+      .upsert({ id: true, pagar_desde: fecha, updated_at: new Date().toISOString() })
+    if (r.error) return { error: textoDeError(r.error) }
+    return { ok: true }
+  } catch (e) {
+    return { error: textoDeError(e) }
+  }
+}
+
 export async function cargarTarifas() {
   try {
     const r = await supabase.from('tarifas_pago_tecnico').select('*')

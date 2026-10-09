@@ -4,7 +4,7 @@ import { hoyLocal } from './lib/fechas'
 import { listarCuentas } from './lib/finanzas'
 import {
   porPagarTecnicos, proponerPago, ajustarPago, quitarLinea, aprobarPago, registrarPago, cancelarPago,
-  cargarPagos, cargarTarifas, guardarTarifa, nombresTecnicos, infoOrdenes,
+  cargarPagos, cargarTarifas, guardarTarifa, nombresTecnicos, infoOrdenes, cargarCorte, guardarCorte,
   ESTADOS_PAGO, TIPOS_SERVICIO, nombreServicio, etiquetaRol, fechaCorta, pesos
 } from './lib/comisiones'
 
@@ -18,12 +18,13 @@ import {
 // ---------------------------------------------------------------------------
 
 async function leerTodo() {
-  const [porPagar, pagos, tarifas, nombres, cuentas] = await Promise.all([
-    porPagarTecnicos(), cargarPagos(), cargarTarifas(), nombresTecnicos(), listarCuentas()
+  const [porPagar, pagos, tarifas, nombres, cuentas, corte] = await Promise.all([
+    porPagarTecnicos(), cargarPagos(), cargarTarifas(), nombresTecnicos(), listarCuentas(), cargarCorte()
   ])
   const ids = (pagos.pagos || []).flatMap(p => p.lineas.map(l => l.orden_id))
   return {
     porPagar: porPagar.data || [], pagos: pagos.pagos || [], tarifas: tarifas.tarifas || [],
+    pagarDesde: corte.pagar_desde || '',
     nombres, cuentas: (cuentas.cuentas || []).filter(c => c.activa),
     ordenes: await infoOrdenes(ids),
     error: porPagar.error || pagos.error || tarifas.error || ''
@@ -266,7 +267,40 @@ function TarjetaPago({ pago, nombre, ordenes, cuentas, onCambio }) {
   )
 }
 
+// El ayudante cobra al menos 300 por servicio (Caña, 09/10/2026); el SQL 66 ya siembra esa base.
 const vacioTarifa = () => ({ tipo_servicio: 'preventivo', rol: 'responsable', monto: '', vigente_desde: hoyLocal() })
+
+// Desde cuándo las órdenes se pagan por aquí. Lo anterior se pagó a mano antes del sistema y no
+// aparece ni al admin ni al técnico.
+function Corte({ pagarDesde, onCambio }) {
+  const [fecha, setFecha] = useState(pagarDesde)
+  const [msg, setMsg] = useState(null)
+  const [ocupado, setOcupado] = useState(false)
+
+  async function guardar(e) {
+    e.preventDefault(); setOcupado(true)
+    const r = await guardarCorte(fecha)
+    setOcupado(false)
+    setMsg(r.error ? { tipo: 'error', texto: r.error } : { tipo: 'ok', texto: 'Fecha guardada.' })
+    if (!r.error) onCambio()
+  }
+
+  return (
+    <form className="tarjeta" onSubmit={guardar}>
+      <h3>Desde cuándo se paga por aquí</h3>
+      <p className="ayuda">
+        Las órdenes cerradas antes de esta fecha se dan por pagadas a mano: no salen por pagar ni en las
+        comisiones del técnico. Muévela hacia atrás si quedaron órdenes recientes sin pagar.
+      </p>
+      {msg && <Alerta tipo={msg.tipo}>{msg.texto}</Alerta>}
+      <label className="campo">
+        <span>Pagar órdenes desde</span>
+        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
+      </label>
+      <button type="submit" disabled={ocupado || !fecha || fecha === pagarDesde}>{ocupado ? 'Guardando…' : 'Guardar fecha'}</button>
+    </form>
+  )
+}
 
 function Tarifas({ tarifas, onCambio }) {
   const [form, setForm] = useState(vacioTarifa())
@@ -410,7 +444,12 @@ export default function PagosTecnicos() {
         </>
       )}
 
-      {datos && pestana === 'tarifas' && <Tarifas tarifas={datos.tarifas} onCambio={recargar} />}
+      {datos && pestana === 'tarifas' && (
+        <>
+          <Corte key={datos.pagarDesde} pagarDesde={datos.pagarDesde} onCambio={recargar} />
+          <Tarifas tarifas={datos.tarifas} onCambio={recargar} />
+        </>
+      )}
     </div>
   )
 }

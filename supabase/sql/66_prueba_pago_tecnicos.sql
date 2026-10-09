@@ -15,6 +15,10 @@ select set_config('app.admin',
 select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('app.admin'), 'role', 'authenticated')::text, true);
 
+-- El corte de pagos (70) nace con el día en que se aplicó; las órdenes de prueba son de 2001.
+-- (Sin el 70 aplicado esta línea falla: correr el 70 antes de repetir esta prueba.)
+update pagos_tecnico_config set pagar_desde = '2000-01-01' where id;
+
 select set_config('app.cli', gen_random_uuid()::text, true),
        set_config('app.cot', gen_random_uuid()::text, true),
        set_config('app.cita', gen_random_uuid()::text, true),

@@ -11,6 +11,9 @@ select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('app.admin'), 'role', 'authenticated')::text, true);
 
 update empresa_fiscal set rfc = 'PRUE850101AB1' where id;
+-- El corte de pagos (70) nace con el día en que se aplicó; la orden de prueba es de hace 3 días.
+-- (Sin el 70 aplicado esta línea falla: correr el 70 antes de repetir esta prueba.)
+update pagos_tecnico_config set pagar_desde = current_date - 30 where id;
 
 select set_config('app.h1', encode(sha256('prueba-67-uno'::bytea), 'hex'), true),
        set_config('app.h2', encode(sha256('prueba-67-dos'::bytea), 'hex'), true),

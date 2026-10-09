@@ -2656,6 +2656,20 @@ responsable/ayudante, general o por persona, con vigencia: cambiar un monto = ta
 paga ni se inventa**, se avisa. `ajustar_` (bono/descuento/anticipo), `quitar_linea_`, `aprobar_`,
 `cancelar_` y `por_pagar_tecnicos()`. Prueba: `66_prueba_pago_tecnicos.sql` (10 pasos).
 
+**SQL 70 (09/10/2026, escrito; falta correrlo) — va aparte porque el 66 y el 67 ya estaban aplicados:**
+- **El ayudante cobra al menos 300 por servicio** (Caña, 09/10/2026): se siembra esa tarifa general
+  de 300 para los cinco tipos de servicio. Un servicio que pague más lleva su propia tarifa; la del
+  responsable la captura Caña.
+- **Corte `pagos_tecnico_config.pagar_desde`** (nace con el día en que se aplica el 70): las órdenes con
+  fecha anterior se dan por pagadas a mano y no aparecen ni por pagar ni en las comisiones del técnico.
+  Sin él, todas las órdenes cerradas desde el inicio del CRM saldrían pendientes. Lo leen
+  `por_pagar_tecnicos`, `proponer_pago_tecnico` y `mis_comisiones` por `_pagar_desde()` (el 70 las
+  redefine completas); se mueve en Pago a técnicos → Tarifas. Prueba: `70_prueba_corte_pagos_y_ayudante.sql`
+  (6 pasos). Las pruebas del 66 y el 67 ahora fijan el corte en el pasado al empezar, así que **ya no
+  corren sin el 70**.
+- **Lección:** un script ya aplicado no se edita (el registro `_migraciones` diría que está y la base no
+  tendría el cambio); el cambio va en uno nuevo.
+
 **SQL 67 — libro único, documentos, CFDI y comisiones.**
 - `expediente_movimientos` **es el libro único**: `cotizacion_id` ya es opcional (gastos generales) y gana
   `cuenta_id`, `cfdi_id`, `documento_id`, `compra_id`. Categorías nuevas (material, herramienta, renta,
