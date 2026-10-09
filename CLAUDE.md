@@ -2230,6 +2230,11 @@ buscando en la base un objeto propio de cada script, sin dar nada por aplicado a
   (`s.replace(x, () => nuevo)`), nunca una cadena con `$`.**
 - De paso, `inicio_admin()` (65) arma bien los plurales: "cotizaciones", "conversaciones",
   "devoluciones", "órdenes" (antes pegaba "es": "cotizaciónes").
+- **Foto del esquema renovada el 09/10/2026** (59 tablas, 158 funciones, 91 políticas) y
+  **sin deriva**: cada función de la base está en algún script y viceversa (la única que no,
+  `unaccent_inmutable`, viene del esquema original). Qué es cada archivo: `supabase/sql/INDICE.md`.
+  Para bajar la foto: Export → Download CSV en el editor y quitarle las comillas del CSV (la
+  celda en pantalla aplana los saltos de línea).
 - **Cargar un script largo en el editor de Supabase:** la página no deja leer de `localhost`
   (CSP), así que se pega con `monaco.editor.getModels()[0].setValue(...)` y se compara la
   longitud con el archivo. Una consulta que devuelve muchas columnas se lee mejor como una sola
