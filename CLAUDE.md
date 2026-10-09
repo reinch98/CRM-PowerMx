@@ -2778,4 +2778,22 @@ registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Fina
   de la subida muestra un resumen ("37 registrados · 2 ya estaban · 1 con problema") y siempre a la vista
   lo que falló; lo demás va plegado. 6 pruebas en Node (ZIP armados con `zlib`) y prueba de punta a punta
   en el emulador con un ZIP armado en el navegador (3 registrados, 1 dañado reportado, el .txt ignorado).
+- **SQL 74 — Tablero de dirección (09/10/2026), aplicado y probado (6/6) con la CLI.** `tablero_direccion(meses)`
+  (3, 6 o 12; solo admin), una sola llamada: mes a mes (ingresos y gastos del libro, sin retiros ni
+  aportaciones), **margen por línea** (cotizaciones aceptadas del periodo; utilidad de `expediente_resumen`
+  —la misma fórmula del Expediente— o la del cierre congelado; margen cotizado = venta − material, real = con
+  los gastos del expediente), por cobrar (vencido = más de 30 días desde la fecha de la cotización; los 5 que
+  más deben), técnicos (órdenes, lo pagado y lo que facturaron sus servicios como responsable: la base de la
+  cotización repartida entre sus órdenes) y operación (órdenes abiertas, días de la cita a la orden cerrada,
+  citas por programar, pólizas al día). `_linea_de_cotizacion`: renta → rentas; mantenimiento a equipo en
+  póliza → pólizas; equipo solar/batería → solar; generador → generadores; sin equipo, por las categorías de
+  sus productos; si no, **"Sin clasificar"** (la pantalla pide ligar el equipo).
+  Pantalla **Tablero** (primera del área Finanzas; `src/Tablero.jsx`, `src/lib/tablero.js`, 6 pruebas en
+  Node): indicadores, gráfica mes a mes en SVG propio (sin librería), margen por línea, quién debe más,
+  técnicos y operación. Gráficas según la guía de visualización: un solo eje, barras con extremo redondeado
+  y 2 px de separación, leyenda con palabra, detalle del mes al pasar o tocar, **"Ver como tabla"**; colores
+  `--serie-1` azul `#2a78d6` y `--serie-2` naranja `#eb6834`, validados con su script (daltonismo ΔE 24.7;
+  la pareja noche/pizarra FALLÓ por gris y por oscura). El texto nunca va en el color de la serie.
+  **Trampa:** un SVG con `viewBox` escala su texto con la caja: 17 unidades se veían a 15.4 px en un celular
+  de 375. Medir el texto en pantalla (`getBoundingClientRect` × escala), no el atributo; el eje va en 19.
 - **Falta:** que el contador confirme las tasas de RESICO.
