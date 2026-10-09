@@ -4,6 +4,7 @@ import { hoyLocal } from './lib/fechas'
 import { listarCuentas } from './lib/finanzas'
 import {
   porPagarTecnicos, proponerPago, ajustarPago, quitarLinea, aprobarPago, registrarPago, cancelarPago,
+  reabrirPago, fijarMontoLinea, textoReabierto,
   cargarPagos, cargarTarifas, guardarTarifa, nombresTecnicos, infoOrdenes, cargarCorte, guardarCorte,
   ESTADOS_PAGO, TIPOS_SERVICIO, nombreServicio, etiquetaRol, fechaCorta, pesos
 } from './lib/comisiones'
@@ -96,13 +97,16 @@ function PorPagar({ lista, nombres, onArmado }) {
   )
 }
 
-function TarjetaPago({ pago, nombre, ordenes, cuentas, onCambio }) {
+function TarjetaPago({ pago, nombre, ordenes, cuentas, onCambio, onAviso }) {
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState('')
   const [ajuste, setAjuste] = useState({ concepto: '', monto: '', signo: 'bono' })
   const [pagoForm, setPagoForm] = useState({ forma: 'transferencia', fecha: hoyLocal(), referencia: '', cuenta_id: '' })
   const [cancelando, setCancelando] = useState(false)
   const [motivo, setMotivo] = useState('')
+  const [corrigiendo, setCorrigiendo] = useState(false)
+  const [motivoCorr, setMotivoCorr] = useState('')
+  const [montoLinea, setMontoLinea] = useState({ id: '', monto: '' })
   const e = ESTADOS_PAGO[pago.estado]
   const editable = pago.estado === 'propuesto'
 
@@ -138,21 +142,45 @@ function TarjetaPago({ pago, nombre, ordenes, cuentas, onCambio }) {
       <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {servicios.map(l => {
           const o = ordenes[l.orden_id]
+          const enEdicion = editable && montoLinea.id === l.id
           return (
-            <li key={l.id} className="renglon">
-              <div>
-                <div className="renglon-titulo">OS-{o?.folio ?? '—'} · {nombreServicio(l.tipo_servicio)}</div>
-                <div className="renglon-datos">
-                  {[o?.cliente?.nombre, o && fechaCorta(o.fecha), etiquetaRol(l.rol), !l.cotizacion_id && 'sin cotización'].filter(Boolean).join(' · ')}
+            <li key={l.id}>
+              <div className="renglon">
+                <div>
+                  <div className="renglon-titulo">OS-{o?.folio ?? '—'} · {nombreServicio(l.tipo_servicio)}</div>
+                  <div className="renglon-datos">
+                    {[o?.cliente?.nombre, o && fechaCorta(o.fecha), etiquetaRol(l.rol), !l.cotizacion_id && 'sin cotización'].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+                <div className="renglon-lado">
+                  <span className="monto">{pesos(l.monto)}</span>
                 </div>
               </div>
-              <div className="renglon-lado">
-                <span className="monto">{pesos(l.monto)}</span>
-                {editable && (
+              {/* Los botones van en su propio renglón: al lado del monto aplastaban la descripción en el celular. */}
+              {editable && !enEdicion && (
+                <div className="fila" style={{ justifyContent: 'flex-end', paddingBottom: 10 }}>
+                  <button type="button" disabled={ocupado} onClick={() => setMontoLinea({ id: l.id, monto: String(l.monto) })}
+                    aria-label={`Cambiar el monto de la orden OS-${o?.folio ?? ''}`}>Cambiar monto</button>
                   <button type="button" disabled={ocupado} onClick={() => correr(() => quitarLinea(l.id))}
                     aria-label={`Quitar la orden OS-${o?.folio ?? ''} de este pago`}>Quitar</button>
-                )}
-              </div>
+                </div>
+              )}
+              {enEdicion && (
+                <div className="fila" style={{ alignItems: 'flex-end', paddingBottom: 12 }}>
+                  <label className="campo" style={{ flex: '1 1 160px', marginBottom: 0 }}>
+                    <span>Monto de esta orden</span>
+                    <input type="number" inputMode="decimal" min="0" step="0.01" value={montoLinea.monto} autoFocus
+                      onChange={ev => setMontoLinea(m => ({ ...m, monto: ev.target.value }))} />
+                  </label>
+                  <button type="button" className="btn-primario" disabled={ocupado || montoLinea.monto === '' || Number(montoLinea.monto) < 0}
+                    onClick={() => correr(async () => {
+                      const r = await fijarMontoLinea(l.id, montoLinea.monto)
+                      if (!r.error) setMontoLinea({ id: '', monto: '' })
+                      return r
+                    })}>Guardar</button>
+                  <button type="button" onClick={() => setMontoLinea({ id: '', monto: '' })}>Cancelar</button>
+                </div>
+              )}
             </li>
           )
         })}
@@ -243,6 +271,39 @@ function TarjetaPago({ pago, nombre, ordenes, cuentas, onCambio }) {
         </button>
       )}
       {editable && <p className="ayuda">Al aprobar, {nombre} verá el monto de cada orden en sus comisiones.</p>}
+
+      {(pago.estado === 'aprobado' || pago.estado === 'pagado') && (
+        corrigiendo ? (
+          <div className="tarjeta" style={{ marginTop: 12 }}>
+            <h3 style={{ marginTop: 0 }}>Corregir este pago</h3>
+            <p className="ayuda">
+              {pago.estado === 'pagado'
+                ? 'Vuelve a borrador para cambiar montos u órdenes. Se quitan los egresos que dejó en el libro y en los expedientes; después lo apruebas y lo registras otra vez.'
+                : 'Vuelve a borrador para cambiar montos u órdenes; después lo apruebas otra vez.'}
+            </p>
+            <label className="campo">
+              <span>¿Qué se corrige? *</span>
+              <input value={motivoCorr} onChange={ev => setMotivoCorr(ev.target.value)} placeholder="El monto de la OS-12 estaba mal" />
+            </label>
+            <div className="fila">
+              <button type="button" className="btn-primario" disabled={ocupado || !motivoCorr.trim()}
+                onClick={() => correr(async () => {
+                  const r = await reabrirPago(pago.id, motivoCorr.trim())
+                  if (!r.error) {
+                    setCorrigiendo(false); setMotivoCorr('')
+                    onAviso?.(textoReabierto(r.data, pago.folio))
+                  }
+                  return r
+                })}>Regresar a borrador</button>
+              <button type="button" onClick={() => { setCorrigiendo(false); setMotivoCorr('') }}>No, dejarlo</button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" style={{ marginTop: 12, marginRight: 8 }} onClick={() => setCorrigiendo(true)}>
+            Corregir este pago…
+          </button>
+        )
+      )}
 
       {(pago.estado === 'propuesto' || pago.estado === 'aprobado') && (
         cancelando ? (
@@ -389,6 +450,7 @@ export default function PagosTecnicos() {
   }, [vuelta])
 
   const recargar = () => setVuelta(v => v + 1)
+  const avisar = texto => { setMensaje({ tipo: 'ok', texto }); window.scrollTo?.({ top: 0, behavior: 'smooth' }) }
   const abiertos = (datos?.pagos || []).filter(p => p.estado !== 'pagado')
   const pagados = (datos?.pagos || []).filter(p => p.estado === 'pagado')
 
@@ -430,14 +492,15 @@ export default function PagosTecnicos() {
           {abiertos.length === 0 && <div className="tarjeta"><p style={{ margin: 0 }}>No hay pagos por aprobar ni por registrar.</p></div>}
           {abiertos.map(p => (
             <TarjetaPago key={p.id} pago={p} nombre={datos.nombres[p.tecnico_id] || 'Técnico'}
-              ordenes={datos.ordenes} cuentas={datos.cuentas} onCambio={recargar} />
+              ordenes={datos.ordenes} cuentas={datos.cuentas} onCambio={recargar} onAviso={avisar} />
           ))}
           {pagados.length > 0 && (
             <details className="tarjeta">
               <summary className="resumen">Pagados recientes ({pagados.length})</summary>
+              <p className="ayuda">Para corregir uno ya registrado, ábrelo con "Corregir este pago…": vuelve a borrador.</p>
               {pagados.map(p => (
                 <TarjetaPago key={p.id} pago={p} nombre={datos.nombres[p.tecnico_id] || 'Técnico'}
-                  ordenes={datos.ordenes} cuentas={datos.cuentas} onCambio={recargar} />
+                  ordenes={datos.ordenes} cuentas={datos.cuentas} onCambio={recargar} onAviso={avisar} />
               ))}
             </details>
           )}

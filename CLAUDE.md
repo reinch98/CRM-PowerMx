@@ -2828,4 +2828,21 @@ registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Fina
   pagar y luego se concilia como movimiento del libro. Al desconciliar, el pago queda en el libro y se
   propone él, no la factura otra vez (ya no debe nada). Pantalla: "Paga la factura de <proveedor> <folio>" con
   "al elegirla se registra el pago"; al conciliar, Finanzas recarga "Por pagar (n)". 2 pruebas más en Node.
+- **SQL 77 — corregir pagos ya registrados (09/10/2026), aplicado y probado (8/8) con la CLI; se repitieron
+  las pruebas del 66 (10/10), 67 (12/12), 72 (7/7) y 76 (5/5).** Pedido de Caña: "no puedo editar los pagos
+  realizados" (técnicos y proveedores; cambiar monto u órdenes). **Corregir = deshacer el registro y volver a
+  capturarlo**, nunca editar por debajo: los egresos que dejó el pago se BORRAN del libro (rastro completo en
+  `auditoria`) y un renglón del banco conciliado con ellos vuelve a "pendiente" (`_liberar_banco`).
+  · **Técnicos:** `reabrir_pago_tecnico(pago, motivo)` regresa un pago aprobado o pagado a borrador; si estaba
+    pagado borra sus egresos. Se niega con un expediente cerrado (reabrirlo antes) o si el técnico ya tiene
+    otro borrador (índice `un_pago_propuesto_por_tecnico`). Para saber qué egresos son de qué pago,
+    `expediente_movimientos.pago_tecnico_id` (nuevo; llenado hacia atrás por la nota "Pago a técnicos PAGO-n"
+    y escrito por `registrar_pago_tecnico`, redefinida desde la viva). `fijar_monto_linea_pago` cambia el monto
+    de una orden en borrador (volver a armar el pago desde "Por pagar" lo recalcula con la tarifa).
+    Pantalla: "Corregir este pago…" (con motivo) en aprobados y pagados, y "Cambiar monto" por orden en borrador.
+  · **Proveedores:** `pagos_cfdi_registrados(dias)` y `deshacer_pago_cfdi(movimiento, motivo)`: el pago se
+    quita y la factura vuelve a "Por pagar" con su saldo (que se calcula, no se guarda). Pantalla: sección
+    plegable "Pagos registrados en los últimos 90 días" en Por pagar, cada uno con "Corregir este pago…".
+  Los botones de una orden en el pago van en su propio renglón: junto al monto aplastaban la descripción a una
+  columna de 40 px en el celular (las medidas automáticas pasaban; lo vio la captura). 3 pruebas en Node.
 - **Falta:** que el contador confirme las tasas de RESICO; probar la conciliación con un estado de Banorte real.

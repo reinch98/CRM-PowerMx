@@ -455,6 +455,29 @@ export async function pagarCfdi(cfdiId, form) {
   })
 }
 
+// Pagos a proveedores ya registrados desde "Por pagar" (SQL 77), para poder deshacer uno.
+export async function cargarPagosRegistrados(dias = 90) {
+  return intentar(async () => {
+    const r = await supabase.rpc('pagos_cfdi_registrados', { p_dias: dias })
+    if (r.error) return { error: textoDeError(r.error) }
+    return { pagos: Array.isArray(r.data) ? r.data : [] }
+  })
+}
+
+export async function deshacerPagoCfdi(movimientoId, motivo) {
+  return intentar(async () => {
+    const r = await supabase.rpc('deshacer_pago_cfdi', { p_movimiento: movimientoId, p_motivo: motivo })
+    if (r.error) return { error: textoDeError(r.error) }
+    return { ok: true, saldo: num(r.data?.saldo), banco: Number(r.data?.banco_liberados) || 0 }
+  })
+}
+
+export function textoDeshecho(r, proveedor) {
+  const partes = [`Pago deshecho. A ${proveedor || 'ese proveedor'} le vuelves a deber ${pesos(r?.saldo)}; regístralo de nuevo con el monto correcto.`]
+  if (r?.banco > 0) partes.push(`${r.banco === 1 ? '1 renglón del banco volvió' : `${r.banco} renglones del banco volvieron`} a "por conciliar".`)
+  return partes.join(' ')
+}
+
 export async function programarPagoCfdi(cfdiId, vence, categoria) {
   return intentar(async () => {
     const r = await supabase.rpc('programar_pago_cfdi', { p_cfdi: cfdiId, p_vence: vence, p_categoria: categoria || null })

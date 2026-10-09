@@ -147,6 +147,19 @@ export const registrarPago = (pago, { forma, referencia, fecha, cuenta_id }) =>
     p_archivo: null, p_cuenta: cuenta_id || null
   })
 export const cancelarPago = (pago, motivo) => rpc('cancelar_pago_tecnico', { p_pago: pago, p_motivo: motivo })
+// Corregir (SQL 77): un pago aprobado o pagado vuelve a borrador; si estaba pagado se borran sus egresos.
+export const reabrirPago = (pago, motivo) => rpc('reabrir_pago_tecnico', { p_pago: pago, p_motivo: motivo })
+export const fijarMontoLinea = (linea, monto) => rpc('fijar_monto_linea_pago', { p_linea: linea, p_monto: num(monto) })
+
+// Lo que se le dice al admin después de reabrir un pago.
+export function textoReabierto(r, folio) {
+  const partes = [`PAGO-${folio} volvió a borrador: corrígelo, apruébalo y regístralo de nuevo.`]
+  const n = Number(r?.egresos_borrados) || 0
+  if (n > 0) partes.push(`Se ${n === 1 ? 'quitó 1 egreso' : `quitaron ${n} egresos`} del libro y los expedientes.`)
+  const b = Number(r?.banco_liberados) || 0
+  if (b > 0) partes.push(`${b === 1 ? '1 renglón del banco volvió' : `${b} renglones del banco volvieron`} a "por conciliar".`)
+  return partes.join(' ')
+}
 
 export async function cargarPagos() {
   try {

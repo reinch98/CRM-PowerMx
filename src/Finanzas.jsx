@@ -12,7 +12,8 @@ import {
   subirDocumento, leerDocumentoConIA, listarBandeja, aprobarDocumento, rechazarDocumento,
   sugerirCotizaciones, ligarCfdiCotizacion, urlDocumento, cargarLibro, guardarMovimientoLibre,
   listarCuentas, guardarCuenta, cargarEmpresaFiscal, guardarEmpresaFiscal,
-  estadoVencimiento, validarPagoCfdi, cargarPorPagar, pagarCfdi, programarPagoCfdi
+  estadoVencimiento, validarPagoCfdi, cargarPorPagar, pagarCfdi, programarPagoCfdi,
+  cargarPagosRegistrados, deshacerPagoCfdi, textoDeshecho
 } from './lib/finanzas'
 
 // ---------------------------------------------------------------------------
@@ -484,7 +485,58 @@ function TarjetaPorPagar({ c, cuentas, onListo }) {
   )
 }
 
-function PorPagar({ datos, cuentas, onCambio }) {
+// Un pago a proveedor ya registrado: se deshace con motivo y la factura vuelve a deber ese monto.
+function PagoRegistrado({ p, onListo }) {
+  const [abierto, setAbierto] = useState(false)
+  const [motivo, setMotivo] = useState('')
+  const [error, setError] = useState('')
+  const [ocupado, setOcupado] = useState(false)
+  const folio = [p.serie, p.folio].filter(Boolean).join('-')
+
+  async function deshacer() {
+    setError(''); setOcupado(true)
+    const r = await deshacerPagoCfdi(p.movimiento_id, motivo.trim())
+    setOcupado(false)
+    if (r.error) return setError(r.error)
+    onListo(textoDeshecho(r, p.proveedor))
+  }
+
+  return (
+    <li style={{ borderTop: '1px solid var(--linea)', padding: '10px 0' }}>
+      <div className="renglon-titulo">{p.proveedor}</div>
+      <div className="renglon-datos">
+        {[folio && `Folio ${folio}`, `Pagado el ${fechaLegible(p.fecha)}`, p.cuenta, p.referencia].filter(Boolean).join(' · ')}
+      </div>
+      <div className="fila" style={{ justifyContent: 'space-between', marginTop: 6 }}>
+        <span className="ayuda">{Number(p.saldo) > 0.01 ? `Todavía debe ${pesos(p.saldo)}` : 'Factura liquidada'}
+          {p.conciliado ? ' · Conciliado con el banco' : ''}</span>
+        <span className="monto monto-salida">{pesos(p.monto)}</span>
+      </div>
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {abierto ? (
+        <div style={{ marginTop: 8 }}>
+          <p className="ayuda">
+            Se quita este pago del libro y la factura vuelve a "Por pagar". Después lo registras con el monto correcto.
+            {p.conciliado ? ' El renglón del banco volverá a "por conciliar".' : ''}
+          </p>
+          <Campo etiqueta="¿Qué estaba mal? *">
+            <input value={motivo} onChange={ev => setMotivo(ev.target.value)} placeholder="El monto era 5,800, no 8,500" />
+          </Campo>
+          <div className="fila">
+            <button type="button" className="btn-peligro" disabled={ocupado || !motivo.trim()} onClick={deshacer}>
+              {ocupado ? 'Deshaciendo…' : 'Deshacer el pago'}
+            </button>
+            <button type="button" onClick={() => { setAbierto(false); setMotivo(''); setError('') }}>No, dejarlo</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" style={{ marginTop: 8 }} onClick={() => setAbierto(true)}>Corregir este pago…</button>
+      )}
+    </li>
+  )
+}
+
+function PorPagar({ datos, pagos, cuentas, onCambio }) {
   const [mensaje, setMensaje] = useState('')
   const vencidas = datos.cuentas.filter(c => Number(c.dias) < 0).length
   return (
@@ -511,6 +563,17 @@ function PorPagar({ datos, cuentas, onCambio }) {
         <TarjetaPorPagar key={`${c.cfdi_id}-${c.saldo}-${c.vence}`} c={c} cuentas={cuentas}
           onListo={t => { setMensaje(t); onCambio() }} />
       ))}
+      {pagos.length > 0 && (
+        <details className="tarjeta">
+          <summary className="resumen">Pagos registrados en los últimos 90 días ({pagos.length})</summary>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {pagos.map(p => (
+              <PagoRegistrado key={p.movimiento_id} p={p}
+                onListo={t => { setMensaje(t); onCambio(); window.scrollTo?.({ top: 0, behavior: 'smooth' }) }} />
+            ))}
+          </ul>
+        </details>
+      )}
     </>
   )
 }
@@ -788,11 +851,13 @@ function Ajustes({ empresa, cuentas, onCambio }) {
 }
 
 async function leerBase() {
-  const [b, c, e, p] = await Promise.all([listarBandeja(), listarCuentas(), cargarEmpresaFiscal(), cargarPorPagar()])
+  const [b, c, e, p, g] = await Promise.all([listarBandeja(), listarCuentas(), cargarEmpresaFiscal(), cargarPorPagar(),
+    cargarPagosRegistrados(90)])
   return {
     documentos: b.documentos || [], cuentas: c.cuentas || [], empresa: e.empresa || {},
     porPagar: p.error ? { total: 0, vencido: 0, cuentas: [] } : p,
-    error: b.error || c.error || e.error || p.error || ''
+    pagosRegistrados: g.pagos || [],
+    error: b.error || c.error || e.error || p.error || g.error || ''
   }
 }
 
@@ -832,7 +897,7 @@ export default function Finanzas() {
         <Bandeja documentos={datos.documentos} cuentas={cuentasActivas} sinRfc={!datos.empresa?.rfc}
           irAAjustes={() => setPestana('ajustes')} onCambio={recargar} />
       )}
-      {datos && pestana === 'por_pagar' && <PorPagar datos={datos.porPagar} cuentas={cuentasActivas} onCambio={recargar} />}
+      {datos && pestana === 'por_pagar' && <PorPagar datos={datos.porPagar} pagos={datos.pagosRegistrados} cuentas={cuentasActivas} onCambio={recargar} />}
       {datos && pestana === 'libro' && <Libro cuentas={cuentasActivas} />}
       {datos && pestana === 'banco' && <Conciliacion cuentas={datos.cuentas} onCambio={recargar} />}
       {datos && pestana === 'impuestos' && <Impuestos empresa={datos.empresa} />}
