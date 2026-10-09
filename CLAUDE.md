@@ -2751,5 +2751,22 @@ registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Fina
   reporte); además tiene régimen de sueldos y salarios, que el CRM no lleva. Actividades registradas:
   reparación de maquinaria industrial, comercio de equipo eléctrico e instalaciones eléctricas.
   Obligaciones de RESICO: ISR e IVA mensuales a más tardar el día 17 del mes siguiente.
-- **Falta (F2–F3):** ZIP del SAT (hoy se eligen los XML sueltos); el reporte mensual RESICO y el paquete
-  para el contador (empieza el 22/09/2026).
+- **SQL 73 — reporte mensual RESICO (09/10/2026), aplicado y probado (7/7) con la CLI.** Es un ESTIMADO
+  para el contador, no una declaración. `reporte_resico(mes)`: ingresos = cobros (Expediente) + otros
+  ingresos del periodo (las aportaciones no); el IVA de un cobro sale en proporción al de su cotización;
+  ISR = base sin IVA × tasa del tramo que corresponde al TOTAL del mes (no marginal) − ISR retenido por
+  clientes (de las facturas emitidas ligadas, en proporción a lo cobrado); IVA = trasladado − acreditable
+  (solo gastos con CFDI) − retenido. Gastos sin retiros. Acumulado del año contra el tope de 3.5 M.
+  Avisos: cobros sin factura emitida, gastos sin CFDI, más del 80 % del tope, mes parcial. Periodo desde
+  `empresa_fiscal.resico_desde` (2026-09-22); fecha límite = día 17 del mes siguiente.
+  `resico_tasas_isr` (por año, editable): sembrada con la tabla mensual de RESICO persona física que se
+  conoce al 09/10/2026 (1 / 1.1 / 1.5 / 2 / 2.5 %) — **pendiente que el contador la confirme**. Ojo: la
+  retención de 1.25 % de una persona moral puede superar la tasa de los tramos bajos y dejar el ISR en 0.
+  Pantalla: pestaña **Impuestos** en Finanzas (`src/Impuestos.jsx`, `src/lib/resico.js`, 6 pruebas en
+  Node): abre el mes que toca declarar (hasta el día 17, el anterior), ISR e IVA con su cálculo a la vista,
+  detalle de ingresos y gastos, tasas editables y **"Descargar para el contador (CSV)"** con BOM para
+  Excel (resumen + ingresos + gastos; los XML el contador los tiene en el SAT).
+- **Indicadores (`.kpi-valor`):** en celular, con dos por fila, "$50,000.00" se partía en dos renglones.
+  Ahora la cifra va con `clamp(20px, 5.4vw, 26px)` y los indicadores de Finanzas e Impuestos usan
+  `pesosRedondos` (sin centavos); el detalle conserva los centavos.
+- **Falta (F2–F3):** ZIP del SAT (hoy se eligen los XML sueltos); que el contador confirme las tasas.
