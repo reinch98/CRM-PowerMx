@@ -2726,6 +2726,12 @@ registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Fina
 - Patrones de otros CRM del giro que se adoptaron: estado de la comisión separado del de la orden
   ("cerrada" no es "aprobada para pago"), bonos y descuentos visibles como en ServiceTitan, y mostrar
   solo lo que la tarea necesita (las tarjetas seguras van plegadas).
-- **Falta (F2–F3):** contar documentos por revisar y pagos por aprobar en Inicio y en los globos;
-  ZIP del SAT (hoy se eligen los XML sueltos); cuentas por pagar con los CFDI aprobados sin movimiento;
-  el reporte mensual RESICO y el paquete para el contador.
+- **SQL 71 (09/10/2026) — aplicado y probado (4/4) con la CLI:** `pendientes_admin` e `inicio_admin`
+  redefinidas COMPLETAS desde su definición viva (generador en el scratchpad de la sesión: baja la función
+  con `pg_get_functiondef` y le inserta solo los renglones "(71)"). Globos: `finanzas` = documentos por
+  revisar, `pagos` = pagos por aprobar o registrar (las órdenes sin pagar NO van al globo: entre quincenas
+  siempre hay). Inicio: pagos aprobados sin registrar (alto), pagos por aprobar y documentos (medio),
+  órdenes sin pagar desde el corte, tarifa del responsable y RFC sin capturar (bajo). Inicio.jsx y App.jsx
+  no se tocaron.
+- **Falta (F2–F3):** ZIP del SAT (hoy se eligen los XML sueltos); cuentas por pagar con los CFDI aprobados
+  sin movimiento; el reporte mensual RESICO y el paquete para el contador.
