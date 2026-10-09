@@ -2220,9 +2220,10 @@ buscando en la base un objeto propio de cada script, sin dar nada por aplicado a
   (las tres vistas se habían vuelto a voltear a `invoker`: técnico y almacén veían vacío),
   **54** (8/8; el cron `recordatorios-de-cita` llevaba días llamando a una función que no
   existía), **55** (8/8), **64** (4/4), **65** (4/4), **66** (10/10) y **67** (12/12).
-- **Sin registrar:** 05 (ya corrido; vuelve a correr el 68 y se registra solo), 47–49 (datos de
-  una sola vez: regístralos a mano si corrieron) y **34**, que se detiene a propósito porque
-  hay **un perfil con rol `cliente` sin `cliente_id`**: ligarlo en Usuarios y volver a correrlo.
+- **Completo:** 64 registrados, sin huecos del 01 al 68. El 34 se aplicó tras desactivar
+  (`sin_rol`, `activo = false`, no se borró) la cuenta de prueba `reinch0123@gmail.com`, que era
+  `cliente` sin `cliente_id` y nunca inició sesión; 05 y 47–49 se registraron tras comprobar
+  en la base que habían corrido (la nota de cada fila dice cómo).
 - **El 64 y el 65 estaban dañados en el repo** y por eso nunca corrieron: donde iba
   `concat(' · $', to_char(…))` había `' · ` + `end $fn$;` + `, to_char…`. Es lo que deja un
   `String.replace` de JavaScript con `$'` en el texto de reemplazo (`$'` = "lo que sigue a la

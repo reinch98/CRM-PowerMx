@@ -17,7 +17,7 @@ dice **qué es** cada archivo y **cómo se usa**; actualízalo cuando agregues u
 - **Orden de despliegue:** primero el SQL, después el código que lo llama.
 
 Tipos: **E** esquema · **D** datos de una sola vez · **C** consulta de solo lectura · **F** foto.
-Estado: ✔ aplicado y registrado · ⚠ ver nota.
+Estado: ✔ aplicado y registrado (todos al 09/10/2026).
 
 ## Foto y herramientas
 
@@ -39,7 +39,7 @@ Estado: ✔ aplicado y registrado · ⚠ ver nota.
 | 02 | `catalogo` | D | ✔ | — | Carga inicial del catálogo desde el Excel. |
 | 03 | `roles` | E | ✔ | — | Roles y perfiles. |
 | 04 | `vistas_seguras` | E | ✔ | — | Cierra las vistas a `anon`. |
-| 05 | `vistas_por_rol` | E | ⚠ | — | Vistas por rol. Aplicado pero sin registrar: se registra solo al volver a correr el 68. |
+| 05 | `vistas_por_rol` | E | ✔ | — | Vistas por rol. |
 | 06 | `storage_ordenes` | E | ✔ | — | Bucket `ordenes` y sus políticas. |
 | 07 | `cotizacion_estado` | E | ✔ | — | Cambio de estado de cotización en una operación. |
 | 08 | `requisiciones` | E | ✔ | — | Requisiciones de pedido. |
@@ -66,7 +66,7 @@ Estado: ✔ aplicado y registrado · ⚠ ver nota.
 | 29 | `fase5_paquetes` | E | ✔ | sí | El paquete se aprende y precarga el surtido. |
 | 30 | `modo_vistas` | E | ✔ | sí | Vistas `catalogo`, `existencias`, `resguardo_por_cliente` en definer. **Se ha volteado dos veces**: revisar con la foto. |
 | 33 | — | — | — | `33_prueba_rol_cliente` | Prueba suelta: lo que ve una cuenta `cliente`. |
-| 34 | `cliente_necesita_cliente_id` | E | ⚠ | — | **Pendiente:** se detiene a propósito porque hay un perfil `cliente` sin `cliente_id`. Ligarlo en Usuarios y volver a correr. |
+| 34 | `cliente_necesita_cliente_id` | E | ✔ | — | Un perfil `cliente` debe tener `cliente_id` (y solo él). Aplicado el 09/10/2026. |
 | 35 | `cerrar_escritura` | E | ✔ | sí | Cierra escritura de `catalogos`/`auditoria` y privilegios de `anon`. |
 | 36 | `solicitudes_web` | E | ✔ | sí | Solicitudes del sitio al CRM. |
 | 37 | `wa_cotizar_preventivo` | E | ✔ | sí | El agente cotiza preventivos en borrador. |
@@ -78,9 +78,9 @@ Estado: ✔ aplicado y registrado · ⚠ ver nota.
 | 44 | `sync_proveedor` | E | ✔ | sí | Sincronización con XLStore. |
 | 45 | `importar_productos_proveedor` | E | ✔ | sí | Traer productos del proveedor. |
 | 46 | `publicar_al_aprobar_precio` | E | ✔ | sí | El primer precio aprobado publica. |
-| 47 | `refacciones_subcategoria` | D | ⚠ | — | Restaura subcategorías. Sin verificar: registrarlo a mano si corrió. |
-| 48 | `quitar_baterias_y_paneles_fuera_del_excel` | D | ⚠ | — | Paso 2 de 2: desactiva productos. **No repetir.** Sin verificar. |
-| 49 | `borrar_definitivamente_baterias_y_paneles` | D | ⚠ | — | Paso 2 de 2: **borra** productos. **No repetir.** Sin verificar. |
+| 47 | `refacciones_subcategoria` | D | ✔ | — | Restaura subcategorías de refacciones. |
+| 48 | `quitar_baterias_y_paneles_fuera_del_excel` | D | ✔ | — | Paso 2 de 2: desactiva productos. **No repetir.** |
+| 49 | `borrar_definitivamente_baterias_y_paneles` | D | ✔ | — | Paso 2 de 2: **borra** productos. **No repetir.** |
 | 50 | `sync_conserva_documentos` | E | ✔ | sí | Una lectura sin documentos no borra los anteriores. |
 | 51 | `segundo_proveedor` | E | ✔ | sí | Solarama y varios proveedores por producto. |
 | 52 | `disponibilidad_y_promociones` | E | ✔ | sí | Disponibilidad y promociones del sitio. |
