@@ -2817,4 +2817,15 @@ registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Fina
   "Registrar como…" o "Ignorar…", y "Conciliar los seguros (n)". Medida en celular con el Supabase falso: 0
   textos < 17 px, 0 contrastes < 4.5, 0 px de desborde. **Sin probar con un PDF real de Banorte** (qué tan bien
   lee y cuánto saldo gasta).
+- **SQL 76 — el banco paga facturas por pagar (09/10/2026), aplicado y probado (5/5) con la CLI; la prueba
+  del 75 sigue en 9/9.** Un cargo que pagaba una factura de "Por pagar" salía "Sin pareja" porque el pago aún
+  no estaba en el libro. Ahora `proponer_conciliacion` (redefinida completa) también propone **facturas por
+  pagar** (`_facturas_banco`: recibida, por pagar, no cancelada en el SAT, **saldo exacto** = el cargo, fechada
+  entre 30 días antes y 180 después del cargo). Cada candidato lleva `clase` (`libro` con `movimiento_id` o
+  `factura` con `cfdi_id`); "seguro" cuenta los dos. `conciliar_factura_banco` llama a `pagar_cfdi` con la
+  fecha, la cuenta y la referencia del banco (IVA proporcional) y concilia, todo o nada; `conciliar_seguros`
+  también paga las facturas seguras. Un pago parcial no se propone (el saldo no cuadra): se registra en Por
+  pagar y luego se concilia como movimiento del libro. Al desconciliar, el pago queda en el libro y se
+  propone él, no la factura otra vez (ya no debe nada). Pantalla: "Paga la factura de <proveedor> <folio>" con
+  "al elegirla se registra el pago"; al conciliar, Finanzas recarga "Por pagar (n)". 2 pruebas más en Node.
 - **Falta:** que el contador confirme las tasas de RESICO; probar la conciliación con un estado de Banorte real.

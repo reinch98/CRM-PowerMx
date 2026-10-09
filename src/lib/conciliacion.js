@@ -6,7 +6,7 @@
 
 import { supabase } from './supabase'
 import { explicarError } from './errores'
-import { sha256Hex } from './finanzas'
+import { sha256Hex, etiquetaCategoria, fechaLegible } from './finanzas'
 
 const BUCKET = 'finanzas'
 
@@ -134,6 +134,28 @@ export async function cargarConciliacion(estadoId) {
 }
 
 export const conciliar = (banco, libro) => rpc('conciliar_movimiento', { p_mov_banco: banco, p_movimiento: libro })
+// Paga una factura de "Por pagar" con este cargo del banco y lo concilia (SQL 76).
+export const conciliarFactura = (banco, cfdi) => rpc('conciliar_factura_banco', { p_mov_banco: banco, p_cfdi: cfdi })
+
+// Lo que se lee en el botón de un candidato: un movimiento del libro o una factura por pagar.
+export function textoCandidato(c) {
+  if (c?.clase === 'factura') {
+    const folio = [c.serie, c.folio].filter(Boolean).join('-')
+    return `Paga la factura de ${c.proveedor || 'proveedor'}${folio ? ` ${folio}` : ''}`
+  }
+  return `Es: ${c?.concepto || etiquetaCategoria(c?.categoria)}`
+}
+
+const diasDeDiferencia = d => (d === 0 ? 'el mismo día' : `${Math.abs(d)} ${Math.abs(d) === 1 ? 'día' : 'días'} de diferencia`)
+
+export function detalleCandidato(c) {
+  if (c?.clase === 'factura') {
+    return [`Factura del ${fechaLegible(c.fecha)}`, c.vence && `vence el ${fechaLegible(c.vence)}`,
+      'al elegirla se registra el pago'].filter(Boolean).join(' · ')
+  }
+  return [fechaLegible(c?.fecha), c?.dias == null ? null : diasDeDiferencia(c.dias),
+    c?.cotizacion && `Cotización ${c.cotizacion}`].filter(Boolean).join(' · ')
+}
 export const conciliarSeguros = estado => rpc('conciliar_seguros', { p_estado: estado })
 export const desconciliar = banco => rpc('desconciliar_movimiento', { p_mov_banco: banco })
 export const ignorar = (banco, nota) => rpc('ignorar_movimiento_banco', { p_mov_banco: banco, p_nota: nota })

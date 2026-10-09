@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizarEstadoCuenta, cuadreEstado, sentidoDe } from '../src/lib/conciliacion.js'
+import { normalizarEstadoCuenta, cuadreEstado, sentidoDe, textoCandidato, detalleCandidato } from '../src/lib/conciliacion.js'
 
 // El mismo caso de 75_prueba_conciliacion_bancaria.sql: inicial 1,000 → final 14,972.92.
 const LEIDO = {
@@ -67,6 +67,22 @@ test('sin saldos no se puede decir si cuadra', () => {
   const c = cuadreEstado({ saldo_inicial: null, saldo_final: 10, movimientos: [{ abono: 10 }] })
   assert.equal(c.cuadra, null)
   assert.equal(c.abonos, 10)
+})
+
+test('candidato del libro: concepto o categoría, y días de diferencia', () => {
+  assert.equal(textoCandidato({ clase: 'libro', concepto: 'Anticipo' }), 'Es: Anticipo')
+  assert.equal(textoCandidato({ movimiento_id: 'm', categoria: 'viaticos' }), 'Es: Viáticos')
+  assert.equal(detalleCandidato({ fecha: '2026-09-25', dias: 0, cotizacion: 118 }), '25 sep 2026 · el mismo día · Cotización 118')
+  assert.equal(detalleCandidato({ fecha: '2026-09-27', dias: 1 }), '27 sep 2026 · 1 día de diferencia')
+})
+
+test('candidato factura por pagar: proveedor, folio y que se registra el pago', () => {
+  const f = { clase: 'factura', cfdi_id: 'c', proveedor: 'Refaccionaria del Sureste', serie: 'A', folio: '881',
+    fecha: '2026-09-26', vence: '2026-10-26' }
+  assert.equal(textoCandidato(f), 'Paga la factura de Refaccionaria del Sureste A-881')
+  assert.equal(detalleCandidato(f), 'Factura del 26 sep 2026 · vence el 26 oct 2026 · al elegirla se registra el pago')
+  assert.equal(textoCandidato({ clase: 'factura', proveedor: 'X' }), 'Paga la factura de X')
+  assert.equal(detalleCandidato({ clase: 'factura', fecha: '2026-09-26' }), 'Factura del 26 sep 2026 · al elegirla se registra el pago')
 })
 
 test('sentido del renglón', () => {

@@ -3,7 +3,8 @@ import { Alerta } from './ui'
 import { pesos, fechaLegible, etiquetaCategoria, CATEGORIAS_GASTO } from './lib/finanzas'
 import {
   subirYLeerEstado, cuadreEstado, guardarEstado, listarEstados, cargarConciliacion,
-  conciliar, conciliarSeguros, desconciliar, ignorar, registrarDesdeBanco
+  conciliar, conciliarFactura, conciliarSeguros, desconciliar, ignorar, registrarDesdeBanco,
+  textoCandidato, detalleCandidato
 } from './lib/conciliacion'
 
 // ---------------------------------------------------------------------------
@@ -100,12 +101,12 @@ function Pendiente({ p, onCambio }) {
       {p.candidatos.length > 0 && (
         <div className="buscador-lista" style={{ position: 'static', marginTop: 10 }}>
           {p.candidatos.map(c => (
-            <button key={c.movimiento_id} type="button" disabled={ocupado} onClick={() => correr(() => conciliar(p.mov_banco_id, c.movimiento_id))}>
-              Es: {c.concepto || etiquetaCategoria(c.categoria)}
-              <span className="ayuda">
-                {[fechaLegible(c.fecha), c.dias === 0 ? 'el mismo día' : `${c.dias} ${c.dias === 1 ? 'día' : 'días'} de diferencia`,
-                  c.cotizacion && `Cotización ${c.cotizacion}`].filter(Boolean).join(' · ')}
-              </span>
+            <button key={c.movimiento_id || c.cfdi_id} type="button" disabled={ocupado}
+              onClick={() => correr(() => (c.clase === 'factura'
+                ? conciliarFactura(p.mov_banco_id, c.cfdi_id)
+                : conciliar(p.mov_banco_id, c.movimiento_id)))}>
+              {textoCandidato(c)}
+              <span className="ayuda">{detalleCandidato(c)}</span>
             </button>
           ))}
         </div>
@@ -171,7 +172,7 @@ function Resueltos({ titulo, lista, accion, onAccion }) {
   )
 }
 
-function Estado({ estadoId }) {
+function Estado({ estadoId, onCambio }) {
   const [vuelta, setVuelta] = useState(0)
   const [leido, setLeido] = useState({ clave: '', datos: null })
   const [mensaje, setMensaje] = useState('')
@@ -185,7 +186,8 @@ function Estado({ estadoId }) {
   }, [estadoId, vuelta])
 
   const d = leido.datos
-  const recargar = () => setVuelta(v => v + 1)
+  // Avisa a Finanzas: pagar una factura desde aquí cambia "Por pagar".
+  const recargar = () => { setVuelta(v => v + 1); onCambio?.() }
   if (!d) return <p>Cargando…</p>
   const conteo = d.resumen?.conteo || {}
   const seguros = d.pendientes.filter(p => p.seguro).length
@@ -248,7 +250,7 @@ function Estado({ estadoId }) {
   )
 }
 
-export default function Conciliacion({ cuentas }) {
+export default function Conciliacion({ cuentas, onCambio }) {
   const bancos = (cuentas || []).filter(c => c.activa && c.tipo === 'banco')
   const [cuentaId, setCuentaId] = useState(() => (bancos.find(c => /banorte/i.test(c.nombre)) || bancos[0])?.id || '')
   const [estados, setEstados] = useState({ cuenta: '', lista: [], error: '' })
@@ -314,7 +316,7 @@ export default function Conciliacion({ cuentas }) {
               ))}
             </select>
           </Campo>
-          {elegido && <Estado key={elegido} estadoId={elegido} />}
+          {elegido && <Estado key={elegido} estadoId={elegido} onCambio={onCambio} />}
         </>
       )}
       {estados.cuenta === cuentaId && estados.lista.length === 0 && !leido && (

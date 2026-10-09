@@ -834,7 +834,7 @@ export default function Finanzas() {
       )}
       {datos && pestana === 'por_pagar' && <PorPagar datos={datos.porPagar} cuentas={cuentasActivas} onCambio={recargar} />}
       {datos && pestana === 'libro' && <Libro cuentas={cuentasActivas} />}
-      {datos && pestana === 'banco' && <Conciliacion cuentas={datos.cuentas} />}
+      {datos && pestana === 'banco' && <Conciliacion cuentas={datos.cuentas} onCambio={recargar} />}
       {datos && pestana === 'impuestos' && <Impuestos empresa={datos.empresa} />}
       {datos && pestana === 'ajustes' && (
         <Ajustes key={datos.empresa?.updated_at || 'vacio'} empresa={datos.empresa} cuentas={datos.cuentas} onCambio={recargar} />
