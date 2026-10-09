@@ -108,6 +108,16 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     console.log('Resultado:', r)
     if (r.en_revision > 0) console.log(`→ ${r.en_revision} cambios esperan tu aprobación en la cola de revisión.`)
     if (r.sin_regla_o_costo > 0) console.log(`→ ${r.sin_regla_o_costo} productos sin regla de margen o sin costo.`)
+
+    // Los paquetes solares se arman con estos costos: se recalculan al final (SQL 78). Si esto falla, la
+    // sincronización ya quedó aplicada; solo se avisa.
+    try {
+      const p = await rpc('recalcular_paquetes', {})
+      console.log(`Paquetes solares: ${p.aplicados} precios actualizados solos, ${p.por_aprobar} esperan tu aprobación` +
+        (p.faltan > 0 ? `, ${p.faltan} sin precio por falta de costo.` : '.'))
+    } catch (e) {
+      console.log('Paquetes solares: no se pudieron recalcular:', e.message)
+    }
     return 0
   } catch (e) {
     // Si esto también falla no hay mucho más que hacer: el error original es el que importa.

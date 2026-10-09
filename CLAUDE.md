@@ -1887,10 +1887,33 @@ PROMOCIÓN, con un margen considerable pero comprándolo en Solarama".
 - **Pendiente: promociones en paquetes para reducir ese margen** (pedido de Caña, 01/10/2026). Idea: una
   regla de margen de categoría `paquete_solar` más baja, o un descuento con vigencia, sin tocar el margen
   de los productos sueltos.
-- **Siguiente paso acordado:** SQL de recetas de paquete (`paquete_solar_lineas`, producto o grupo
-  equivalente por línea; el precio lo recalcula la base con cada sync, con el mismo candado del ±15 %) +
-  `armado.js` + pantalla "Paquetes solares"; luego "Sistema a la medida" en Cotizaciones.
-- **Siguen sin decidir:** si el precio publicado incluye IVA, y el híbrido A o B.
+- **Decisiones de Caña (09/10/2026):** el precio publicado **incluye IVA**; se ofrecen **los dos híbridos**
+  (A = interconectado + respaldo LUX 3 kW, B = todo en LUX 6 kW sin inyectar); margen = **la regla de margen**
+  (hoy la general, 30 % sobre el costo; una regla de categoría `paquete_solar` le gana).
+- **SQL 78 — paquetes armados en el CRM (09/10/2026), aplicado y probado (9/9) con la CLI.**
+  `paquete_solar_lineas` (receta: paquete × variante `interconectado` | `respaldo` | `hibrido_b`; cada línea
+  cuesta lo que diga UN producto del catálogo, UN parámetro de `parametros_costeo` o un costo fijo — check
+  `paquete_linea_una_fuente`). Sembradas las **373 líneas del borrador** (generadas desde la hoja Materiales,
+  no a mano) y el texto del sitio de cada paquete en `atributos.receta` (inversor, arreglo, "incluye").
+  14 parámetros nuevos (material eléctrico local con los estimados del borrador, potencia del panel, ahorro
+  por kWp, redondeo y terminación en 999). `costear_paquete` calcula en la base: costo = Σ × (1 + imprevistos);
+  precio = `_precio_venta(costo, _regla_margen('paquete_solar'))` × 1.16, hacia arriba a miles − 1. Variantes →
+  `productos.precios`: interconectado → `estandar` (y `precio`, `costo`), híbrido A → `hibrido`, híbrido B →
+  `hibrido_b` (nueva). **La prueba es la regresión contra el Excel:** los 18 costos (6 × 3) coinciden ±1 peso.
+  Con los costos de hoy: Starter 48,999 / 97,999 / 101,999 y Elite 125,999 / 200,999 / 223,999 (el sitio
+  dice 40,000/52,000 y 99,000/120,000).
+  **Candado:** ±15 % o menos se aplica solo en `recalcular_paquetes()` (la llama `scripts/proveedor/sync.js`
+  al terminar; si falla, solo avisa); más que eso espera. **La primera publicación de cada variante desde la
+  receta es SIEMPRE a mano** (`atributos.receta_publicada`): publicar el interconectado también cambia lo que
+  el sitio dice (kWp con panel de 630 W, paneles, ahorro, "incluye"), y sin este candado el Essential (+13 %)
+  se habría publicado solo con la composición nueva mientras los otros cinco seguían con la vieja.
+  Pantalla **Paquetes solares** (área Ventas; `src/PaquetesSolares.jsx`, `src/lib/paquetesSolares.js`, 4
+  pruebas): por paquete y variante, costo, precio con IVA, "alcanza para N" con el stock de XLStore en Mérida,
+  qué pasaría contra el sitio ("Sube 22.5 %…"), "Publicar $X" y "Recalcular ahora"; la lista de materiales se
+  edita ahí (cantidad, quitar, agregar una pieza del catálogo). Las cantidades son fijas por línea: los
+  parámetros de metros incluidos (51) NO cambian las cantidades de cable de las recetas.
+- **Falta:** el sitio todavía no muestra el híbrido B (`precios.hibrido_b`); el aviso de "precios por
+  publicar" en Inicio; "Sistema a la medida" en Cotizaciones; promociones de paquetes.
 
 ## Cotizaciones: editar, PDF, pago y garantía, eliminar (05/10/2026)
 
