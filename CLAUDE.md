@@ -2236,6 +2236,13 @@ buscando en la base un objeto propio de cada script, sin dar nada por aplicado a
   `unaccent_inmutable`, viene del esquema original). Qué es cada archivo: `supabase/sql/INDICE.md`.
   Para bajar la foto: Export → Download CSV en el editor y quitarle las comillas del CSV (la
   celda en pantalla aplana los saltos de línea).
+- **La foto se toma sola cada mes (SQL 69):** cron `foto-esquema`, día 1 a las 9:00 de Mérida, guarda
+  en `esquema_fotos` el texto, una huella por objeto y lo que **cambió** contra la anterior, y alerta si
+  `catalogo`/`existencias`/`resguardo_por_cliente` vuelven a `invoker`. Para revisar:
+  `select tomada_en, resumen, cambios from esquema_fotos order by tomada_en desc limit 2;`. Un cambio que
+  no corresponda a un script registrado en `_migraciones` es un cambio hecho a mano en el panel.
+  La consulta de `_partes_esquema()` se copia del 00 con `node scripts/generar_foto_esquema.mjs`: si se
+  cambia el 00, se regenera el 69 y se vuelve a correr.
 - **Cargar un script largo en el editor de Supabase:** la página no deja leer de `localhost`
   (CSP), así que se pega con `monaco.editor.getModels()[0].setValue(...)` y se compara la
   longitud con el archivo. Una consulta que devuelve muchas columnas se lee mejor como una sola

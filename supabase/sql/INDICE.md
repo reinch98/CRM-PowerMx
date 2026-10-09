@@ -100,10 +100,12 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
 | 66 | `pago_tecnicos` | E | ✔ | sí | Pago a técnicos por servicio. |
 | 67 | `libro_financiero` | E | ✔ | sí | Libro único, CFDI, documentos y comisiones (redefine `registrar_pago_tecnico`). |
 | 68 | `registro_migraciones` | E | ✔ | — | Tabla `_migraciones` e inventario de 01–63. |
+| 69 | `foto_esquema_mensual` | E | ✔ | — | Foto del esquema cada mes en `esquema_fotos`, con lo que cambió y alerta de vistas en invoker. Su consulta se genera del 00: `node scripts/generar_foto_esquema.mjs`. |
 
 ## Funciones y cron en Supabase (fuera de esta carpeta)
 
 - Edge Functions en `supabase/functions/`: `agente`, `agente-whatsapp`, `enviar-whatsapp`,
   `leer-comprobante`, `leer-placa`, `solicitud-web`, `whatsapp`. Lo desplegado debe coincidir con
   esta lista (el 09/10/2026 se borró `leer-factura`, la versión vieja de `leer-comprobante`).
-- Cron (`cron.job`): `recordatorios-de-cita` (14:00 UTC) y `enviar-whatsapp` (cada minuto).
+- Cron (`cron.job`): `recordatorios-de-cita` (14:00 UTC), `enviar-whatsapp` (cada minuto) y
+  `foto-esquema` (día 1 de cada mes, 15:00 UTC).
