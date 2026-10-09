@@ -165,11 +165,7 @@ as $fn$
                           ' aceptada', case when n = 1 then '' else 's' end,
                           ' con más de 30 días sin cobrarse por completo',
                           case when falta > 0
-                               then concat(' · 
-  end
-$fn$;
-
-, to_char(falta, 'FM999,999,990'), ' por cobrar')
+                               then concat(' · $', to_char(falta, 'FM999,999,990'), ' por cobrar')
                                else ' · cobrado: falta verificar el comprobante' end))
           from (select count(*) as n,
                        coalesce(sum(greatest(c.total - coalesce(m.cobrado, 0), 0)), 0) as falta
@@ -190,11 +186,7 @@ $fn$;
                           ' aceptada', case when n = 1 then '' else 's' end,
                           ' sin cobrarse por completo',
                           case when falta > 0
-                               then concat(' · 
-  end
-$fn$;
-
-, to_char(falta, 'FM999,999,990'), ' por cobrar')
+                               then concat(' · $', to_char(falta, 'FM999,999,990'), ' por cobrar')
                                else ' · cobrado: falta verificar el comprobante' end))
           from (select count(*) as n,
                        coalesce(sum(greatest(c.total - coalesce(m.cobrado, 0), 0)), 0) as falta
@@ -213,6 +205,10 @@ revoke all on function inicio_admin() from public;
 grant execute on function inicio_admin() to authenticated;
 
 notify pgrst, 'reload schema';
+
+-- Registro (ver 68).
+insert into _migraciones (archivo, tipo) values ('64_inicio_cobranza.sql', 'esquema')
+on conflict (archivo) do nothing;
 
 -- Comprobación: como admin devuelve un objeto con `fecha`, `hoy` y `urgente`.
 select inicio_admin() as inicio;

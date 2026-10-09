@@ -52,7 +52,7 @@ as $fn$
         -- ya usa la pantalla de Almacén; no se inventa uno nuevo.
         select jsonb_build_object(
           'clave', 'devoluciones', 'nivel', 'alto', 'pantalla', 'almacen',
-          'n', n, 'texto', concat(n, ' devolución', case when n = 1 then '' else 'es' end,
+          'n', n, 'texto', concat(n, case when n = 1 then ' devolución' else ' devoluciones' end,
                                   ' atrasada', case when n = 1 then '' else 's' end)) as x
           from (select count(distinct s.orden_id) as n
                   from orden_surtido s
@@ -80,7 +80,7 @@ as $fn$
         union all
         select jsonb_build_object(
           'clave', 'whatsapp', 'nivel', 'alto', 'pantalla', 'whatsapp',
-          'n', n, 'texto', concat(n, ' conversación', case when n = 1 then '' else 'es' end,
+          'n', n, 'texto', concat(n, case when n = 1 then ' conversación' else ' conversaciones' end,
                                   ' de WhatsApp sin leer'))
           from (select count(*) as n from conversaciones
                  where sin_leer > 0 and coalesce(estado, 'abierta') <> 'cerrada') z where n > 0
@@ -102,7 +102,7 @@ as $fn$
         union all
         select jsonb_build_object(
           'clave', 'cotiza_whatsapp', 'nivel', 'medio', 'pantalla', 'cotizaciones',
-          'n', n, 'texto', concat(n, ' cotización', case when n = 1 then '' else 'es' end,
+          'n', n, 'texto', concat(n, case when n = 1 then ' cotización' else ' cotizaciones' end,
                                   ' del agente por revisar'))
           from (select count(*) as n from cotizaciones
                  where estado = 'borrador' and origen = 'whatsapp') z where n > 0
@@ -111,7 +111,7 @@ as $fn$
         -- Una cotización que vence sin que nadie la persiga es una venta que se pierde sola.
         select jsonb_build_object(
           'clave', 'por_vencer', 'nivel', 'medio', 'pantalla', 'cotizaciones',
-          'n', n, 'texto', concat(n, ' cotización', case when n = 1 then '' else 'es' end,
+          'n', n, 'texto', concat(n, case when n = 1 then ' cotización' else ' cotizaciones' end,
                                   ' vence', case when n = 1 then '' else 'n' end,
                                   ' en 3 días o menos'))
           from (select count(*) as n from cotizaciones
@@ -122,7 +122,7 @@ as $fn$
         union all
         select jsonb_build_object(
           'clave', 'por_enviar', 'nivel', 'medio', 'pantalla', 'ordenes',
-          'n', n, 'texto', concat(n, ' orden', case when n = 1 then '' else 'es' end,
+          'n', n, 'texto', concat(n, case when n = 1 then ' orden' else ' órdenes' end,
                                   ' cerrada', case when n = 1 then '' else 's' end,
                                   ' por enviar al cliente'))
           from (select count(*) as n from ordenes_servicio o
@@ -161,15 +161,11 @@ as $fn$
         select jsonb_build_object(
           'clave', 'cobranza_atrasada', 'nivel', 'alto', 'pantalla', 'cotizaciones',
           'n', n,
-          'texto', concat(n, ' cotización', case when n = 1 then '' else 'es' end,
+          'texto', concat(n, case when n = 1 then ' cotización' else ' cotizaciones' end,
                           ' aceptada', case when n = 1 then '' else 's' end,
                           ' con más de 30 días sin cobrarse por completo',
                           case when falta > 0
-                               then concat(' · 
-  end
-$fn$;
-
-, to_char(falta, 'FM999,999,990'), ' por cobrar')
+                               then concat(' · $', to_char(falta, 'FM999,999,990'), ' por cobrar')
                                else ' · cobrado: falta verificar el comprobante' end))
           from (select count(*) as n,
                        coalesce(sum(greatest(c.total - coalesce(m.cobrado, 0), 0)), 0) as falta
@@ -186,15 +182,11 @@ $fn$;
         select jsonb_build_object(
           'clave', 'cobranza', 'nivel', 'medio', 'pantalla', 'cotizaciones',
           'n', n,
-          'texto', concat(n, ' cotización', case when n = 1 then '' else 'es' end,
+          'texto', concat(n, case when n = 1 then ' cotización' else ' cotizaciones' end,
                           ' aceptada', case when n = 1 then '' else 's' end,
                           ' sin cobrarse por completo',
                           case when falta > 0
-                               then concat(' · 
-  end
-$fn$;
-
-, to_char(falta, 'FM999,999,990'), ' por cobrar')
+                               then concat(' · $', to_char(falta, 'FM999,999,990'), ' por cobrar')
                                else ' · cobrado: falta verificar el comprobante' end))
           from (select count(*) as n,
                        coalesce(sum(greatest(c.total - coalesce(m.cobrado, 0), 0)), 0) as falta
@@ -211,7 +203,7 @@ $fn$;
         select jsonb_build_object(
           'clave', 'expedientes_atrasados', 'nivel', 'alto', 'pantalla', 'cotizaciones',
           'n', n,
-          'texto', concat(n, ' cotización', case when n = 1 then '' else 'es' end,
+          'texto', concat(n, case when n = 1 then ' cotización' else ' cotizaciones' end,
                           case when n = 1 then ' cobrada' else ' cobradas' end,
                           ' hace más de 15 días con el expediente sin cerrar (faltan los gastos y la utilidad)'))
           from (select count(*) as n
@@ -225,7 +217,7 @@ $fn$;
         select jsonb_build_object(
           'clave', 'expedientes', 'nivel', 'medio', 'pantalla', 'cotizaciones',
           'n', n,
-          'texto', concat(n, ' cotización', case when n = 1 then '' else 'es' end,
+          'texto', concat(n, case when n = 1 then ' cotización' else ' cotizaciones' end,
                           case when n = 1 then ' cobrada' else ' cobradas' end,
                           ' con el expediente por cerrar (faltan los gastos y la utilidad)'))
           from (select count(*) as n
@@ -241,6 +233,10 @@ revoke all on function inicio_admin() from public;
 grant execute on function inicio_admin() to authenticated;
 
 notify pgrst, 'reload schema';
+
+-- Registro (ver 68).
+insert into _migraciones (archivo, tipo) values ('65_inicio_expedientes.sql', 'esquema')
+on conflict (archivo) do nothing;
 
 -- Comprobación: como admin devuelve un objeto con `fecha`, `hoy` y `urgente`.
 select inicio_admin() as inicio;

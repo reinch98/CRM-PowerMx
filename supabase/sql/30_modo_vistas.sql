@@ -50,6 +50,10 @@ alter view public.existencias            set (security_invoker = off);
 -- `disponibles` y `por_reordenar` se quedan en invoker: leen de `existencias`, que ya se
 -- salta RLS, así que heredan el acceso sin necesitar candado propio.
 
+-- Registro (ver 68).
+insert into _migraciones (archivo, tipo) values ('30_modo_vistas.sql', 'esquema')
+on conflict (archivo) do nothing;
+
 -- Comprobación: las tres primeras deben decir `off`, las dos últimas `on`.
 select c.relname as vista,
        coalesce(

@@ -232,3 +232,7 @@ end $$;
 -- ---------------------------------------------------------------------------
 
 notify pgrst, 'reload schema';
+
+-- Registro (ver 68).
+insert into _migraciones (archivo, tipo) values ('54_recordatorio_cita.sql', 'esquema')
+on conflict (archivo) do nothing;

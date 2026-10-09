@@ -718,3 +718,7 @@ end;
 $$;
 revoke execute on function mis_comisiones(int) from public, anon;
 grant execute on function mis_comisiones(int) to authenticated;
+
+-- Registro (ver 68).
+insert into _migraciones (archivo, tipo) values ('67_libro_financiero.sql', 'esquema')
+on conflict (archivo) do nothing;

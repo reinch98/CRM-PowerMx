@@ -2208,6 +2208,34 @@ El respaldo del `<Suspense>` va sin `<main>` propio: ya está dentro del `<main>
   Chrome → DevTools → Application → Service Workers → Offline. El navegador integrado
   de Claude Code no admite service workers.
 
+## Registro de scripts aplicados (`_migraciones`, SQL 68, 09/10/2026)
+
+**La tabla `_migraciones` manda sobre las notas de este archivo.** Si una nota dice "falta
+correrlo" y la tabla dice que está, vale la tabla: `select numero, archivo, aplicada_en from
+_migraciones order by numero;`. Cada script nuevo **termina** con
+`insert into _migraciones (archivo, tipo) values ('NN_nombre.sql', 'esquema') on conflict (archivo) do nothing;`
+(las pruebas y las consultas de solo lectura no se registran). El 68 hizo el inventario de 01–63
+buscando en la base un objeto propio de cada script, sin dar nada por aplicado a ciegas.
+- **Estado al 09/10/2026:** 59 registrados. Corridos ese día, con su prueba en Supabase: **30**
+  (las tres vistas se habían vuelto a voltear a `invoker`: técnico y almacén veían vacío),
+  **54** (8/8; el cron `recordatorios-de-cita` llevaba días llamando a una función que no
+  existía), **55** (8/8), **64** (4/4), **65** (4/4), **66** (10/10) y **67** (12/12).
+- **Sin registrar:** 05 (ya corrido; vuelve a correr el 68 y se registra solo), 47–49 (datos de
+  una sola vez: regístralos a mano si corrieron) y **34**, que se detiene a propósito porque
+  hay **un perfil con rol `cliente` sin `cliente_id`**: ligarlo en Usuarios y volver a correrlo.
+- **El 64 y el 65 estaban dañados en el repo** y por eso nunca corrieron: donde iba
+  `concat(' · $', to_char(…))` había `' · ` + `end $fn$;` + `, to_char…`. Es lo que deja un
+  `String.replace` de JavaScript con `$'` en el texto de reemplazo (`$'` = "lo que sigue a la
+  coincidencia"). **Al generar SQL con `replace`, usar una función de reemplazo
+  (`s.replace(x, () => nuevo)`), nunca una cadena con `$`.**
+- De paso, `inicio_admin()` (65) arma bien los plurales: "cotizaciones", "conversaciones",
+  "devoluciones", "órdenes" (antes pegaba "es": "cotizaciónes").
+- **Cargar un script largo en el editor de Supabase:** la página no deja leer de `localhost`
+  (CSP), así que se pega con `monaco.editor.getModels()[0].setValue(...)` y se compara la
+  longitud con el archivo. Una consulta que devuelve muchas columnas se lee mejor como una sola
+  (`row_to_json(t)::text` o `concat_ws`): la rejilla del editor no dibuja las columnas fuera de
+  la vista.
+
 ## Forma de trabajar y tropiezos conocidos
 
 - La interfaz, los nombres y los comentarios van en español.

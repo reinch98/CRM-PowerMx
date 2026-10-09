@@ -57,6 +57,10 @@ alter table perfiles drop constraint if exists perfiles_solo_cliente_ligado;
 alter table perfiles add constraint perfiles_solo_cliente_ligado
   check (rol = 'cliente' or cliente_id is null);
 
+-- Registro (ver 68).
+insert into _migraciones (archivo, tipo) values ('34_cliente_necesita_cliente_id.sql', 'esquema')
+on conflict (archivo) do nothing;
+
 -- Comprobación: las dos columnas deben salir en 0.
 select
   count(*) filter (where rol = 'cliente' and cliente_id is null)      as clientes_sin_ligar,

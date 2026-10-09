@@ -265,5 +265,9 @@ end $$;
 
 notify pgrst, 'reload schema';
 
+-- Registro (ver 68).
+insert into _migraciones (archivo, tipo) values ('55_importar_clientes_whatsapp.sql', 'esquema')
+on conflict (archivo) do nothing;
+
 select 'rls importacion_whatsapp' as que, relrowsecurity::text as ok
   from pg_class where relname = 'importacion_whatsapp';

@@ -512,3 +512,7 @@ end;
 $$;
 revoke execute on function cancelar_pago_tecnico(uuid, text) from public, anon;
 grant execute on function cancelar_pago_tecnico(uuid, text) to authenticated;
+
+-- Registro (ver 68).
+insert into _migraciones (archivo, tipo) values ('66_pago_tecnicos.sql', 'esquema')
+on conflict (archivo) do nothing;
