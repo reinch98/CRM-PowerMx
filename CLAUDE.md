@@ -1912,8 +1912,14 @@ PROMOCIÓN, con un margen considerable pero comprándolo en Solarama".
   qué pasaría contra el sitio ("Sube 22.5 %…"), "Publicar $X" y "Recalcular ahora"; la lista de materiales se
   edita ahí (cantidad, quitar, agregar una pieza del catálogo). Las cantidades son fijas por línea: los
   parámetros de metros incluidos (51) NO cambian las cantidades de cable de las recetas.
-- **Falta:** el sitio todavía no muestra el híbrido B (`precios.hibrido_b`); el aviso de "precios por
-  publicar" en Inicio; "Sistema a la medida" en Cotizaciones; promociones de paquetes.
+- **Sitio (repo `POWERMX-sitio`, `c4b87dd`):** `convertir.js` pasa `precio_hibrido_b`, `nota_hibrido_a` y
+  `precio_con_iva` (estos dos solo si esa variante ya salió de la receta) y saca `receta`/`receta_publicada`
+  de los atributos (un objeto salía como "[object Object]" en el JSON). `catalogo-solar-baterias.html`: el
+  selector muestra 2 o 3 sistemas según los precios que haya (Estándar · Híbrido · Autónomo "Sin CFE"), la
+  nota de cada uno, "IVA incluido" solo con `precio_con_iva`, marcas según lo que dice "incluye", y el
+  filtro "Híbrido" agrupa los dos con batería. Probado con el JSON de hoy (igual que antes) y con uno simulado.
+- **Falta:** el aviso de "precios por publicar" en Inicio; "Sistema a la medida" en Cotizaciones;
+  promociones de paquetes.
 
 ## Cotizaciones: editar, PDF, pago y garantía, eliminar (05/10/2026)
 
