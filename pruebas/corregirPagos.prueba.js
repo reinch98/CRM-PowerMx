@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { textoReabierto } from '../src/lib/comisiones.js'
+import { textoReabierto, textoFormaCorregida, etiquetaForma } from '../src/lib/comisiones.js'
 import { textoDeshecho } from '../src/lib/finanzas.js'
 
 test('reabrir un pago pagado: dice cuántos egresos se quitaron y cuántos renglones del banco se liberaron', () => {
@@ -16,6 +16,15 @@ test('reabrir un pago aprobado: sin egresos que mencionar', () => {
   assert.equal(textoReabierto({ estaba: 'aprobado', egresos_borrados: 0, banco_liberados: 0 }, 7),
     'PAGO-7 volvió a borrador: corrígelo, apruébalo y regístralo de nuevo.')
   assert.equal(textoReabierto(undefined, 7), 'PAGO-7 volvió a borrador: corrígelo, apruébalo y regístralo de nuevo.')
+})
+
+test('corregir la forma de pago: qué se corrigió y si el banco volvió a pendiente', () => {
+  assert.equal(textoFormaCorregida({ egresos: 2, banco_liberados: 0 }, 9), 'PAGO-9 corregido en el pago y en sus egresos del libro.')
+  assert.equal(textoFormaCorregida({ egresos: 2, banco_liberados: 1 }, 9),
+    'PAGO-9 corregido en el pago y en sus egresos del libro. 1 renglón del banco volvió a "por conciliar" porque cambió la cuenta.')
+  assert.equal(etiquetaForma('efectivo'), 'Efectivo')
+  assert.equal(etiquetaForma('otro'), 'Otra')
+  assert.equal(etiquetaForma(null), 'Sin forma')
 })
 
 test('deshacer un pago a proveedor: lo que se vuelve a deber y el banco', () => {

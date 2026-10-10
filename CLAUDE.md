@@ -2874,4 +2874,11 @@ registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Fina
     plegable "Pagos registrados en los últimos 90 días" en Por pagar, cada uno con "Corregir este pago…".
   Los botones de una orden en el pago van en su propio renglón: junto al monto aplastaban la descripción a una
   columna de 40 px en el celular (las medidas automáticas pasaban; lo vio la captura). 3 pruebas en Node.
+- **SQL 79 — corregir la forma de pago de un pago a técnico (09/10/2026), aplicado y probado (3/3).** Sin
+  deshacer nada: `corregir_forma_pago_tecnico(pago, forma, fecha, referencia, cuenta, motivo?)` cambia forma,
+  fecha, referencia y cuenta en el pago y en sus egresos (`pago_tecnico_id`); los montos no se tocan. Si cambia
+  la cuenta, lo conciliado con el banco vuelve a "por conciliar" (era de la otra cuenta); con la misma cuenta,
+  no. Expediente cerrado: se niega. Pantalla: un pago registrado muestra forma · cuenta · referencia y tiene
+  "Corregir forma de pago…" (formulario con lo guardado) y "Corregir monto u órdenes…" (el reabrir del 77).
+  `cargarPagos` trae la cuenta de cada pago desde sus egresos.
 - **Falta:** que el contador confirme las tasas de RESICO; probar la conciliación con un estado de Banorte real.

@@ -4,7 +4,7 @@ import { hoyLocal } from './lib/fechas'
 import { listarCuentas } from './lib/finanzas'
 import {
   porPagarTecnicos, proponerPago, ajustarPago, quitarLinea, aprobarPago, registrarPago, cancelarPago,
-  reabrirPago, fijarMontoLinea, textoReabierto,
+  reabrirPago, fijarMontoLinea, textoReabierto, corregirFormaPago, textoFormaCorregida, FORMAS_PAGO_TECNICO, etiquetaForma,
   cargarPagos, cargarTarifas, guardarTarifa, nombresTecnicos, infoOrdenes, cargarCorte, guardarCorte,
   ESTADOS_PAGO, TIPOS_SERVICIO, nombreServicio, etiquetaRol, fechaCorta, pesos
 } from './lib/comisiones'
@@ -107,7 +107,10 @@ function TarjetaPago({ pago, nombre, ordenes, cuentas, onCambio, onAviso }) {
   const [corrigiendo, setCorrigiendo] = useState(false)
   const [motivoCorr, setMotivoCorr] = useState('')
   const [montoLinea, setMontoLinea] = useState({ id: '', monto: '' })
+  // Corregir la forma de un pago ya registrado (null = cerrado); arranca con lo que está guardado.
+  const [formaCorr, setFormaCorr] = useState(null)
   const e = ESTADOS_PAGO[pago.estado]
+  const nombreCuenta = id => cuentas.find(c => c.id === id)?.nombre
   const editable = pago.estado === 'propuesto'
 
   async function correr(fn) {
@@ -130,6 +133,12 @@ function TarjetaPago({ pago, nombre, ordenes, cuentas, onCambio, onAviso }) {
             Del {fechaCorta(pago.periodo_desde)} al {fechaCorta(pago.periodo_hasta)}
             {pago.estado === 'pagado' && pago.fecha_pago && ` · pagado el ${fechaCorta(pago.fecha_pago)}`}
           </div>
+          {pago.estado === 'pagado' && (
+            <div className="renglon-datos">
+              {[etiquetaForma(pago.forma), nombreCuenta(pago.cuenta_id) || 'sin cuenta', pago.referencia && `Ref. ${pago.referencia}`]
+                .filter(Boolean).join(' · ')}
+            </div>
+          )}
         </div>
         <div className="renglon-lado">
           <span className={`estado ${e.clase}`}>{e.etiqueta}</span>
@@ -272,7 +281,61 @@ function TarjetaPago({ pago, nombre, ordenes, cuentas, onCambio, onAviso }) {
       )}
       {editable && <p className="ayuda">Al aprobar, {nombre} verá el monto de cada orden en sus comisiones.</p>}
 
-      {(pago.estado === 'aprobado' || pago.estado === 'pagado') && (
+      {pago.estado === 'pagado' && (
+        formaCorr ? (
+          <div className="tarjeta" style={{ marginTop: 12 }}>
+            <h3 style={{ marginTop: 0 }}>Corregir la forma de pago</h3>
+            <p className="ayuda">El pago sigue registrado: se corrige aquí y en sus egresos del libro. El monto no cambia.</p>
+            <div className="rejilla-2">
+              <label className="campo">
+                <span>Forma</span>
+                <select value={formaCorr.forma} onChange={ev => setFormaCorr(f => ({ ...f, forma: ev.target.value }))}>
+                  {FORMAS_PAGO_TECNICO.map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+                </select>
+              </label>
+              <label className="campo">
+                <span>Cuenta de donde salió</span>
+                <select value={formaCorr.cuenta_id} onChange={ev => setFormaCorr(f => ({ ...f, cuenta_id: ev.target.value }))}>
+                  <option value="">— Sin especificar —</option>
+                  {cuentas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </label>
+              <label className="campo">
+                <span>Fecha del pago</span>
+                <input type="date" value={formaCorr.fecha} onChange={ev => setFormaCorr(f => ({ ...f, fecha: ev.target.value }))} />
+              </label>
+              <label className="campo">
+                <span>Referencia (opcional)</span>
+                <input value={formaCorr.referencia} onChange={ev => setFormaCorr(f => ({ ...f, referencia: ev.target.value }))} placeholder="Clave de rastreo" />
+              </label>
+            </div>
+            <label className="campo">
+              <span>¿Por qué? (opcional)</span>
+              <input value={formaCorr.motivo} onChange={ev => setFormaCorr(f => ({ ...f, motivo: ev.target.value }))} placeholder="Se pagó en efectivo, no por transferencia" />
+            </label>
+            {formaCorr.cuenta_id !== (pago.cuenta_id || '') && (
+              <p className="ayuda">Cambia la cuenta: si ya estaba conciliado con el banco, ese renglón vuelve a "por conciliar".</p>
+            )}
+            <div className="fila">
+              <button type="button" className="btn-primario" disabled={ocupado || !formaCorr.fecha}
+                onClick={() => correr(async () => {
+                  const r = await corregirFormaPago(pago.id, formaCorr)
+                  if (!r.error) { setFormaCorr(null); onAviso?.(textoFormaCorregida(r.data, pago.folio)) }
+                  return r
+                })}>Guardar corrección</button>
+              <button type="button" onClick={() => setFormaCorr(null)}>No, dejarlo</button>
+            </div>
+          </div>
+        ) : !corrigiendo && (
+          <button type="button" style={{ marginTop: 12, marginRight: 8 }}
+            onClick={() => setFormaCorr({ forma: pago.forma || 'transferencia', cuenta_id: pago.cuenta_id || '',
+              fecha: pago.fecha_pago || hoyLocal(), referencia: pago.referencia || '', motivo: '' })}>
+            Corregir forma de pago…
+          </button>
+        )
+      )}
+
+      {(pago.estado === 'aprobado' || pago.estado === 'pagado') && !formaCorr && (
         corrigiendo ? (
           <div className="tarjeta" style={{ marginTop: 12 }}>
             <h3 style={{ marginTop: 0 }}>Corregir este pago</h3>
@@ -300,7 +363,7 @@ function TarjetaPago({ pago, nombre, ordenes, cuentas, onCambio, onAviso }) {
           </div>
         ) : (
           <button type="button" style={{ marginTop: 12, marginRight: 8 }} onClick={() => setCorrigiendo(true)}>
-            Corregir este pago…
+            {pago.estado === 'pagado' ? 'Corregir monto u órdenes…' : 'Corregir este pago…'}
           </button>
         )
       )}

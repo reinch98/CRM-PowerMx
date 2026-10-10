@@ -150,6 +150,22 @@ export const cancelarPago = (pago, motivo) => rpc('cancelar_pago_tecnico', { p_p
 // Corregir (SQL 77): un pago aprobado o pagado vuelve a borrador; si estaba pagado se borran sus egresos.
 export const reabrirPago = (pago, motivo) => rpc('reabrir_pago_tecnico', { p_pago: pago, p_motivo: motivo })
 export const fijarMontoLinea = (linea, monto) => rpc('fijar_monto_linea_pago', { p_linea: linea, p_monto: num(monto) })
+// Corregir la forma de pago de un pago ya registrado (SQL 79): sigue registrado; cambian sus datos y los de sus egresos.
+export const corregirFormaPago = (pago, { forma, fecha, referencia, cuenta_id, motivo }) =>
+  rpc('corregir_forma_pago_tecnico', {
+    p_pago: pago, p_forma: forma, p_fecha: fecha || null, p_referencia: (referencia || '').trim() || null,
+    p_cuenta: cuenta_id || null, p_motivo: (motivo || '').trim() || null
+  })
+
+export const FORMAS_PAGO_TECNICO = [['transferencia', 'Transferencia'], ['efectivo', 'Efectivo'], ['otro', 'Otra']]
+export const etiquetaForma = f => (FORMAS_PAGO_TECNICO.find(([k]) => k === f) || [null, f || 'Sin forma'])[1]
+
+export function textoFormaCorregida(r, folio) {
+  const partes = [`PAGO-${folio} corregido en el pago y en sus egresos del libro.`]
+  const b = Number(r?.banco_liberados) || 0
+  if (b > 0) partes.push(`${b === 1 ? '1 renglón del banco volvió' : `${b} renglones del banco volvieron`} a "por conciliar" porque cambió la cuenta.`)
+  return partes.join(' ')
+}
 
 // Lo que se le dice al admin después de reabrir un pago.
 export function textoReabierto(r, folio) {
@@ -173,7 +189,17 @@ export async function cargarPagos() {
       if (l.error) return { error: textoDeError(l.error) }
       lineas = l.data || []
     }
-    return { pagos: (p.data || []).map(x => ({ ...x, lineas: lineas.filter(l => l.pago_id === x.id) })) }
+    // De qué cuenta salió cada pago registrado: la llevan sus egresos del libro (SQL 77).
+    const pagados = (p.data || []).filter(x => x.estado === 'pagado').map(x => x.id)
+    const cuentaDe = {}
+    if (pagados.length) {
+      const m = await supabase.from('expediente_movimientos').select('pago_tecnico_id, cuenta_id').in('pago_tecnico_id', pagados)
+      if (m.error) return { error: textoDeError(m.error) }
+      for (const x of m.data || []) if (!(x.pago_tecnico_id in cuentaDe)) cuentaDe[x.pago_tecnico_id] = x.cuenta_id
+    }
+    return {
+      pagos: (p.data || []).map(x => ({ ...x, cuenta_id: cuentaDe[x.id] ?? null, lineas: lineas.filter(l => l.pago_id === x.id) }))
+    }
   } catch (e) {
     return { error: textoDeError(e) }
   }
