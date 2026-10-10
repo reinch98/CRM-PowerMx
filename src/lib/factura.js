@@ -11,6 +11,7 @@ import { supabase } from './supabase'
 import { explicarError } from './errores'
 import { redimensionar } from './imagen'
 import { todasLasFilas } from './paginar'
+import { huellaDe, revisarArchivo, anotarArchivo } from './huellas'
 
 const BUCKET = 'compras'
 export const IVA = 0.16
@@ -315,15 +316,20 @@ export const esImagen = f => /^image\//.test(f?.type || '')
 export const rutaDeLectura = (nombre, pdf, marca = Date.now()) =>
   `lecturas/${marca}-${limpiarNombre(nombre)}.${pdf ? 'pdf' : 'jpg'}`
 
+// Una factura que ya está en otra compra no se sube ni se lee (no se gasta saldo de la IA): SQL 81.
 export async function subirParaLeer(archivo) {
   try {
     if (!esPdf(archivo) && !esImagen(archivo)) return { error: 'La factura tiene que ser una foto o un PDF.' }
+    const hash = await huellaDe(archivo)
+    const rep = await revisarArchivo(hash, 'compras')
+    if (rep.repetido) return { error: rep.texto, repetido: true }
     const pdf = esPdf(archivo)
     const cuerpo = pdf ? archivo : await redimensionar(archivo, 2000, 0.85)
     const ruta = rutaDeLectura(archivo.name, pdf)
     const { error } = await supabase.storage.from(BUCKET)
       .upload(ruta, cuerpo, { upsert: true, contentType: pdf ? 'application/pdf' : 'image/jpeg' })
     if (error) return { error: `No se pudo subir la factura: ${textoDeError(error)}` }
+    await anotarArchivo(BUCKET, ruta, hash, archivo.name)
     return { ruta }
   } catch (e) {
     return { error: textoDeError(e) }

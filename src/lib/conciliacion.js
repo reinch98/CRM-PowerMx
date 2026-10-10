@@ -6,7 +6,8 @@
 
 import { supabase } from './supabase'
 import { explicarError } from './errores'
-import { sha256Hex, etiquetaCategoria, fechaLegible } from './finanzas'
+import { etiquetaCategoria, fechaLegible } from './finanzas'
+import { sha256Hex, revisarArchivo, anotarArchivo } from './huellas'
 
 const BUCKET = 'finanzas'
 
@@ -75,10 +76,15 @@ export async function subirYLeerEstado(archivo) {
     if (!esPdf) return { error: 'El estado de cuenta tiene que ser el PDF del banco.' }
     if (archivo.size > 10 * 1024 * 1024) return { error: 'El PDF pesa más de 10 MB.' }
     const buf = await archivo.arrayBuffer()
-    const ruta = `estados/${await sha256Hex(buf)}.pdf`
+    const hash = await sha256Hex(buf)
+    // Un estado de cuenta ya guardado no se vuelve a leer: gastaría saldo de la IA para nada (SQL 81).
+    const rep = await revisarArchivo(hash, 'dinero')
+    if (rep.repetido) return { error: rep.texto }
+    const ruta = `estados/${hash}.pdf`
     const sube = await supabase.storage.from(BUCKET).upload(ruta, new Blob([buf], { type: 'application/pdf' }),
       { upsert: true, contentType: 'application/pdf' })
     if (sube.error) return { error: `No se pudo subir: ${textoDeError(sube.error)}` }
+    await anotarArchivo(BUCKET, ruta, hash, archivo.name)
     const { data, error } = await supabase.functions.invoke('leer-comprobante', { body: { ruta, modo: 'estado_cuenta' } })
     if (error) {
       let detalle = ''

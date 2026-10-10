@@ -10,6 +10,7 @@ import { supabase } from './supabase'
 import { explicarError } from './errores'
 import { leerCfdiXml, MAX_BYTES_XML } from './cfdi'
 import { leerComprobante } from './expediente'
+import { sha256Hex, revisarArchivo } from './huellas'
 
 const BUCKET = 'finanzas'
 
@@ -300,10 +301,9 @@ const intentar = async fn => {
   }
 }
 
-export async function sha256Hex(buffer) {
-  const h = await crypto.subtle.digest('SHA-256', buffer)
-  return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, '0')).join('')
-}
+// La huella vive en huellas.js (la usan también Expediente, Compras y Banco); se reexporta aquí
+// porque conciliacion.js y las pruebas ya la importaban de este módulo.
+export { sha256Hex }
 
 const EXT_POR_MIME = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
 const esXml = a => /\.xml$/i.test(a?.name || '') || /xml/.test(a?.type || '')
@@ -318,6 +318,10 @@ export async function subirDocumento(archivo, Parser = globalThis.DOMParser) {
     if (tamano > 10 * 1024 * 1024) return { estado: 'error', nombre, error: 'Pesa más de 10 MB.' }
     const buf = await archivo.arrayBuffer()
     const hash = await sha256Hex(buf)
+    // Ya registrado en otra parte (un cobro, un gasto del Expediente, un estado de cuenta): no se
+    // sube. Un duplicado dentro de la propia bandeja lo resuelve registrar_documento más abajo.
+    const rep = await revisarArchivo(hash, 'dinero', 'documentos')
+    if (rep.repetido) return { estado: 'error', nombre, error: rep.texto }
 
     if (esXml(archivo)) {
       if (tamano > MAX_BYTES_XML) return { estado: 'error', nombre, error: 'El XML pesa demasiado para ser un CFDI.' }

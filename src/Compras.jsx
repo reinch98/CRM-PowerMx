@@ -3,7 +3,7 @@ import { Alerta } from './ui'
 import FacturaLeida from './FacturaLeida'
 import {
   cargarCompras, cargarPedidosPorRecibir, cargarProductos, registrarCompra, cancelarCompra,
-  adjuntarArchivo, urlDeArchivo, totalesDeCompra, problemasDeCompra, cambioDeCosto,
+  adjuntarArchivo, archivosRepetidos, urlDeArchivo, totalesDeCompra, problemasDeCompra, cambioDeCosto,
   importeLinea, lineaDesdePedido, lineaNueva,
 } from './lib/compras'
 
@@ -99,6 +99,9 @@ export default function Compras() {
     if (faltas.length > 0) return setError(faltas.join(' '))
 
     setGuardando(true)
+    // La factura de otra compra no se vuelve a registrar (SQL 81): se revisa antes de crear nada.
+    const repetido = await archivosRepetidos([xml, pdf])
+    if (repetido) { setGuardando(false); return setError(repetido) }
     const r = await registrarCompra({
       proveedor: form.proveedor.trim(),
       factura: form.factura.trim() || null,

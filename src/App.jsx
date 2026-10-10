@@ -22,6 +22,7 @@ const Cotizaciones = lazy(() => import('./Cotizaciones'))
 const Requisiciones = lazy(() => import('./Requisiciones'))
 const Compras = lazy(() => import('./Compras'))
 const Proveedor = lazy(() => import('./Proveedor'))
+const Proveedores = lazy(() => import('./Proveedores'))
 const Tarifas = lazy(() => import('./Tarifas'))
 const PaquetesSolares = lazy(() => import('./PaquetesSolares'))
 const Tecnicos = lazy(() => import('./Tecnicos'))
@@ -47,7 +48,9 @@ const PANTALLAS = {
   cotizaciones: { titulo: 'Cotizaciones', componente: Cotizaciones, roles: ['admin'] },
   requisiciones:{ titulo: 'Pedidos',      componente: Requisiciones,roles: ['admin'] },
   compras:      { titulo: 'Compras',      componente: Compras,      roles: ['admin'] },
-  proveedor:    { titulo: 'Proveedor',    componente: Proveedor,    roles: ['admin'] },
+  proveedores:  { titulo: 'Proveedores',  componente: Proveedores,  roles: ['admin'] },
+  // La sincronización de precios de XLStore y Solarama (la clave se queda: ningún irA() cambia).
+  proveedor:    { titulo: 'Listas de precios', componente: Proveedor, roles: ['admin'] },
   tarifas:      { titulo: 'Precios',      componente: Tarifas,      roles: ['admin'] },
   paquetes:     { titulo: 'Paquetes solares', componente: PaquetesSolares, roles: ['admin'] },
   usuarios:     { titulo: 'Usuarios',     componente: Tecnicos,     roles: ['admin'] },
@@ -76,7 +79,7 @@ const GRUPOS = [
   { clave: 'servicio', titulo: 'Servicio', pantallas: ['inicio', 'agenda', 'ordenes', 'comisiones'] },
   { clave: 'clientes', titulo: 'Clientes', pantallas: ['solicitudes', 'whatsapp', 'clientes', 'contactos', 'equipos'] },
   { clave: 'ventas',   titulo: 'Ventas',   pantallas: ['cotizaciones', 'tarifas', 'paquetes'] },
-  { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones', 'compras', 'proveedor'] },
+  { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones', 'compras', 'proveedores', 'proveedor'] },
   { clave: 'finanzas', titulo: 'Finanzas', pantallas: ['tablero', 'finanzas', 'pagos'] },
   { clave: 'ajustes',  titulo: 'Ajustes',  pantallas: ['usuarios', 'agente'] },
 ]

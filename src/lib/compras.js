@@ -12,6 +12,7 @@
 import { supabase } from './supabase'
 import { explicarError } from './errores'
 import { todasLasFilas } from './paginar'
+import { huellaDe, revisarArchivo, anotarArchivo } from './huellas'
 
 const BUCKET = 'compras'
 export const IVA = 0.16
@@ -149,15 +150,29 @@ export const registrarCompra = (datos, lineas) =>
 export const cancelarCompra = (id, motivo) =>
   llamar('cancelar_compra', { p_compra: id, p_motivo: motivo })
 
+// Antes de registrar la compra: si el XML o el PDF ya están en otra compra, no se registra nada
+// (si no, quedaría una compra nueva con la factura de otra). Devuelve el texto del problema o ''.
+export async function archivosRepetidos(archivos) {
+  for (const a of archivos.filter(Boolean)) {
+    const rep = await revisarArchivo(await huellaDe(a), 'compras')
+    if (rep.repetido) return `${a.name || 'El archivo'}: ${rep.texto}`
+  }
+  return ''
+}
+
 // La factura se sube DESPUÉS de registrar, porque la ruta cuelga del id de la compra. Si la
 // subida falla, la compra ya quedó bien: el archivo se puede volver a adjuntar.
 export async function adjuntarArchivo(compraId, archivo, tipo) {
   const ext = tipo === 'xml' ? 'xml' : 'pdf'
   const ruta = `${compraId}/factura.${ext}`
   try {
+    const hash = await huellaDe(archivo)
+    const rep = await revisarArchivo(hash, 'compras')
+    if (rep.repetido) return { ok: false, texto: rep.texto }
     const { error } = await supabase.storage.from(BUCKET)
       .upload(ruta, archivo, { upsert: true })
     if (error) return { ok: false, texto: explicarError(error).texto }
+    await anotarArchivo(BUCKET, ruta, hash, archivo.name)
     const campo = tipo === 'xml' ? 'archivo_xml' : 'archivo_pdf'
     const { error: e2 } = await supabase.from('compras').update({ [campo]: ruta }).eq('id', compraId)
     if (e2) return { ok: false, texto: textoDeError(e2) }

@@ -101,6 +101,18 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
 | 67 | `libro_financiero` | E | ✔ | sí | Libro único, CFDI, documentos y comisiones (redefine `registrar_pago_tecnico`). |
 | 68 | `registro_migraciones` | E | ✔ | — | Tabla `_migraciones` e inventario de 01–63. |
 | 69 | `foto_esquema_mensual` | E | ✔ | — | Foto del esquema cada mes en `esquema_fotos`, con lo que cambió y alerta de vistas en invoker. Su consulta se genera del 00: `node scripts/generar_foto_esquema.mjs`. |
+| 70 | `corte_pagos_y_ayudante` | E | ✔ | sí | Corte de pagos a técnicos y tarifa del ayudante (300). |
+| 71 | `avisos_finanzas` | E | ✔ | sí | Globos e Inicio de Finanzas y pagos (versión vigente de `inicio_admin`/`pendientes_admin` hasta la 72). |
+| 72 | `cuentas_por_pagar` | E | ✔ | sí | Facturas por pagar, pagos parciales y vencimientos. |
+| 73 | `reporte_resico` | E | ✔ | sí | Reporte mensual RESICO (estimado para el contador). |
+| 74 | `tablero_direccion` | E | ✔ | sí | Tablero de dirección. |
+| 75 | `conciliacion_bancaria` | E | ✔ | sí | Estados de cuenta y conciliación con el libro. |
+| 76 | `conciliar_facturas_por_pagar` | E | ✔ | sí | El banco paga facturas por pagar. |
+| 77 | `corregir_pagos` | E | ✔ | sí | Reabrir pagos a técnicos y deshacer pagos a proveedores. |
+| 78 | `paquetes_solares` | E | ✔ | sí | Recetas, costo y precio de los paquetes solares. |
+| 79 | `corregir_forma_pago_tecnico` | E | ✔ | sí | Corregir forma, fecha, referencia y cuenta de un pago a técnico. |
+| 80 | `proveedores` | E | ✔ | sí | Ficha y carpeta de cada proveedor; `proveedor_id` en compras, pedidos, vínculos, CFDI y libro (redefine `_expediente_cerrado_bloquea`). |
+| 81 | `archivos_repetidos` | E | ✔ | sí | El mismo archivo no se registra dos veces (`archivos_subidos` y candados). |
 
 ## Funciones y cron en Supabase (fuera de esta carpeta)
 

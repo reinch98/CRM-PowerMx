@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { hoyLocal } from './lib/fechas'
 import { Alerta } from './ui'
+import { huellaDe, revisarArchivo } from './lib/huellas'
 import {
   CATEGORIAS_EGRESO, FORMAS_COBRO, pesos, etiquetaCategoria, estadoComprobante, textoUtilidad,
   validarMovimiento, filaDeMovimiento, cargarResumen, cargarMovimientos, guardarMovimiento,
@@ -64,10 +65,14 @@ function FormMovimiento({ tipo, cotizacionId, tecnicos, porCobrar, onGuardar }) 
   const cambiar = (campo, valor) => setForm(f => ({ ...f, [campo]: valor }))
   const esCobro = tipo === 'ingreso'
 
-  function elegirArchivo(f) {
-    setArchivo(f); setSubido(null); setLeido(null)
+  async function elegirArchivo(f) {
+    setArchivo(f); setSubido(null); setLeido(null); setError('')
     // Otro archivo: lo que se leyó del anterior ya no vale.
     setForm(fm => ({ ...fm, monto_leido: '' }))
+    if (!f) return
+    // Un comprobante ya registrado se avisa al elegirlo, antes de capturar nada (SQL 81).
+    const rep = await revisarArchivo(await huellaDe(f), 'dinero')
+    if (rep.repetido) { setArchivo(null); setVersion(v => v + 1); setError(rep.texto) }
   }
 
   // Sube el comprobante UNA vez, lo lee y llena el formulario. Solo propone: el admin revisa y

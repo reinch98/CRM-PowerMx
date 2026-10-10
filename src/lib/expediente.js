@@ -12,6 +12,7 @@
 import { supabase } from './supabase'
 import { explicarError } from './errores'
 import { redimensionar } from './imagen'
+import { huellaDe, revisarArchivo, anotarArchivo } from './huellas'
 
 const BUCKET = 'finanzas'
 
@@ -173,15 +174,21 @@ export async function cargarMovimientos(cotizacionId) {
 
 // Sube un comprobante (foto o PDF) al bucket y devuelve su ruta. Una foto del celular se encoge
 // antes de subir. Se separa de guardar para poder LEERLO antes de registrar sin subirlo dos veces.
+// Un comprobante que ya está registrado (aquí, en otra cotización o en Finanzas) no se sube ni se
+// lee: la huella es la del archivo original, antes de encogerlo (SQL 81).
 export async function subirComprobante(cotizacionId, archivo) {
   try {
     if (!archivoValido(archivo)) return { error: 'El comprobante tiene que ser una foto o un PDF.' }
+    const hash = await huellaDe(archivo)
+    const rep = await revisarArchivo(hash, 'dinero')
+    if (rep.repetido) return { error: rep.texto, repetido: true }
     const pdf = esPdf(archivo)
     const cuerpo = pdf ? archivo : await redimensionar(archivo, 2000, 0.85)
     const ruta = rutaComprobante(cotizacionId, archivo.name, pdf)
     const { error } = await supabase.storage.from(BUCKET)
       .upload(ruta, cuerpo, { upsert: true, contentType: pdf ? 'application/pdf' : 'image/jpeg' })
     if (error) return { error: `No se pudo subir el comprobante: ${textoDeError(error)}` }
+    await anotarArchivo(BUCKET, ruta, hash, archivo.name)
     return { ruta, nombre: archivo.name || (pdf ? 'comprobante.pdf' : 'comprobante.jpg') }
   } catch (err) {
     return { error: textoDeError(err) }

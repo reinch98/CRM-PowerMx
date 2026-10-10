@@ -2891,3 +2891,56 @@ registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Fina
   "Corregir forma de pago…" (formulario con lo guardado) y "Corregir monto u órdenes…" (el reabrir del 77).
   `cargarPagos` trae la cuenta de cada pago desde sus egresos.
 - **Falta:** que el contador confirme las tasas de RESICO; probar la conciliación con un estado de Banorte real.
+
+## Ciclo de compras con proveedores (10/10/2026) — plan acordado con Caña
+
+Tres documentos que se ligan entre sí: **cotización de proveedor** (se lee en Finanzas o en Compras; puede
+crear piezas nuevas ligadas a ese proveedor; NO mueve inventario; estados vigente / aceptada / rechazada /
+cancelada, "vencida" se calcula; **aceptarla crea los pedidos en "pedida"**), **comprobante de pago** (a
+proveedor: paga una factura por pagar con saldo exacto o queda como **anticipo** sin factura; los **cobros de
+clientes siguen entrando por el Expediente** de su cotización) y **factura** (se liga a su pago y a su
+cotización de proveedor; si es de material, registra la compra). Todo agrupado por proveedor. El almacenista
+no ve cotizaciones de proveedor (llevan costos). Partes: **A** proveedores (hecha) · **B** cotizaciones de
+proveedor · **C** comprobantes de pago y anticipos · **D** la factura cierra el ciclo (y une la "doble
+puerta": hoy la misma factura puede entrar por Compras y por Finanzas).
+
+**SQL 80 — Proveedores (parte A), aplicado y probado (11/11) con la CLI.** Tabla `proveedores` (nombre, RFC
+único, `clave` de sincronización `xlstore`/`solarama`, `alias` = cómo viene impreso). Se compara por
+`nombre_clave` (`_clave_proveedor`: sin acentos, puntuación ni "S.A. de C.V."/"S.A.P.I."/"México"), así
+"EXEL SOLAR S.A.P.I. DE C.V." = "Exel Solar" (la tienda XLStore). `_rfc_valido` trata los RFC genéricos
+(XAXX…/XEXX…) como vacíos. `compras`, `requisiciones`, `producto_proveedores`, `cfdi` (recibidos, por RFC) y
+`expediente_movimientos` (por su factura o compra) ganan `proveedor_id`, que un **disparador llena solo** desde
+el texto; un nombre nuevo crea su ficha sola y la ficha aprende RFC y alias. El texto viejo se queda.
+`unir_proveedores` (mueve todo, el nombre del que se va queda como alias, `auditoria`; se niega con RFC o
+claves distintas), `proveedores_parecidos` (prefijo o primera palabra) y `marcar_proveedores_distintos` (se
+recuerda). `carpeta_proveedor`: facturas con saldo, pagos, compras, pedidos y piezas (40). `_expediente_cerrado_bloquea`
+se redefinió: un expediente cerrado deja cambiar SOLO `proveedor_id`. Comprobado en vivo el mismo día: una
+compra real capturada como "EXELSOLAR" se ligó sola a Exel Solar.
+Pantalla **Proveedores** (área Almacén; `src/Proveedores.jsx`, `src/lib/proveedores.js`): lista con buscador
+(nombre, RFC, alias), "¿Son el mismo proveedor?" (unir con confirmación, o "No, son distintos"), alta y edición,
+y la carpeta con "Le debes / vencido / pagado / comprado". La de sincronización se renombró **"Listas de
+precios"** (clave `proveedor` intacta). Medida en celular con el Supabase falso: 0 textos < 17 px, 0
+contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde.
+
+**SQL 81 — el mismo archivo no se registra dos veces, aplicado y probado (9/9)**; tras él se repitieron 62, 67,
+72, 75, 76 y 77 (todas ok). Pedido de Caña: "que el sistema no acepte imágenes o documentos repetidos".
+- La huella es el **SHA-256 del archivo ORIGINAL** (antes de encoger la foto), en `src/lib/huellas.js`
+  (`huellaDe`, `revisarArchivo`, `anotarArchivo`; `sha256Hex` vive ahí y `finanzas.js` lo reexporta).
+  Cada subida a `finanzas`/`compras` se anota en `archivos_subidos` (bucket, ruta, huella).
+- "Repetido" = lo usa un registro VIVO: documento de la bandeja no rechazado, movimiento del libro, estado de
+  cuenta o compra no cancelada. Subir para leer y no guardar no cuenta. Dos grupos que no se cruzan:
+  **dinero** (bandeja, libro, estados de cuenta) y **compras** — la misma factura sí puede estar en una compra
+  y en Finanzas hasta la parte D.
+- `archivo_repetido(huella, grupo, origen)` se pregunta **antes de subir y de leer con IA** (ahorra saldo) en
+  la bandeja, el Expediente (avisa al elegir el archivo), "Leer una factura", el adjunto de Compras (antes de
+  registrar la compra) y Banco. Dice dónde está, en palabras ("en el expediente de la cotización 12: un cobro
+  del 03/10/2026 por $5,000.00"). **El candado de verdad son los disparadores** de `expediente_movimientos`,
+  `estados_cuenta`, `documentos` y `compras` (22023): un navegador viejo que no pregunte igual se detiene.
+- **No cubre** dos fotos distintas del mismo ticket (bytes distintos): eso lo cubren las reglas de contenido
+  (UUID del CFDI, clave de rastreo repetida, huella de cada renglón del banco). Tampoco los archivos viejos,
+  que nunca se anotaron, ni las fotos de técnicos, firmas y placas (a propósito).
+- Tropiezo de la 81: `not (p_tabla = 'x' and id = p_id)` con `p_tabla` nulo da **null** y el `where` lo tira
+  todo; va `not coalesce(..., false)`. Y en una prueba, `'x' = any ((select arreglo …))` falla («malformed
+  array literal»): se escribe `(select 'x' = any (arreglo) from …)`.
+- **Las pruebas 80 y 81 llevan bloques `do`** para comprobar los rechazos: corren con la CLI
+  (`npx supabase db query --linked -f …`), no en el editor web.
