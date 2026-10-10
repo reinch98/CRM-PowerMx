@@ -163,10 +163,18 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
   const [rechazando, setRechazando] = useState(false)
   const [motivo, setMotivo] = useState('')
   const [cfdi, setCfdi] = useState(doc.cfdi)
+  // Los avisos de la lectura (pedido en vez de comprobante, dólares, sin total…) cambian al volver a leer.
+  const [validaciones, setValidaciones] = useState(doc.validaciones || [])
+  const [notaIA, setNotaIA] = useState(doc.metodo === 'ia' && !(doc.validaciones || []).length ? doc.extraido?.notas || '' : '')
   const cambiar = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const t = tituloDocumento(doc)
-  const avisos = [...(doc.validaciones || []).map(a => a?.texto || String(a)), ...avisosDeCfdi(cfdi)]
+  const avisos = [
+    ...validaciones.map(a => ({ tipo: a?.nivel === 'info' ? 'info' : 'aviso', texto: a?.texto || String(a) })),
+    ...avisosDeCfdi(cfdi).map(texto => ({ tipo: 'aviso', texto })),
+    ...(notaIA ? [{ tipo: 'aviso', texto: `La IA no pudo leerlo: ${notaIA} Vuelve a leerlo o captura los datos a mano.` }] : [])
+  ]
   const sinLeer = !cfdi && doc.metodo !== 'ia'
+  const releer = !cfdi && doc.metodo === 'ia'
 
   async function aprobar() {
     const problema = validarAprobacion(form)
@@ -185,6 +193,8 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
     setOcupado(false)
     if (r.error) return setError(`${r.error} Captura los datos a mano.`)
     setForm(formularioDeAprobacion({ ...doc, metodo: 'ia', propuesta: r.propuesta }, null, null))
+    setValidaciones(r.avisos || [])
+    setNotaIA('')
     setAbierto(true)
   }
   async function rechazar() {
@@ -216,7 +226,7 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
       {doc.propuesta?.motivo && form.accion === 'gasto' && (
         <p className="ayuda">Propuesta: {etiquetaCategoria(doc.propuesta.categoria)}. {doc.propuesta.motivo}</p>
       )}
-      {avisos.map((a, i) => <Alerta key={i} tipo="aviso">{a}</Alerta>)}
+      {avisos.map((a, i) => <Alerta key={i} tipo={a.tipo}>{a.texto}</Alerta>)}
       {error && <Alerta tipo="error">{error}</Alerta>}
 
       {cfdi?.sentido === 'emitido' && <LigarCotizacion cfdi={cfdi} onLigada={id => setCfdi(c => ({ ...c, cotizacion_id: id }))} />}
@@ -224,6 +234,11 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
       {sinLeer && (
         <button type="button" className="btn-grande" disabled={ocupado} onClick={leerIA} style={{ marginBottom: 12 }}>
           {ocupado ? 'Leyendo…' : 'Leer con IA y llenar los datos'}
+        </button>
+      )}
+      {releer && (
+        <button type="button" disabled={ocupado} onClick={leerIA} style={{ marginBottom: 12 }}>
+          {ocupado ? 'Leyendo…' : 'Volver a leer con IA'}
         </button>
       )}
 

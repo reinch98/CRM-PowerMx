@@ -5,6 +5,10 @@
 //   ticket        → ticket o factura de un gasto: gasolina, casetas, comida, hospedaje (Expediente, SQL 61)
 //   banco         → comprobante de una operación bancaria: SPEI, depósito, ficha (cobros del Expediente)
 //   estado_cuenta → estado de cuenta del banco con todos sus movimientos (Conciliación, SQL 75)
+//   gasto         → cualquier documento de un gasto del negocio para la bandeja de Finanzas: factura,
+//                   ticket, nota de venta, pedido u orden de compra de un proveedor, recibo (SQL 67).
+//                   "ticket" se queda para el Expediente: solo sabe de gastos de un trabajo (gasolina,
+//                   casetas…) y rechazaba, por ejemplo, un pedido de cable a Exel Solar.
 //
 // **Nada se guarda aquí.** La función devuelve lo que leyó; la pantalla lo muestra para que el
 // admin lo revise y corrija, y recién entonces se registra. Un importe o una cantidad mal leídos
@@ -27,9 +31,9 @@ const MODELO = "claude-sonnet-5";
 const MAX_BYTES = 10 * 1024 * 1024;
 // Solo estos buckets, y cada modo con el suyo: la función baja el archivo con la sesión de quien
 // pregunta, pero así tampoco se puede pedir leer cualquier ruta de cualquier bucket.
-const BUCKET_DE = { factura: "compras", ticket: "finanzas", banco: "finanzas", estado_cuenta: "finanzas" } as Record<string, string>;
+const BUCKET_DE = { factura: "compras", ticket: "finanzas", banco: "finanzas", estado_cuenta: "finanzas", gasto: "finanzas" } as Record<string, string>;
 // Un estado de cuenta trae decenas de renglones: necesita mucho más espacio de respuesta.
-const MAX_TOKENS_DE = { factura: 8000, ticket: 1500, banco: 1500, estado_cuenta: 16000 } as Record<string, number>;
+const MAX_TOKENS_DE = { factura: 8000, ticket: 1500, banco: 1500, estado_cuenta: 16000, gasto: 2000 } as Record<string, number>;
 
 // El texto de un documento es DATO, no instrucción: si trae frases que parezcan órdenes
 // ("ignora lo anterior"), aquí solo pueden acabar dentro de un campo de texto.
@@ -100,6 +104,34 @@ Claves (todas opcionales):
   ordenante        quién envió o depositó, si se ve
   beneficiario     quién recibió, si se ve
   concepto         el concepto o motivo escrito en la operación
+  notas            lo que no pudiste leer o te pareció dudoso
+
+${REGLAS_COMUNES}`,
+
+  gasto: `Lees documentos de gastos de un negocio de energía (generadores y sistemas solares) en México:
+facturas, tickets, notas de venta, pedidos u órdenes de compra a proveedores, recibos y similares.
+Cualquiera de esos documentos se transcribe; no rechaces uno por no ser un ticket.
+
+Claves (todas opcionales):
+  documento        "factura", "ticket", "nota_venta", "pedido", "cotizacion", "recibo" u "otro"
+  proveedor        nombre o razón social de QUIEN VENDE o cobra (el emisor), tal como viene impreso
+  rfc              RFC del emisor
+  folio            folio, número de pedido o de ticket
+  fecha            fecha del documento
+  moneda           "MXN" o "USD"
+  subtotal, iva    números, solo si vienen impresos (el IVA solo si viene DESGLOSADO)
+  total            el TOTAL a pagar del documento, con IVA si lo trae
+  litros           litros cargados, si es combustible
+  combustible      "magna", "premium" o "diesel", si es combustible
+  categoria        una de:
+                     "gasolina" (combustible), "vehiculo" (refacciones o servicio del vehículo),
+                     "pago_proveedor" (compra de equipo o material a un proveedor para vender o instalar:
+                       paneles, inversores, baterías, cable, estructura, refacciones de generadores),
+                     "material" (material menor o consumibles de ferretería para un trabajo),
+                     "herramienta", "viaticos" (casetas, alimentos, hospedaje, transporte),
+                     "renta", "servicios" (luz, agua, internet, teléfono), "software" (suscripciones),
+                     "publicidad", "comisiones_bancarias", "impuestos", "otro"
+  concepto         resumen corto en español de qué se compró o pagó
   notas            lo que no pudiste leer o te pareció dudoso
 
 ${REGLAS_COMUNES}`,

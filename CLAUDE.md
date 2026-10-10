@@ -2752,6 +2752,15 @@ registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Fina
   `comisiones` (6); `npm test` 484, lint y build en verde.
 - **linkedom no soporta `getElementsByTagName('*')` en XML**: el lector recorre `childNodes` (igual en el
   navegador).
+- **La bandeja lee PDF y fotos en el modo `gasto` de `leer-comprobante` (10/10/2026).** Antes usaba el modo
+  `ticket` del Expediente, que solo sabe de gastos de un trabajo: un pedido de cable a Exel Solar volvió vacío
+  con una nota ("no corresponde a un ticket…") que la tarjeta no mostraba — solo decía "Leído con IA". El modo
+  `gasto` transcribe facturas, tickets, notas de venta, pedidos, cotizaciones y recibos con las categorías de
+  Finanzas (proveedor, RFC, folio, total, IVA, moneda). `normalizarGasto` y `propuestaDeGasto` (4 pruebas)
+  arman la propuesta y avisos guardados en `documentos.validaciones`: "es un pedido, no un comprobante de
+  pago", "está en dólares", "no encontró el total: <motivo>". La tarjeta muestra los avisos con su nivel, la
+  nota de una lectura vieja y **"Volver a leer con IA"** en cualquier documento ya leído. `leerComprobante`
+  (expediente.js) ahora también devuelve `crudo` para que cada pantalla normalice con sus categorías.
 - Patrones de otros CRM del giro que se adoptaron: estado de la comisión separado del de la orden
   ("cerrada" no es "aprobada para pago"), bonos y descuentos visibles como en ServiceTitan, y mostrar
   solo lo que la tarea necesita (las tarjetas seguras van plegadas).

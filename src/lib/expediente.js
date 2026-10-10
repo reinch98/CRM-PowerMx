@@ -288,7 +288,7 @@ export function formDesdeBanco(l, form) {
   }
 }
 
-// modo: 'ticket' (gastos) | 'banco' (cobros)
+// modo: 'ticket' (gastos de un trabajo) | 'banco' (cobros) | 'gasto' (cualquier gasto del negocio, Finanzas)
 export async function leerComprobante(ruta, modo) {
   try {
     const { data, error } = await supabase.functions.invoke('leer-comprobante', { body: { ruta, modo } })
@@ -300,7 +300,8 @@ export async function leerComprobante(ruta, modo) {
     }
     if (data?.error) return { error: data.error }
     if (!data?.ok) return { error: 'No entendí lo que devolvió el modelo.' }
-    return { lectura: modo === 'banco' ? normalizarBanco(data.leido) : normalizarTicket(data.leido) }
+    // `crudo` es lo que devolvió el modelo tal cual: Finanzas lo normaliza con sus propias categorías.
+    return { lectura: modo === 'banco' ? normalizarBanco(data.leido) : normalizarTicket(data.leido), crudo: data.leido }
   } catch (err) {
     return { error: textoDeError(err) }
   }

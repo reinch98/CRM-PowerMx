@@ -367,21 +367,79 @@ export async function subirDocumento(archivo, Parser = globalThis.DOMParser) {
   })
 }
 
-// Lee una foto o PDF con la IA (la misma función de los tickets del Expediente) y guarda lo que
-// leyó junto a la propuesta. Solo propone: la persona confirma o corrige antes de aprobar.
+// ---- lectura con IA de un gasto (leer-comprobante, modo "gasto") ----
+// Antes se leía en modo "ticket" (el del Expediente, solo gastos de un trabajo) y un pedido de material
+// a un proveedor volvía vacío con una nota que nadie veía.
+
+const textoLeido = v => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim())
+const numeroLeido = v => {
+  if (v === '' || v == null) return null
+  const n = Number(String(v).replace(/[$,\s]/g, ''))
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : null
+}
+const fechaLeida = v => (/^\d{4}-\d{2}-\d{2}$/.test(textoLeido(v)) ? textoLeido(v) : '')
+const CLAVES_GASTO = CATEGORIAS_GASTO.map(([k]) => k)
+const DOCUMENTOS_GASTO = { factura: 'Factura', ticket: 'Ticket', nota_venta: 'Nota de venta', pedido: 'Pedido',
+  cotizacion: 'Cotización', recibo: 'Recibo', otro: 'Documento' }
+
+// Lo que devolvió el modelo, sin confiar en su forma: categorías solo de las de Finanzas.
+export function normalizarGasto(leido) {
+  const x = leido && typeof leido === 'object' ? leido : {}
+  const categoria = textoLeido(x.categoria).toLowerCase()
+  const documento = textoLeido(x.documento).toLowerCase()
+  return {
+    documento: documento in DOCUMENTOS_GASTO ? documento : '',
+    proveedor: textoLeido(x.proveedor || x.establecimiento),
+    rfc: textoLeido(x.rfc).toUpperCase(),
+    folio: textoLeido(x.folio),
+    fecha: fechaLeida(x.fecha),
+    moneda: textoLeido(x.moneda).toUpperCase() === 'USD' ? 'USD' : 'MXN',
+    subtotal: numeroLeido(x.subtotal),
+    iva: numeroLeido(x.iva),
+    total: numeroLeido(x.total),
+    litros: numeroLeido(x.litros),
+    combustible: textoLeido(x.combustible),
+    categoria: CLAVES_GASTO.includes(categoria) ? categoria : '',
+    concepto: textoLeido(x.concepto),
+    notas: textoLeido(x.notas)
+  }
+}
+
+// La propuesta para el formulario y los avisos que la persona debe ver antes de aprobar.
+export function propuestaDeGasto(l) {
+  const concepto = [l.proveedor, l.concepto].filter(Boolean).join(' — ')
+  const propuesta = {
+    categoria: l.categoria || 'otro', monto: l.total, iva: l.iva, fecha: l.fecha,
+    concepto: concepto || (l.litros != null ? `${l.litros} L ${l.combustible}`.trim() : ''),
+    referencia: l.folio
+  }
+  const avisos = []
+  if (l.documento === 'pedido' || l.documento === 'cotizacion') {
+    avisos.push({ nivel: 'aviso', texto: `Es ${l.documento === 'pedido' ? 'un pedido' : 'una cotización'}, no un comprobante de pago. ` +
+      'Si ya lo pagaste, regístralo como gasto; si no, guárdalo como respaldo y registra la factura cuando llegue.' })
+  }
+  if (l.moneda === 'USD') avisos.push({ nivel: 'aviso', texto: 'Está en dólares: captura el monto en pesos que salió de la cuenta.' })
+  if (l.total == null) {
+    avisos.push({ nivel: 'aviso', texto: `La IA no encontró el total${l.notas ? `: ${l.notas}` : '.'} Captúralo a mano.` })
+  } else if (l.notas) {
+    avisos.push({ nivel: 'info', texto: `Nota de la lectura: ${l.notas}` })
+  }
+  return { propuesta, avisos }
+}
+
+// Lee una foto o PDF con la IA y guarda lo que leyó junto a la propuesta y sus avisos. Solo propone: la
+// persona confirma o corrige antes de aprobar.
 export async function leerDocumentoConIA(doc) {
   return intentar(async () => {
-    const r = await leerComprobante(doc.archivo, 'ticket')
+    const r = await leerComprobante(doc.archivo, 'gasto')
     if (r.error) return { error: r.error }
-    const l = r.lectura
-    const propuesta = {
-      categoria: l.categoria || 'otro', monto: l.total, iva: l.iva, fecha: l.fecha,
-      concepto: l.concepto || l.establecimiento, referencia: l.folio
-    }
+    const l = normalizarGasto(r.crudo)
+    const { propuesta, avisos } = propuestaDeGasto(l)
     const upd = await supabase.from('documentos')
-      .update({ metodo: 'ia', extraido: l, propuesta, modelo: 'leer-comprobante', estado: 'propuesto' }).eq('id', doc.id)
+      .update({ metodo: 'ia', extraido: l, propuesta, validaciones: avisos, modelo: 'leer-comprobante', estado: 'propuesto' })
+      .eq('id', doc.id)
     if (upd.error) return { error: textoDeError(upd.error) }
-    return { lectura: l, propuesta }
+    return { lectura: l, propuesta, avisos }
   })
 }
 
