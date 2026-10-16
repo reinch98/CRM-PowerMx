@@ -8,6 +8,7 @@ import {
 } from './lib/preventivo'
 import { Alerta } from './ui'
 import { todasLasFilas } from './lib/paginar'
+import { precioParaCotizar, textoPrecioLista } from './lib/precioLista'
 import Expediente from './Expediente'
 import { textoCobranza } from './lib/expediente'
 import { renglonesDelResumen, previsualizarEliminacion, ejecutarEliminacion } from './lib/eliminarCotizacion'
@@ -195,6 +196,7 @@ export default function Cotizaciones({ irA }) {
   const [disponibles, setDisponibles] = useState([])
   const [tecnicos, setTecnicos] = useState([])
   const [tarifas, setTarifas] = useState([])
+  const [tcUsd, setTcUsd] = useState(null)     // último tipo de cambio USD→MXN (para productos en dólares)
   const [citas, setCitas] = useState([])      // citas ligadas a cotizaciones
   const [avisosDiag, setAvisosDiag] = useState([])
 
@@ -292,15 +294,16 @@ export default function Cotizaciones({ irA }) {
   }
 
   async function cargar() {
-    const [co, cl, eq, pr, di, te, ta, ci] = await Promise.all([
+    const [co, cl, eq, pr, di, te, ta, ci, tc] = await Promise.all([
       supabase.from('cotizaciones').select('*, clientes(nombre)').order('folio', { ascending: false }),
       supabase.from('clientes').select('id, nombre, distancia_km'),
       supabase.from('equipos').select('id, numero_serie, cliente_id, tipo, marca, capacidad_kw, atributos'),
-      todasLasFilas(() => supabase.from('productos').select('id, sku, nombre, precio, unidad, categoria').eq('activo', true).order('sku')),
+      todasLasFilas(() => supabase.from('productos').select('id, sku, nombre, precio, moneda, unidad, categoria').eq('activo', true).order('sku')),
       todasLasFilas(() => supabase.from('disponibles').select('id, disponible').order('id')),
       supabase.from('perfiles').select('id, nombre').eq('rol', 'tecnico').eq('activo', true).order('nombre'),
       supabase.from('tarifas_servicio').select('*').eq('activo', true),
-      supabase.from('citas').select('id, cotizacion_id, estado, fecha, hora').not('cotizacion_id', 'is', null)
+      supabase.from('citas').select('id, cotizacion_id, estado, fecha, hora').not('cotizacion_id', 'is', null),
+      supabase.from('tipos_cambio').select('valor, fecha').eq('moneda', 'USD').order('fecha', { ascending: false }).limit(1)
     ])
     if (co.error) return setError(co.error.message)
     setCotizaciones(co.data || [])
@@ -311,6 +314,7 @@ export default function Cotizaciones({ irA }) {
     setTecnicos(te.data || [])
     setTarifas(ta.data || [])
     setCitas(ci.data || [])
+    setTcUsd(tc.data?.[0] ? { valor: Number(tc.data[0].valor), fecha: tc.data[0].fecha } : null)
   }
 
   // Cita activa de cada cotización (por programar o programada).
@@ -358,7 +362,7 @@ export default function Cotizaciones({ irA }) {
     if (!t) return []
     const prods = productos
       .filter(p => p.sku.toLowerCase().includes(t) || (p.nombre || '').toLowerCase().includes(t))
-      .map(p => ({ tipo: 'producto', id: p.id, sku: p.sku, nombre: p.nombre, precio: p.precio, unidad: p.unidad }))
+      .map(p => ({ tipo: 'producto', id: p.id, sku: p.sku, nombre: p.nombre, precio: p.precio, moneda: p.moneda, categoria: p.categoria, unidad: p.unidad }))
     const servs = serviciosCatalogo
       .filter(s => s.sku.toLowerCase().includes(t) || s.nombre.toLowerCase().includes(t))
       .map(s => ({ tipo: 'servicio', id: s.id, sku: s.sku, nombre: s.nombre, precio: s.precio }))
@@ -372,18 +376,28 @@ export default function Cotizaciones({ irA }) {
   // que no mueve inventario ni genera requisiciones.
   // -------------------------------------------------------------------------
   function agregarResultado(item) {
-    if (item.tipo === 'producto' && item.precio == null) {
-      setError(`${item.sku} no tiene precio capturado. Ponlo en Inventario o agrégalo como partida libre.`)
-      return
+    // Una cotización se arma en pesos y sin IVA. Un producto en dólares se convierte con el último tipo de
+    // cambio guardado, y un generador (precio de lista con IVA incluido) entra dividido entre 1.16 para que
+    // la cotización termine en su precio de lista. La partida dice de dónde salió el número (precioLista.js).
+    let precio = item.precio
+    let descripcion = item.nombre
+    if (item.tipo === 'producto') {
+      const r = precioParaCotizar(item, tcUsd?.valor)
+      if (r.error) {
+        setError(`${r.error} Captúralo en Inventario/Proveedor o agrégalo como partida libre.`)
+        return
+      }
+      precio = r.precio
+      descripcion = `${item.nombre}${r.nota}`
     }
     setError('')
     setPartidas([...partidas, {
       producto_id: item.tipo === 'producto' ? item.id : null,
       sku: item.sku,
-      descripcion: item.nombre,
+      descripcion,
       unidad: item.tipo === 'producto' ? (item.unidad || 'pieza') : 'servicio',
       cantidad: 1,
-      precio_unitario: item.precio
+      precio_unitario: precio
     }])
     setBuscar('')
   }
@@ -910,7 +924,7 @@ export default function Cotizaciones({ irA }) {
                       {p.tipo === 'servicio' ? (
                         <><span className="etiqueta">Servicio</span> {pesos(p.precio)}</>
                       ) : (
-                        <>{p.precio == null ? 'sin precio' : pesos(p.precio)}{' · disponible '}{dispoPorId[p.id] ?? 0}</>
+                        <>{textoPrecioLista(p, tcUsd?.valor, pesos)}{' · disponible '}{dispoPorId[p.id] ?? 0}</>
                       )}
                     </span>
                   </button>
