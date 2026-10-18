@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alerta } from './ui'
 import { totalesDeCompra, cambioDeCosto } from './lib/compras'
 import {
-  subirParaLeer, leerFactura, cargarVinculos, registrarCompraDeFactura, candidatos, decisionInicial,
-  textoDeRazon, TEXTO_CERTEZA, costoSinIva, cuadre, proveedorSugerido, skuSugerido,
-  problemasDeRevision
+  subirParaLeer, leerFactura, cargarVinculos, registrarCompraDeFactura,
+  textoDeRazon, TEXTO_CERTEZA, cuadre, proveedorSugerido, problemasDeRevision, armarLinea
 } from './lib/factura'
 
 // ---------------------------------------------------------------------------
@@ -29,28 +28,6 @@ const CATEGORIAS_NUEVAS = [
 
 const cabeceraVacia = () => ({ proveedor: '', factura: '', uuid_fiscal: '', fecha: '', iva: '', notas: '' })
 
-// Una línea leída lista para revisar, con su propuesta de pareja.
-function armarLinea(l, i, ctx) {
-  const cands = candidatos(l, ctx)
-  const decision = decisionInicial(cands)
-  const nuevo = { sku: skuSugerido(l.codigo), nombre: l.descripcion, categoria: 'refaccion', unidad: l.unidad || 'pieza' }
-  const costo = costoSinIva(l.precio_unitario, ctx.preciosIncluyenIva)
-  const elegido = decision.tipo === 'producto' ? ctx.productos.find(p => p.id === decision.producto_id) : null
-  return {
-    id: i,
-    codigo: l.codigo,
-    descripcion: l.descripcion,
-    cantidad: l.cantidad,
-    costo_unitario: costo,
-    candidatos: cands,
-    certeza: decision.certeza,
-    decision: { tipo: decision.tipo, producto_id: decision.producto_id, nuevo },
-    // El costo del catálogo se actualiza solo si la pieza no tenía ninguno; si ya tenía, se
-    // pregunta (una compra de urgencia a sobreprecio no debe reescribirlo sin que alguien decida).
-    actualizar_costo: elegido ? cambioDeCosto({ costo_unitario: costo }, elegido.costo).primero === true : false
-  }
-}
-
 function valorDelSelect(d) {
   if (d.tipo === 'producto' && d.producto_id) return `p:${d.producto_id}`
   if (d.tipo === 'nuevo') return '__nuevo'
@@ -59,11 +36,17 @@ function valorDelSelect(d) {
   return ''
 }
 
-function LineaFactura({ l, productos, onCambio }) {
+// Un renglón leído (de una factura o de una cotización de proveedor). Con `moneda` USD los precios
+// van en dólares y `factor` (el tipo de cambio) los pasa a pesos para compararlos con el catálogo.
+export function LineaFactura({ l, productos, onCambio, moneda = 'MXN', factor = 1 }) {
   const [q, setQ] = useState('')
   const d = l.decision
   const elegido = d.tipo === 'producto' ? productos.find(p => p.id === d.producto_id) : null
-  const cambio = elegido ? cambioDeCosto({ costo_unitario: l.costo_unitario }, elegido.costo) : null
+  const enPesos = v => Number(v || 0) * (Number(factor) || 1)
+  const cambio = elegido ? cambioDeCosto({ costo_unitario: enPesos(l.costo_unitario) }, elegido.costo) : null
+  const dinero = v => (moneda === 'USD'
+    ? `USD ${Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : pesos(v))
   const encontrados = useMemo(() => {
     const t = q.trim().toLowerCase()
     if (d.tipo !== 'buscar' || t.length < 2) return []
@@ -75,7 +58,7 @@ function LineaFactura({ l, productos, onCambio }) {
       const p = productos.find(x => x.id === valor.slice(2))
       onCambio(l.id, {
         decision: { ...d, tipo: 'producto', producto_id: valor.slice(2) },
-        actualizar_costo: p ? cambioDeCosto({ costo_unitario: l.costo_unitario }, p.costo).primero === true : false
+        actualizar_costo: p ? cambioDeCosto({ costo_unitario: enPesos(l.costo_unitario) }, p.costo).primero === true : false
       })
     } else if (valor === '__nuevo') onCambio(l.id, { decision: { ...d, tipo: 'nuevo' }, actualizar_costo: true })
     else if (valor === '__omitir') onCambio(l.id, { decision: { ...d, tipo: 'omitir' } })
@@ -151,7 +134,7 @@ function LineaFactura({ l, productos, onCambio }) {
           </div>
           <p className="ayuda">
             Se crea sin publicar y sin precio, ligada a este proveedor
-            {l.codigo ? ` con su código ${l.codigo}` : ' (la factura no trae código)'}.
+            {l.codigo ? ` con su código ${l.codigo}` : ' (el documento no trae código)'}.
           </p>
         </div>
       )}
@@ -165,13 +148,14 @@ function LineaFactura({ l, productos, onCambio }) {
                 onChange={e => onCambio(l.id, { cantidad: e.target.value })} />
             </label>
             <label className="campo">
-              <span>Costo unitario (sin IVA)</span>
+              <span>{moneda === 'USD' ? 'Precio unitario (sin IVA, en dólares)' : 'Costo unitario (sin IVA)'}</span>
               <input type="number" min="0" step="any" value={l.costo_unitario}
                 onChange={e => onCambio(l.id, { costo_unitario: e.target.value })} />
             </label>
           </div>
           <div style={{ marginTop: 6 }}>
-            Importe: <strong>{pesos(Number(l.cantidad || 0) * Number(l.costo_unitario || 0))}</strong>
+            Importe: <strong>{dinero(Number(l.cantidad || 0) * Number(l.costo_unitario || 0))}</strong>
+            {moneda === 'USD' && <span className="ayuda"> · costo en pesos {pesos(enPesos(l.costo_unitario))} c/u</span>}
           </div>
         </>
       )}

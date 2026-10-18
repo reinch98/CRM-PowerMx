@@ -12,6 +12,7 @@ import { explicarError } from './errores'
 import { redimensionar } from './imagen'
 import { todasLasFilas } from './paginar'
 import { huellaDe, revisarArchivo, anotarArchivo } from './huellas'
+import { cambioDeCosto } from './compras'
 
 const BUCKET = 'compras'
 export const IVA = 0.16
@@ -375,5 +376,32 @@ export async function registrarCompraDeFactura(datos, lineas) {
     return { datos: data }
   } catch (e) {
     return { error: textoDeError(e) }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Un renglón leído listo para revisar (lo usan el lector de facturas y el de cotizaciones)
+// ---------------------------------------------------------------------------
+
+// Una línea leída lista para revisar, con su propuesta de pareja. `ctx.factor` convierte el precio
+// a pesos para compararlo con el costo del catálogo (una cotización en dólares: su tipo de cambio).
+export function armarLinea(l, i, ctx) {
+  const cands = candidatos(l, ctx)
+  const decision = decisionInicial(cands)
+  const nuevo = { sku: skuSugerido(l.codigo), nombre: l.descripcion, categoria: 'refaccion', unidad: l.unidad || 'pieza' }
+  const costo = costoSinIva(l.precio_unitario, ctx.preciosIncluyenIva)
+  const elegido = decision.tipo === 'producto' ? ctx.productos.find(p => p.id === decision.producto_id) : null
+  return {
+    id: i,
+    codigo: l.codigo,
+    descripcion: l.descripcion,
+    cantidad: l.cantidad,
+    costo_unitario: costo,
+    candidatos: cands,
+    certeza: decision.certeza,
+    decision: { tipo: decision.tipo, producto_id: decision.producto_id, nuevo },
+    // El costo del catálogo se actualiza solo si la pieza no tenía ninguno; si ya tenía, se
+    // pregunta (una compra de urgencia a sobreprecio no debe reescribirlo sin que alguien decida).
+    actualizar_costo: elegido ? cambioDeCosto({ costo_unitario: costo * (ctx.factor || 1) }, elegido.costo).primero === true : false
   }
 }

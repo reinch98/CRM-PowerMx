@@ -113,6 +113,7 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
 | 79 | `corregir_forma_pago_tecnico` | E | ✔ | sí | Corregir forma, fecha, referencia y cuenta de un pago a técnico. |
 | 80 | `proveedores` | E | ✔ | sí | Ficha y carpeta de cada proveedor; `proveedor_id` en compras, pedidos, vínculos, CFDI y libro (redefine `_expediente_cerrado_bloquea`). |
 | 81 | `archivos_repetidos` | E | ✔ | sí | El mismo archivo no se registra dos veces (`archivos_subidos` y candados). |
+| 84 | `cotizaciones_proveedor` | E | ✔ | sí | Cotizaciones de proveedor: registrar, aceptar (crea pedidos), rechazar y cancelar (redefine `_archivo_en_uso`). |
 
 ## Funciones y cron en Supabase (fuera de esta carpeta)
 

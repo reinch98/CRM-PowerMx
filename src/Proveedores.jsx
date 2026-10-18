@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alerta } from './ui'
+import CotizacionesProveedor from './CotizacionesProveedor'
 import { hoyLocal } from './lib/fechas'
 import { pesos, pesosRedondos, fechaLegible, etiquetaCategoria } from './lib/finanzas'
 import {
@@ -246,6 +247,11 @@ function Carpeta({ id, onVolver, onCambio, onAviso }) {
           <span className="kpi-valor">{r.pedidos_abiertos || 0}</span>
         </div>
       </div>
+
+      <section className="tarjeta">
+        <h3 style={{ marginTop: 0 }}>Cotizaciones</h3>
+        <CotizacionesProveedor proveedorId={p.id} onAviso={t => { onAviso(t); setVuelta(v => v + 1) }} />
+      </section>
 
       <Seccion titulo="Facturas" cuantos={c.facturas.length} vacio="Todavía no hay facturas de este proveedor.">
         {c.facturas.map(f => {

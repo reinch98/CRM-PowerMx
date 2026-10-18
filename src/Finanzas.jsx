@@ -4,6 +4,7 @@ import { hoyLocal } from './lib/fechas'
 import { etiquetaTipoComprobante, etiquetaFormaPagoSat } from './lib/cfdi'
 import Impuestos from './Impuestos'
 import Conciliacion from './Conciliacion'
+import CotizacionProveedorLeida from './CotizacionProveedorLeida'
 import { leerZip, esZip } from './lib/zip'
 import {
   CATEGORIAS_GASTO, CATEGORIAS_CAPITAL, FORMAS_PAGO, ETIQUETA_CONFIANZA,
@@ -166,6 +167,9 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
   // Los avisos de la lectura (pedido en vez de comprobante, dólares, sin total…) cambian al volver a leer.
   const [validaciones, setValidaciones] = useState(doc.validaciones || [])
   const [notaIA, setNotaIA] = useState(doc.metodo === 'ia' && !(doc.validaciones || []).length ? doc.extraido?.notas || '' : '')
+  // Una cotización o un pedido de proveedor no es un gasto: se registra como cotización (SQL 84) y sale de la bandeja.
+  const [comoCotizacion, setComoCotizacion] = useState(false)
+  const pareceCotizacion = ['cotizacion', 'pedido'].includes(doc.extraido?.documento)
   const cambiar = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const t = tituloDocumento(doc)
   const avisos = [
@@ -236,13 +240,32 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
           {ocupado ? 'Leyendo…' : 'Leer con IA y llenar los datos'}
         </button>
       )}
-      {releer && (
-        <button type="button" disabled={ocupado} onClick={leerIA} style={{ marginBottom: 12 }}>
-          {ocupado ? 'Leyendo…' : 'Volver a leer con IA'}
-        </button>
+      {(releer || !cfdi) && !comoCotizacion && (
+        <div className="fila" style={{ flexWrap: 'wrap', marginBottom: 12 }}>
+          {releer && (
+            <button type="button" disabled={ocupado} onClick={leerIA}>
+              {ocupado ? 'Leyendo…' : 'Volver a leer con IA'}
+            </button>
+          )}
+          {!cfdi && (
+            <button type="button" className={pareceCotizacion ? 'btn-primario' : ''} disabled={ocupado}
+              onClick={() => setComoCotizacion(true)}>
+              Es una cotización de proveedor…
+            </button>
+          )}
+        </div>
+      )}
+      {comoCotizacion && (
+        <div className="tarjeta" style={{ marginBottom: 12 }}>
+          <h3 style={{ marginTop: 0 }}>Registrar como cotización de proveedor</h3>
+          <CotizacionProveedorLeida
+            origen={{ ruta: doc.archivo, bucket: 'finanzas', hash: doc.hash_sha256, documentoId: doc.id }}
+            onRegistrada={texto => onListo(`${texto} Salió de la bandeja: no es un gasto.`)}
+            onCancelar={() => setComoCotizacion(false)} />
+        </div>
       )}
 
-      {abierto && (
+      {abierto && !comoCotizacion && (
         <div style={{ marginTop: 8 }}>
           <div className="opciones" role="radiogroup" aria-label="¿Qué hago con este documento?" style={{ marginBottom: 14 }}>
             {[['gasto', 'Registrar como gasto'], ['archivar', 'Solo guardar como respaldo']].map(([k, tx]) => (
@@ -253,14 +276,16 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
         </div>
       )}
 
-      <div className="fila" style={{ marginTop: 8 }}>
-        <button type="button" className="btn-primario" disabled={ocupado} onClick={aprobar}>
-          {ocupado ? 'Guardando…' : abierto ? 'Aprobar' : accionRapida}
-        </button>
-        {!abierto && <button type="button" onClick={() => setAbierto(true)}>Revisar</button>}
-        <button type="button" onClick={() => abrirArchivo(doc.archivo)}>Ver archivo</button>
-        {!rechazando && <button type="button" className="btn-peligro" onClick={() => setRechazando(true)}>Rechazar…</button>}
-      </div>
+      {!comoCotizacion && (
+        <div className="fila" style={{ marginTop: 8 }}>
+          <button type="button" className="btn-primario" disabled={ocupado} onClick={aprobar}>
+            {ocupado ? 'Guardando…' : abierto ? 'Aprobar' : accionRapida}
+          </button>
+          {!abierto && <button type="button" onClick={() => setAbierto(true)}>Revisar</button>}
+          <button type="button" onClick={() => abrirArchivo(doc.archivo)}>Ver archivo</button>
+          {!rechazando && <button type="button" className="btn-peligro" onClick={() => setRechazando(true)}>Rechazar…</button>}
+        </div>
+      )}
       {rechazando && (
         <div style={{ marginTop: 12 }}>
           <Campo etiqueta="¿Por qué se rechaza? *">

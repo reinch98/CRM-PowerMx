@@ -2901,7 +2901,7 @@ proveedor: paga una factura por pagar con saldo exacto o queda como **anticipo**
 clientes siguen entrando por el Expediente** de su cotización) y **factura** (se liga a su pago y a su
 cotización de proveedor; si es de material, registra la compra). Todo agrupado por proveedor. El almacenista
 no ve cotizaciones de proveedor (llevan costos). Partes: **A** proveedores (hecha) · **B** cotizaciones de
-proveedor · **C** comprobantes de pago y anticipos · **D** la factura cierra el ciclo (y une la "doble
+proveedor (hecha) · **C** comprobantes de pago y anticipos · **D** la factura cierra el ciclo (y une la "doble
 puerta": hoy la misma factura puede entrar por Compras y por Finanzas).
 
 **SQL 80 — Proveedores (parte A), aplicado y probado (11/11) con la CLI.** Tabla `proveedores` (nombre, RFC
@@ -2944,3 +2944,42 @@ contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde.
   array literal»): se escribe `(select 'x' = any (arreglo) from …)`.
 - **Las pruebas 80 y 81 llevan bloques `do`** para comprobar los rechazos: corren con la CLI
   (`npx supabase db query --linked -f …`), no en el editor web.
+
+**SQL 84 — Cotizaciones de proveedor (parte B, 18/10/2026), aplicado y probado (9/9) con la CLI**; tras él se
+repitieron 80 (11/11), 81 (9/9) y 62 (7/7). Tablas `cotizaciones_proveedor` (folio COTP-n, proveedor_id, número
+del proveedor, fecha, vigencia, moneda MXN|USD con su `tipo_cambio`, totales, estado, archivo con su bucket y
+huella, `documento_id` si vino de la bandeja) y `cotizacion_proveedor_lineas` (pieza, código del proveedor,
+descripción impresa, cantidad, precio en su moneda sin IVA). `requisiciones` gana `cotizacion_proveedor_id` y
+`cotizacion_proveedor_linea_id`.
+- `registrar_cotizacion_proveedor`: crea piezas nuevas (sin publicar, sin precio, con costo en pesos) ligadas al
+  proveedor por el disparador de la 51; liga el código a una pieza existente con el NOMBRE del proveedor (nunca con
+  su clave de sincronización: esos vínculos los maneja el sync); actualiza el costo del catálogo solo si se pide por
+  renglón y nunca en una pieza con `precio_auto` (avisa). **No mueve inventario.** El mismo número del mismo
+  proveedor no entra dos veces (índice `cotprov_numero`, salvo canceladas). Si vino de la bandeja, el documento
+  pasa a "rechazado" con "Registrada como cotización de proveedor COTP-n".
+- `aceptar_cotizacion_proveedor`: por renglón, toma primero los pedidos `pendiente` de esa pieza (enteros, mientras
+  quepan; uno más grande se queda y se avisa) y crea uno `pedida` por el resto, con referencia "COTP-n (número)".
+  Vencida se acepta, con aviso. Repetir devuelve `sin_cambio`.
+- `cambiar_estado_cotizacion_proveedor`: vigente → rechazada | cancelada, aceptada → cancelada, rechazada → vigente;
+  rechazar y cancelar exigen motivo. **Cancelar una aceptada no cancela sus pedidos "pedida"**: devuelve cuántos
+  siguen vivos y la pantalla manda a Pedidos.
+- `cotizaciones_proveedor_lista(proveedor, dias)`: con `vencida` calculada, pedidos y recibidos, y sus renglones.
+- `_archivo_en_uso` (81) redefinida: una cotización viva cuenta en LOS DOS grupos (la bandeja también la reconoce).
+  Disparador `archivo_no_repetido` en la tabla nueva.
+- **Tropiezos:** (1) otra vez la misma sentencia que crea y lee: `(select … where id = _proveedor_id(…))` no ve la
+  ficha recién creada; va en dos pasos. (2) `not (v_tc > 0)` con el tipo de cambio nulo da null y NO detiene: se
+  escribe `coalesce(v_tc, 0) <= 0` (igual para la cantidad).
+- **`leer-comprobante` modo `cotizacion`** (desplegado): número, vigencia o `vigencia_dias`, moneda, renglones y
+  tiempo de entrega. Es el único modo que acepta `bucket`: `compras` (por omisión) o `finanzas` (bandeja).
+- **Pantallas:** `src/CotizacionProveedorLeida.jsx` (el lector; reusa `LineaFactura` de `FacturaLeida.jsx`, que ganó
+  `moneda` y `factor` para precios en dólares, y `armarLinea`, que se movió a `lib/factura.js` por la regla de lint
+  de solo exportar componentes) y `src/CotizacionesProveedor.jsx` (lista con Aceptar y pedir… / Rechazar… /
+  Cancelar… / Volver a vigente / Ver el archivo). En **Compras**: "Leer una cotización de proveedor" y la lista. En
+  la **carpeta del proveedor**: sus cotizaciones. En **Finanzas**, cada documento que no es XML tiene "Es una
+  cotización de proveedor…" (resaltado si la IA dijo pedido o cotización) que lee ESE mismo archivo y lo saca de la
+  bandeja; mientras, se esconden el formulario de gasto y Aprobar. Reglas en `src/lib/cotizacionesProveedor.js`
+  (5 pruebas). Medido en celular con un Supabase falso: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px
+  ("Ver las piezas" medía 26 de alto: ya no), 0 px de desborde. **Sin probar con una cotización real** (cómo la lee
+  la IA y cuánto saldo gasta).
+- **Falta:** que el lector reconozca al proveedor por su ficha (hoy sugiere por texto, como el de facturas), un
+  aviso en Inicio de cotizaciones por vencer, y las partes C (comprobantes de pago y anticipos) y D.

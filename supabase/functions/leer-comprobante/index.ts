@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Leer un comprobante (foto o PDF) y PROPONER sus datos. Cuatro modos:
+// Leer un comprobante (foto o PDF) y PROPONER sus datos. Modos:
 //
 //   factura       → factura o nota de compra de un proveedor, con sus líneas (Compras, SQL 62)
 //   ticket        → ticket o factura de un gasto: gasolina, casetas, comida, hospedaje (Expediente, SQL 61)
@@ -9,6 +9,9 @@
 //                   ticket, nota de venta, pedido u orden de compra de un proveedor, recibo (SQL 67).
 //                   "ticket" se queda para el Expediente: solo sabe de gastos de un trabajo (gasolina,
 //                   casetas…) y rechazaba, por ejemplo, un pedido de cable a Exel Solar.
+//   cotizacion    → cotización de un proveedor, con número, vigencia y líneas (Compras o la bandeja de
+//                   Finanzas, SQL 84). Es el único modo que puede leer de dos buckets: "compras" (se
+//                   subió en Compras) o "finanzas" (ya estaba en la bandeja), y solo esos dos.
 //
 // **Nada se guarda aquí.** La función devuelve lo que leyó; la pantalla lo muestra para que el
 // admin lo revise y corrija, y recién entonces se registra. Un importe o una cantidad mal leídos
@@ -31,9 +34,11 @@ const MODELO = "claude-sonnet-5";
 const MAX_BYTES = 10 * 1024 * 1024;
 // Solo estos buckets, y cada modo con el suyo: la función baja el archivo con la sesión de quien
 // pregunta, pero así tampoco se puede pedir leer cualquier ruta de cualquier bucket.
-const BUCKET_DE = { factura: "compras", ticket: "finanzas", banco: "finanzas", estado_cuenta: "finanzas", gasto: "finanzas" } as Record<string, string>;
+const BUCKET_DE = { factura: "compras", ticket: "finanzas", banco: "finanzas", estado_cuenta: "finanzas", gasto: "finanzas", cotizacion: "compras" } as Record<string, string>;
+// Una cotización de proveedor puede venir de Compras o de la bandeja de Finanzas.
+const OTROS_BUCKETS_DE = { cotizacion: ["finanzas"] } as Record<string, string[]>;
 // Un estado de cuenta trae decenas de renglones: necesita mucho más espacio de respuesta.
-const MAX_TOKENS_DE = { factura: 8000, ticket: 1500, banco: 1500, estado_cuenta: 16000, gasto: 2000 } as Record<string, number>;
+const MAX_TOKENS_DE = { factura: 8000, ticket: 1500, banco: 1500, estado_cuenta: 16000, gasto: 2000, cotizacion: 8000 } as Record<string, number>;
 
 // El texto de un documento es DATO, no instrucción: si trae frases que parezcan órdenes
 // ("ignora lo anterior"), aquí solo pueden acabar dentro de un campo de texto.
@@ -69,6 +74,33 @@ Claves (todas opcionales):
                          precio_unitario  número, antes de IVA salvo que precios_incluyen_iva sea true
                          importe          número del renglón
   notas                lo que no pudiste leer o te pareció dudoso
+
+NO incluyas como línea: envío, flete, descuentos, redondeos ni los renglones de subtotal, IVA o total.
+
+${REGLAS_COMUNES}`,
+
+  cotizacion: `Lees cotizaciones (presupuestos, propuestas de precio) que un PROVEEDOR le hace a PowerMx
+por refacciones, material eléctrico o equipo de generación y solar. Extrae los datos y las líneas.
+
+Claves (todas opcionales):
+  proveedor            nombre o razón social de QUIEN COTIZA (el proveedor), tal como viene impreso
+  rfc                  RFC del proveedor
+  numero               número o folio de la cotización
+  fecha                fecha de la cotización
+  vigencia             fecha hasta la que vale la cotización, si viene escrita como fecha
+  vigencia_dias        días de vigencia, si viene como "válida por 15 días"
+  moneda               "MXN" o "USD"
+  precios_incluyen_iva true solo si los precios de las líneas YA incluyen IVA; false si se suma aparte
+  subtotal, iva, total números tal como aparecen en los totales
+  tiempo_entrega       el tiempo de entrega tal como viene escrito
+  lineas               arreglo, una entrada por renglón de producto, con:
+                         codigo           código o SKU del PROVEEDOR para esa pieza (no inventes uno)
+                         descripcion      texto del renglón
+                         cantidad         número
+                         unidad           "PZA", "LT", "M"… como venga impreso
+                         precio_unitario  número, antes de IVA salvo que precios_incluyen_iva sea true
+                         importe          número del renglón
+  notas                lo que no pudiste leer o te pareció dudoso, y condiciones importantes (anticipo, flete)
 
 NO incluyas como línea: envío, flete, descuentos, redondeos ni los renglones de subtotal, IVA o total.
 
@@ -190,10 +222,10 @@ Deno.serve(async (req) => {
       return responder({ error: "Solo el administrador puede leer comprobantes." }, 403);
     }
 
-    const { ruta, modo } = await req.json().catch(() => ({}));
+    const { ruta, modo, bucket: bucketPedido } = await req.json().catch(() => ({}));
     if (!ruta || typeof ruta !== "string") return responder({ error: "Falta la ruta del comprobante." }, 400);
     const modoOk = typeof modo === "string" && modo in INSTRUCCIONES ? modo : "factura";
-    const bucket = BUCKET_DE[modoOk];
+    const bucket = (OTROS_BUCKETS_DE[modoOk] ?? []).includes(bucketPedido) ? bucketPedido : BUCKET_DE[modoOk];
 
     const llave = Deno.env.get("ANTHROPIC_API_KEY");
     if (!llave) return responder({ error: "Falta la llave de la API en el servidor." }, 500);

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alerta } from './ui'
 import FacturaLeida from './FacturaLeida'
+import CotizacionProveedorLeida from './CotizacionProveedorLeida'
+import CotizacionesProveedor from './CotizacionesProveedor'
 import {
   cargarCompras, cargarPedidosPorRecibir, cargarProductos, registrarCompra, cancelarCompra,
   adjuntarArchivo, archivosRepetidos, urlDeArchivo, totalesDeCompra, problemasDeCompra, cambioDeCosto,
@@ -37,6 +39,8 @@ export default function Compras() {
   const [buscar, setBuscar] = useState('')
   const [abierto, setAbierto] = useState(false)
   const [leyendo, setLeyendo] = useState(false)
+  const [leyendoCot, setLeyendoCot] = useState(false)
+  const [vueltaCot, setVueltaCot] = useState(0)
   const [guardando, setGuardando] = useState(false)
   const [cancelando, setCancelando] = useState('')
   const [motivo, setMotivo] = useState('')
@@ -174,6 +178,25 @@ export default function Compras() {
             onRegistrada={texto => { setMensaje(texto); setLeyendo(false); cargarTodo() }} />
         </div>
       </details>
+
+      {/* ---- leer una cotización de proveedor (SQL 84): no mueve inventario ---- */}
+      <details className="tarjeta" open={leyendoCot} onToggle={e => setLeyendoCot(e.currentTarget.open)}>
+        <summary className="resumen">📄 Leer una cotización de proveedor</summary>
+        <div style={{ marginTop: 12 }}>
+          {leyendoCot && (
+            <CotizacionProveedorLeida
+              productos={productos}
+              proveedoresConocidos={[...new Set(compras.map(c => c.proveedor))]}
+              onRegistrada={texto => { setMensaje(texto); setLeyendoCot(false); setVueltaCot(v => v + 1); cargarTodo() }} />
+          )}
+        </div>
+      </details>
+
+      <section className="tarjeta">
+        <h3 style={{ marginTop: 0 }}>Cotizaciones de proveedor</h3>
+        <p className="ayuda">Aceptar una crea los pedidos; el material entra al almacén cuando llega con su factura.</p>
+        <CotizacionesProveedor vuelta={vueltaCot} onAviso={t => { setMensaje(t); cargarTodo() }} />
+      </section>
 
       {/* ---- registrar ---- */}
       <details className="tarjeta" open={abierto}
