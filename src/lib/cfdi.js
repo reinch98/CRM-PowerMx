@@ -91,6 +91,8 @@ export function leerCfdiXml(texto, Parser) {
 
   const conceptos = descendientes(hijosNombre(comprobante, 'Conceptos')[0], 'Concepto').map(c => ({
     clave: attr(c, 'ClaveProdServ'),
+    // El código del proveedor para esa pieza: con él la compra se empata sola con el catálogo (SQL 86).
+    codigo: attr(c, 'NoIdentificacion'),
     descripcion: attr(c, 'Descripcion'),
     cantidad: num(attr(c, 'Cantidad')),
     unidad: attr(c, 'ClaveUnidad'),

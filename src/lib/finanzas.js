@@ -182,13 +182,16 @@ export function formularioDeAprobacion(doc, cfdi, propuesta) {
     concepto: cfdi?.nombre_emisor || ia.concepto || '',
     referencia: ia.referencia || '',
     cotizacion_id: '',
-    notas: ''
+    notas: '',
+    // Anticipos (SQL 85) que se le aplican al aprobar: la factura queda por pagar y ellos la abonan (SQL 86).
+    anticipos: []
   }
 }
 
 export function validarAprobacion(form) {
   if (form.accion === 'archivar') return ''
   if (!form.categoria) return 'Elige el tipo de gasto.'
+  if (form.pagado && form.anticipos?.length) return 'Con un anticipo, la factura queda "por pagar": el anticipo ya es el pago.'
   if (form.pagado) {
     if (!(num(form.monto) > 0)) return 'Escribe el monto que pagaste.'
     if (!form.fecha) return 'Escribe la fecha en que pagaste.'
@@ -215,7 +218,8 @@ export function paraEnviarAprobacion(form) {
     concepto: v(form.concepto),
     referencia: v(form.referencia),
     cotizacion_id: v(form.cotizacion_id),
-    notas: v(form.notas)
+    notas: v(form.notas),
+    anticipos: form.pagado ? [] : (form.anticipos || [])
   }
 }
 

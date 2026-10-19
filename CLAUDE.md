@@ -2901,7 +2901,7 @@ proveedor: paga una factura por pagar con saldo exacto o queda como **anticipo**
 clientes siguen entrando por el Expediente** de su cotización) y **factura** (se liga a su pago y a su
 cotización de proveedor; si es de material, registra la compra). Todo agrupado por proveedor. El almacenista
 no ve cotizaciones de proveedor (llevan costos). Partes: **A** proveedores (hecha) · **B** cotizaciones de
-proveedor (hecha) · **C** comprobantes de pago y anticipos (hecha) · **D** la factura cierra el ciclo (y une la "doble
+proveedor (hecha) · **C** comprobantes de pago y anticipos (hecha) · **D** la factura cierra el ciclo (hecha; une la "doble
 puerta": hoy la misma factura puede entrar por Compras y por Finanzas).
 
 **SQL 80 — Proveedores (parte A), aplicado y probado (11/11) con la CLI.** Tabla `proveedores` (nombre, RFC
@@ -3008,5 +3008,35 @@ debe y deja elegir a qué se aplica. Los cobros de clientes siguen por el Expedi
   < 4.5, 0 objetivos < 48 px, 0 px de desborde. **Sin probar con un comprobante real.**
 - **Ojo:** los pagos a proveedor aprobados antes como gasto "pago_proveedor" en la bandeja (sin proveedor ligado) no
   aparecen como anticipos: no tienen `proveedor_id`.
-- **Falta:** la parte D (la factura cierra el ciclo: ligar con su cotización de proveedor y sus pagos, y unir la doble
-  puerta Compras/Finanzas) y proponer los anticipos en el momento en que se aprueba la factura en la bandeja.
+
+**SQL 86 — La factura cierra el ciclo (parte D, 19/10/2026), aplicado y probado (10/10)** con la CLI; tras él se repitieron
+85, 84, 80, 81, 72, 76, 77, 66 y 67 (todas ok). La prueba 67 ganó una corrección que no tenía que ver con el 86: su tarifa de
+600 era del 2000 y perdía contra la tarifa real del responsable en preventivo (700, capturada el 09/10/2026); ahora es de hace
+3 días. **Lección:** una prueba que siembra una tarifa con fecha vieja depende de que nadie capture una más nueva.
+- **Factura ↔ compra (la doble puerta):** `cfdi.compra_id` ya existía (67) pero solo se llenaba por UUID al registrar el XML.
+  Ahora se liga sola en los DOS sentidos, entre primero la compra o el XML: por UUID, o por mismo proveedor + mismo folio +
+  mismo total (±1 peso, misma moneda), y **solo con una pareja** (con dudas se ofrece en pantalla, no se adivina). Una compra
+  tiene a lo más una factura (`cfdi_una_compra`); cancelarla la suelta. `_folio_clave` compara solo letras y números y quita
+  los ceros a la izquierda de CADA número ("A-0099" = serie "A" + folio "99"; la primera versión solo los quitaba al principio
+  y la prueba lo atrapó). La compra nace con total 0 y lo recibe al final de `registrar_compra`: por eso el disparador de
+  `compras` también mira el cambio de `total`.
+- **Meter al almacén desde el XML:** en la bandeja, una factura recibida sin compra tiene "Meter al almacén con esta factura…":
+  `FacturaLeida` acepta `lecturaInicial` (armada con `lecturaDesdeCfdi` de `src/lib/facturaCiclo.js`, sin IA ni subir nada; en
+  dólares pasa a pesos con el tipo de cambio de la factura y un descuento se avisa). La compra lleva el UUID y la base la liga
+  sola. `leerCfdiXml` ahora guarda el `codigo` (NoIdentificacion) de cada concepto, para empatar con el catálogo.
+- **Factura ↔ cotización de proveedor:** `cfdi.cotizacion_proveedor_id` y `compras.cotizacion_proveedor_id`. Una línea de compra que
+  recibe un pedido nacido de una cotización (84) le pasa esa cotización a la compra y a su factura. Si no, se liga a mano.
+- **Factura ↔ pagos:** `aprobar_documento` (redefinida desde la viva) acepta `anticipos`: con la factura "por pagar" se los aplica
+  en la misma transacción (con "ya la pagué" se rechaza: el anticipo ya es el pago). La bandeja propone marcados los anticipos de
+  SU cotización (o el único que cuadra exacto) y avisa si se marca "ya la pagué" habiendo un anticipo del mismo monto. Un gasto
+  pagado queda con `compra_id` (la de su factura, o la compra que tiene el MISMO archivo).
+- `factura_contexto(cfdi)` (todo en una llamada), `ligar_factura(cfdi, compra, cotizacion)` (mismo proveedor; la compra aprende el
+  UUID) y `desligar_factura(cfdi, 'compra'|'cotizacion')`; todo a `auditoria`. `cotizaciones_proveedor_lista` gana `facturas` y
+  `anticipado`; `carpeta_proveedor` dice la compra, la COTP y los pagos de cada factura, y si cada compra ya tiene su XML.
+- Pantallas: `src/CicloFactura.jsx` ("Compra, cotización y pagos") en cada factura recibida de la bandeja y, con "Compra y
+  cotización", en cada tarjeta de Por pagar (`CicloFacturaSola`). Compras dice en cada compra si su XML ya está en Finanzas.
+  5 pruebas en Node (`pruebas/facturaCiclo.prueba.js`). Medido en celular con un Supabase falso: 0 textos < 17 px, 0 contrastes
+  < 4.5, 0 px de desborde; se comprobó lo que viaja (`ligar_factura` y `aprobar_documento` con `anticipos`).
+  **Sin probar con una factura real.**
+- **Falta:** que el lector de cotizaciones reconozca al proveedor por su ficha, un aviso en Inicio de cotizaciones por vencer, y
+  probar el ciclo completo con documentos reales (cotización → anticipo → factura XML → entrada al almacén).

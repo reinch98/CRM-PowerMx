@@ -123,7 +123,8 @@ select set_config('app.p8', concat(
        then 'ok' else 'FALLO' end, ' — retiro sin cotización; un cobro sin cotización lo prohíbe la base'), true);
 
 -- 9) Comisiones: la orden cerrada se ve "en revisión" y SIN monto antes de aprobar.
-insert into tarifas_pago_tecnico (tipo_servicio, rol, monto, vigente_desde) values ('preventivo', 'responsable', 600, '2000-01-01');
+-- Vigente desde hace 3 días: así le gana a la tarifa real que ya esté capturada (desde el 09/10/2026 hay una de 700).
+insert into tarifas_pago_tecnico (tipo_servicio, rol, monto, vigente_desde) values ('preventivo', 'responsable', 600, current_date - 3);
 insert into ordenes_servicio (id, cliente_id, fecha, tipo_servicio, estado, tecnico_id)
 values (current_setting('app.orden')::uuid, current_setting('app.cli')::uuid, current_date - 3, 'preventivo', 'cerrada',
         current_setting('app.admin')::uuid);

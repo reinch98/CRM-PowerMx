@@ -268,6 +268,11 @@ function Carpeta({ id, onVolver, onCambio, onAviso }) {
                   {fechaLegible(f.fecha)} · total {pesos(f.total)}{f.moneda && f.moneda !== 'MXN' ? ` ${f.moneda}` : ''}
                   {f.por_pagar && Number(f.saldo) > 0.01 && ` · saldo ${pesos(f.saldo)}`}
                 </div>
+                {(f.compra || f.cotizacion || Number(f.pagos) > 0) && (
+                  <div className="renglon-datos">
+                    {[f.compra && `compra ${f.compra}`, f.cotizacion, Number(f.pagos) > 0 && `${f.pagos} ${Number(f.pagos) === 1 ? 'pago' : 'pagos'}`].filter(Boolean).join(' · ')}
+                  </div>
+                )}
               </div>
               <div className="renglon-lado"><span className={e.clase}><strong>{e.etiqueta}</strong></span></div>
             </div>
@@ -297,6 +302,8 @@ function Carpeta({ id, onVolver, onCambio, onAviso }) {
               <div className="renglon-titulo">Compra {x.folio}{x.factura ? ` · factura ${x.factura}` : ''}</div>
               <div className="renglon-datos">
                 {fechaLegible(x.fecha)}{x.proveedor_texto && x.proveedor_texto !== p.nombre ? ` · capturada como «${x.proveedor_texto}»` : ''}
+                {x.cotizacion ? ` · ${x.cotizacion}` : ''}
+                {x.estado !== 'cancelada' && (x.con_xml ? ` · con su XML${x.factura_xml ? ` (${x.factura_xml})` : ''}` : ' · sin XML todavía')}
               </div>
             </div>
             <div className="renglon-lado">

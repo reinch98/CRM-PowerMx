@@ -69,6 +69,13 @@ function Tarjeta({ c, mostrarProveedor, onCambio, onAviso }) {
             {c.moneda === 'USD' && c.tipo_cambio && ` · TC ${c.tipo_cambio}`}
             {Number(c.pedidos) > 0 && ` · ${c.pedidos} pedido(s), ${c.pedidos_recibidos} recibido(s)`}
           </div>
+          {(c.facturas || []).length > 0 && (
+            <div className="renglon-datos">
+              {c.facturas.length === 1 ? 'Factura ' : 'Facturas '}
+              {c.facturas.map(f => `${[f.serie, f.folio].filter(Boolean).join(' ') || 'sin folio'}${f.por_pagar && Number(f.saldo) > 0.01 ? ` (se deben ${dinero(f.saldo, 'MXN')})` : ''}`).join(', ')}
+            </div>
+          )}
+          {Number(c.anticipado) > 0 && <div className="renglon-datos">Anticipado sin factura: {dinero(c.anticipado, 'MXN')}</div>}
           {c.motivo && c.estado !== 'vigente' && <div className="renglon-datos">Motivo: {c.motivo}</div>}
         </div>
         <div className="renglon-lado">

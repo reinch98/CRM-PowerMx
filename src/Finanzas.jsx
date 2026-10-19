@@ -7,6 +7,8 @@ import Conciliacion from './Conciliacion'
 import CotizacionProveedorLeida from './CotizacionProveedorLeida'
 import PagoProveedorLeido from './PagoProveedorLeido'
 import AnticiposProveedor from './AnticiposProveedor'
+import CicloFactura, { CicloFacturaSola } from './CicloFactura'
+import { cargarContextoFactura, anticiposIniciales, problemaDeAnticipos } from './lib/facturaCiclo'
 import { leerZip, esZip } from './lib/zip'
 import {
   CATEGORIAS_GASTO, CATEGORIAS_CAPITAL, FORMAS_PAGO, ETIQUETA_CONFIANZA,
@@ -175,7 +177,28 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
   const [comoPago, setComoPago] = useState(false)
   const otroCamino = comoCotizacion || comoPago
   const pareceCotizacion = ['cotizacion', 'pedido'].includes(doc.extraido?.documento)
-  const cambiar = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  // "Ya la pagué" quita los anticipos: un anticipo ya es el pago y la factura queda por pagar (SQL 86).
+  const cambiar = (k, v) => setForm(f => ({ ...f, [k]: v, ...(k === 'pagado' && v ? { anticipos: [] } : {}) }))
+  // La factura recibida cierra el ciclo (SQL 86): su compra, su cotización de proveedor y sus anticipos.
+  const [ciclo, setCiclo] = useState(null)
+  const [vueltaCiclo, setVueltaCiclo] = useState(0)
+  const [avisoCiclo, setAvisoCiclo] = useState('')
+  const cfdiRecibido = cfdi?.sentido === 'recibido' && (cfdi.tipo_comprobante || 'I') === 'I' ? cfdi.id : null
+  useEffect(() => {
+    if (!cfdiRecibido) return
+    let vivo = true
+    cargarContextoFactura(cfdiRecibido).then(r => {
+      if (!vivo || r.error) return
+      setCiclo(r.data)
+      // La primera vez se proponen marcados los anticipos de su cotización (o el que cuadra exacto).
+      if (vueltaCiclo === 0) {
+        const ids = anticiposIniciales(r.data)
+        if (ids.length) setForm(f => ({ ...f, anticipos: ids, pagado: false }))
+      }
+    })
+    return () => { vivo = false }
+  }, [cfdiRecibido, vueltaCiclo])
+  const elegirAnticipos = ids => setForm(f => ({ ...f, anticipos: ids, pagado: ids.length ? false : f.pagado }))
   const t = tituloDocumento(doc)
   const avisos = [
     ...validaciones.map(a => ({ tipo: a?.nivel === 'info' ? 'info' : 'aviso', texto: a?.texto || String(a) })),
@@ -186,15 +209,19 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
   const releer = !cfdi && doc.metodo === 'ia'
 
   async function aprobar() {
-    const problema = validarAprobacion(form)
+    const problema = validarAprobacion(form) || (ciclo && form.accion === 'gasto' ? problemaDeAnticipos(ciclo, form.anticipos) : '')
     if (problema) { setAbierto(true); return setError(problema) }
     setError(''); setOcupado(true)
     const r = await aprobarDocumento(doc.id, form)
     setOcupado(false)
     if (r.error) { setAbierto(true); return setError(r.error) }
+    const conAnticipos = form.accion === 'gasto' && !form.pagado && form.anticipos?.length > 0
     onListo(form.accion === 'archivar'
       ? 'Guardado como respaldo.'
-      : form.pagado ? `Registrado: ${etiquetaCategoria(form.categoria)} por ${pesos(form.monto)}.` : 'Guardada como por pagar.')
+      : form.pagado ? `Registrado: ${etiquetaCategoria(form.categoria)} por ${pesos(form.monto)}.`
+        : conAnticipos
+          ? `Factura aprobada y abonada con ${form.anticipos.length === 1 ? 'su anticipo' : `${form.anticipos.length} anticipos`}: ${Number(r.saldo) > 0.01 ? `quedan por pagar ${pesos(r.saldo)}.` : 'quedó pagada.'}`
+          : 'Guardada como por pagar.')
   }
   async function leerIA() {
     setError(''); setOcupado(true)
@@ -214,7 +241,9 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
     onListo('Documento rechazado.')
   }
 
-  const accionRapida = form.accion === 'archivar' ? 'Guardar como respaldo' : `Aprobar como ${etiquetaCategoria(form.categoria)}`
+  const accionRapida = form.accion === 'archivar' ? 'Guardar como respaldo'
+    : !form.pagado && form.anticipos?.length > 0 ? `Aprobar y aplicar ${form.anticipos.length === 1 ? 'el anticipo' : 'los anticipos'}`
+    : `Aprobar como ${etiquetaCategoria(form.categoria)}`
 
   return (
     <section className="tarjeta" aria-label={`${t.tipo}: ${t.nombre}`}>
@@ -239,6 +268,15 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
       {error && <Alerta tipo="error">{error}</Alerta>}
 
       {cfdi?.sentido === 'emitido' && <LigarCotizacion cfdi={cfdi} onLigada={id => setCfdi(c => ({ ...c, cotizacion_id: id }))} />}
+      {avisoCiclo && <Alerta tipo="ok">{avisoCiclo}</Alerta>}
+      {cfdiRecibido && ciclo && !otroCamino && (
+        <CicloFactura ctx={ciclo} cfdi={cfdi}
+          pagado={form.accion === 'gasto' && form.pagado}
+          anticipos={form.anticipos}
+          onAnticipos={form.accion === 'gasto' ? elegirAnticipos : undefined}
+          onRecargar={() => setVueltaCiclo(v => v + 1)}
+          onAviso={setAvisoCiclo} />
+      )}
 
       {sinLeer && (
         <button type="button" className="btn-grande" disabled={ocupado} onClick={leerIA} style={{ marginBottom: 12 }}>
@@ -442,7 +480,8 @@ function Bandeja({ documentos, cuentas, sinRfc, irAAjustes, onCambio }) {
 // ---- cuentas por pagar (SQL 72) ----
 
 function TarjetaPorPagar({ c, cuentas, onListo }) {
-  const [modo, setModo] = useState('')   // '' | 'pagar' | 'vence'
+  const [modo, setModo] = useState('')   // '' | 'pagar' | 'vence' | 'ciclo'
+  const [aviso, setAviso] = useState('')
   const [form, setForm] = useState({ monto: String(c.saldo), fecha: hoyLocal(), cuenta_id: '', forma: 'transferencia', referencia: '' })
   const [vence, setVence] = useState(c.vence || '')
   const [error, setError] = useState('')
@@ -484,6 +523,14 @@ function TarjetaPorPagar({ c, cuentas, onListo }) {
         <span className="monto" style={{ fontSize: 22 }}>{pesos(c.saldo)}</span>
       </div>
       {error && <Alerta tipo="error">{error}</Alerta>}
+      {aviso && <Alerta tipo="ok">{aviso}</Alerta>}
+
+      {modo === 'ciclo' && (
+        <div style={{ marginTop: 8 }}>
+          <CicloFacturaSola cfdiId={c.cfdi_id} onAviso={setAviso} />
+          <button type="button" onClick={() => { setModo(''); setAviso('') }}>Cerrar</button>
+        </div>
+      )}
 
       {modo === 'pagar' && (
         <div style={{ marginTop: 8 }}>
@@ -535,6 +582,7 @@ function TarjetaPorPagar({ c, cuentas, onListo }) {
         <div className="fila" style={{ marginTop: 8 }}>
           <button type="button" className="btn-primario" onClick={() => setModo('pagar')}>Registrar pago</button>
           <button type="button" onClick={() => setModo('vence')}>Cambiar vencimiento</button>
+          <button type="button" onClick={() => setModo('ciclo')}>Compra y cotización</button>
           {c.archivo && <button type="button" onClick={() => abrirArchivo(c.archivo)}>Ver factura</button>}
         </div>
       )}

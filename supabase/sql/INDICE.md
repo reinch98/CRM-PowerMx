@@ -115,6 +115,7 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
 | 81 | `archivos_repetidos` | E | ✔ | sí | El mismo archivo no se registra dos veces (`archivos_subidos` y candados). |
 | 84 | `cotizaciones_proveedor` | E | ✔ | sí | Cotizaciones de proveedor: registrar, aceptar (crea pedidos), rechazar y cancelar (redefine `_archivo_en_uso`). |
 | 85 | `pagos_proveedor` | E | ✔ | sí | Comprobantes de pago a proveedor y anticipos: pagar facturas, anticipos, aplicarlos (redefine `_resumen_proveedor`). |
+| 86 | `factura_cierra_ciclo` | E | ✔ | sí | La factura se liga sola a su compra (UUID o folio+total) y a su cotización de proveedor; anticipos al aprobar (redefine `aprobar_documento`, `cotizaciones_proveedor_lista`, `carpeta_proveedor`). |
 
 ## Funciones y cron en Supabase (fuera de esta carpeta)
 

@@ -123,7 +123,20 @@ async function llamar(nombre, args) {
 
 export async function cargarCompras(dias = 90) {
   const r = await llamar('compras_recientes', { p_dias: dias })
-  return r.ok ? { ok: true, compras: r.datos || [] } : r
+  if (!r.ok) return r
+  const compras = r.datos || []
+  // (SQL 86) La factura (XML) de Finanzas ligada a cada compra. Si no se puede leer, la lista sale igual.
+  const ids = compras.map(c => c.id)
+  if (ids.length) {
+    try {
+      const { data } = await supabase.from('cfdi').select('compra_id, serie, folio, por_pagar').in('compra_id', ids)
+      const porCompra = Object.fromEntries((data || []).map(f => [f.compra_id, f]))
+      return { ok: true, compras: compras.map(c => ({ ...c, xml: porCompra[c.id] || null })) }
+    } catch {
+      // sin el dato del XML
+    }
+  }
+  return { ok: true, compras }
 }
 
 export async function cargarPedidosPorRecibir() {

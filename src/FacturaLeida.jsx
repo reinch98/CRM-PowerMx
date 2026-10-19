@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alerta } from './ui'
-import { totalesDeCompra, cambioDeCosto } from './lib/compras'
+import { totalesDeCompra, cambioDeCosto, cargarProductos } from './lib/compras'
 import {
   subirParaLeer, leerFactura, cargarVinculos, registrarCompraDeFactura,
   textoDeRazon, TEXTO_CERTEZA, cuadre, proveedorSugerido, problemasDeRevision, armarLinea
@@ -188,8 +188,24 @@ export function LineaFactura({ l, productos, onCambio, moneda = 'MXN', factor = 
   )
 }
 
-export default function FacturaLeida({ productos, proveedoresConocidos, onRegistrada }) {
-  const [fase, setFase] = useState('inicio')   // inicio | leyendo | revision
+// Cabecera y renglones listos para revisar, a partir de una lectura (de la IA o del XML).
+function revisionInicial(l, { productos, vinculos, proveedoresConocidos }) {
+  const conocidos = [...new Set([...(proveedoresConocidos || []), ...vinculos.map(v => v.proveedor)])].filter(Boolean)
+  const proveedor = proveedorSugerido(l.proveedor, conocidos) || l.proveedor
+  const ctx = { productos, vinculos, proveedor, preciosIncluyenIva: l.preciosIncluyenIva }
+  return {
+    cab: {
+      proveedor, factura: l.factura, uuid_fiscal: l.uuid_fiscal, fecha: l.fecha,
+      iva: l.iva != null && !l.preciosIncluyenIva ? String(l.iva) : '', notas: ''
+    },
+    lineas: l.lineas.map((x, i) => armarLinea(x, i, ctx))
+  }
+}
+
+// `lecturaInicial` (SQL 86): la factura ya está en Finanzas con su XML; sus renglones salen de ahí, sin
+// subir nada ni gastar una lectura de IA. La compra lleva su UUID, y con eso la base la liga a esa factura.
+export default function FacturaLeida({ productos: productosDados, proveedoresConocidos, onRegistrada, lecturaInicial = null, onCancelar }) {
+  const [fase, setFase] = useState(lecturaInicial ? 'leyendo' : 'inicio')   // inicio | leyendo | revision
   const [archivo, setArchivo] = useState(null)
   const [version, setVersion] = useState(0)
   const [ruta, setRuta] = useState('')
@@ -197,14 +213,34 @@ export default function FacturaLeida({ productos, proveedoresConocidos, onRegist
   const [cab, setCab] = useState(cabeceraVacia)
   const [lineas, setLineas] = useState([])
   const [vinculos, setVinculos] = useState([])
+  const [productosCargados, setProductosCargados] = useState([])
   const [error, setError] = useState('')
   const [ocupado, setOcupado] = useState(false)
+  const iniciada = useRef(false)
+  const productos = productosDados || productosCargados
 
   useEffect(() => {
     let vivo = true
     cargarVinculos().then(r => { if (vivo && r.vinculos) setVinculos(r.vinculos) })
     return () => { vivo = false }
   }, [])
+
+  // Desde el XML: en cuanto hay catálogo y vínculos, se arma la revisión (una sola vez).
+  useEffect(() => {
+    if (!lecturaInicial || iniciada.current) return
+    let vivo = true
+    const prods = productosDados ? Promise.resolve({ ok: true, productos: productosDados }) : cargarProductos()
+    Promise.all([cargarVinculos(), prods]).then(([rv, rp]) => {
+      if (!vivo || iniciada.current) return
+      iniciada.current = true
+      if (!productosDados) setProductosCargados(rp?.ok ? rp.productos : [])
+      if (!rp?.ok) { setFase('inicio'); return setError(rp?.error || 'No pude cargar el catálogo.') }
+      if (lecturaInicial.lineas.length === 0) { setFase('inicio'); return setError('El XML no trae renglones que meter al almacén.') }
+      const r = revisionInicial(lecturaInicial, { productos: rp.productos, vinculos: rv.vinculos || [], proveedoresConocidos })
+      setLectura(lecturaInicial); setCab(r.cab); setLineas(r.lineas); setFase('revision')
+    })
+    return () => { vivo = false }
+  }, [lecturaInicial, productosDados, proveedoresConocidos])
 
   const conocidos = useMemo(
     () => [...new Set([...(proveedoresConocidos || []), ...vinculos.map(v => v.proveedor)])].filter(Boolean),
@@ -224,15 +260,11 @@ export default function FacturaLeida({ productos, proveedoresConocidos, onRegist
       setFase('inicio')
       return setError(`No pude leer ninguna línea de producto.${l.notas ? ` ${l.notas}` : ''}`)
     }
-    const proveedor = proveedorSugerido(l.proveedor, conocidos) || l.proveedor
-    const ctx = { productos, vinculos, proveedor, preciosIncluyenIva: l.preciosIncluyenIva }
+    const inicial = revisionInicial(l, { productos, vinculos, proveedoresConocidos })
     setRuta(sub.ruta)
     setLectura(l)
-    setCab({
-      proveedor, factura: l.factura, uuid_fiscal: l.uuid_fiscal, fecha: l.fecha,
-      iva: l.iva != null && !l.preciosIncluyenIva ? String(l.iva) : '', notas: ''
-    })
-    setLineas(l.lineas.map((x, i) => armarLinea(x, i, ctx)))
+    setCab(inicial.cab)
+    setLineas(inicial.lineas)
     setFase('revision')
   }
 
@@ -241,6 +273,7 @@ export default function FacturaLeida({ productos, proveedoresConocidos, onRegist
   }
 
   function descartar() {
+    if (lecturaInicial) return onCancelar?.()
     setFase('inicio'); setArchivo(null); setVersion(v => v + 1); setLectura(null); setLineas([]); setError('')
   }
 
@@ -260,7 +293,7 @@ export default function FacturaLeida({ productos, proveedoresConocidos, onRegist
       fecha: cab.fecha || null,
       iva: cab.iva === '' ? null : Number(cab.iva),
       notas: cab.notas.trim() || null,
-      archivo_pdf: ruta
+      archivo_pdf: ruta || null
     }
     const r = await registrarCompraDeFactura(datos, lineas)
     setOcupado(false)
@@ -270,6 +303,15 @@ export default function FacturaLeida({ productos, proveedoresConocidos, onRegist
     if (d.productos_nuevos > 0) partes.push(`${d.productos_nuevos} pieza(s) nueva(s) creadas, sin publicar y sin precio.`)
     descartar()
     onRegistrada(partes.join(' '))
+  }
+
+  if (fase !== 'revision' && lecturaInicial) {
+    return (
+      <div>
+        {error ? <Alerta tipo="error">{error}</Alerta> : <p>Preparando los renglones de la factura…</p>}
+        {error && <button type="button" onClick={() => onCancelar?.()}>Cerrar</button>}
+      </div>
+    )
   }
 
   if (fase !== 'revision') {
@@ -294,10 +336,17 @@ export default function FacturaLeida({ productos, proveedoresConocidos, onRegist
 
   return (
     <div>
-      <Alerta tipo="info" palabra="Revisa">
-        Esto lo leyó la IA y puede equivocarse. Nada ha entrado al almacén: revisa cada línea y
-        pulsa «Registrar» al final.
-      </Alerta>
+      {lecturaInicial ? (
+        <Alerta tipo="info" palabra="Revisa">
+          Los renglones salen del XML de la factura. Nada ha entrado al almacén: elige qué pieza es cada
+          renglón y pulsa «Registrar» al final.
+        </Alerta>
+      ) : (
+        <Alerta tipo="info" palabra="Revisa">
+          Esto lo leyó la IA y puede equivocarse. Nada ha entrado al almacén: revisa cada línea y
+          pulsa «Registrar» al final.
+        </Alerta>
+      )}
       {error && <Alerta tipo="error">{error}</Alerta>}
       {lectura.moneda === 'USD' && (
         <Alerta tipo="aviso" palabra="Dólares">
@@ -314,7 +363,7 @@ export default function FacturaLeida({ productos, proveedoresConocidos, onRegist
           {lectura.descartadas} renglón(es) venían incompletos y no se incluyeron. Revisa la factura.
         </Alerta>
       )}
-      {lectura.notas && <Alerta tipo="aviso" palabra="La IA anotó">{lectura.notas}</Alerta>}
+      {lectura.notas && <Alerta tipo="aviso" palabra={lecturaInicial ? 'Ojo' : 'La IA anotó'}>{lectura.notas}</Alerta>}
       {ajuste?.cuadra === false && (
         <Alerta tipo="aviso" palabra="No cuadra">
           Las líneas suman {pesos(ajuste.suma)} y el subtotal de la factura es {pesos(ajuste.esperado)}
@@ -377,7 +426,7 @@ export default function FacturaLeida({ productos, proveedoresConocidos, onRegist
           {ocupado ? 'Registrando…' : 'Registrar y meter al almacén'}
         </button>
         <button type="button" className="btn-grande" disabled={ocupado} onClick={descartar}>
-          Descartar esta lectura
+          {lecturaInicial ? 'Cancelar' : 'Descartar esta lectura'}
         </button>
       </div>
     </div>

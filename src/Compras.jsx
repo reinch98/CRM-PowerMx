@@ -380,7 +380,12 @@ export default function Compras() {
               {c.estado === 'cancelada' ? 'Cancelada' : 'Registrada'}
             </span>
           </div>
-          <div className="ayuda">{c.fecha} · {pesos(c.total)}</div>
+          <div className="ayuda">
+            {c.fecha} · {pesos(c.total)}
+            {c.estado !== 'cancelada' && (c.xml
+              ? ` · su XML está en Finanzas${[c.xml.serie, c.xml.folio].filter(Boolean).length ? ` (${[c.xml.serie, c.xml.folio].filter(Boolean).join(' ')})` : ''}`
+              : ' · sin XML en Finanzas todavía')}
+          </div>
           {c.motivo_cancelacion && (
             <Alerta tipo="aviso" palabra="Cancelada">{c.motivo_cancelacion}</Alerta>
           )}
