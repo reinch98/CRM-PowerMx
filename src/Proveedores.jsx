@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alerta } from './ui'
 import CotizacionesProveedor from './CotizacionesProveedor'
+import AnticiposProveedor from './AnticiposProveedor'
 import { hoyLocal } from './lib/fechas'
 import { pesos, pesosRedondos, fechaLegible, etiquetaCategoria } from './lib/finanzas'
 import {
@@ -232,6 +233,7 @@ function Carpeta({ id, onVolver, onCambio, onAviso }) {
           <span className="kpi-nombre">Le debes</span>
           <span className="kpi-valor">{pesosRedondos(r.por_pagar)}</span>
           <span className="kpi-nota">{Number(r.vencido) > 0 ? `${pesosRedondos(r.vencido)} vencido` : 'Nada vencido'}</span>
+          {Number(r.anticipos) > 0 && <span className="kpi-nota">{pesosRedondos(r.anticipos)} en anticipos sin factura</span>}
         </div>
         <div className="kpi">
           <span className="kpi-nombre">Pagado en 12 meses</span>
@@ -247,6 +249,8 @@ function Carpeta({ id, onVolver, onCambio, onAviso }) {
           <span className="kpi-valor">{r.pedidos_abiertos || 0}</span>
         </div>
       </div>
+
+      <AnticiposProveedor proveedorId={p.id} ocultarVacio onAviso={t => { onAviso(t); setVuelta(v => v + 1) }} />
 
       <section className="tarjeta">
         <h3 style={{ marginTop: 0 }}>Cotizaciones</h3>

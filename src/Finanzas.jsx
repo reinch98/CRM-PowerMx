@@ -5,6 +5,8 @@ import { etiquetaTipoComprobante, etiquetaFormaPagoSat } from './lib/cfdi'
 import Impuestos from './Impuestos'
 import Conciliacion from './Conciliacion'
 import CotizacionProveedorLeida from './CotizacionProveedorLeida'
+import PagoProveedorLeido from './PagoProveedorLeido'
+import AnticiposProveedor from './AnticiposProveedor'
 import { leerZip, esZip } from './lib/zip'
 import {
   CATEGORIAS_GASTO, CATEGORIAS_CAPITAL, FORMAS_PAGO, ETIQUETA_CONFIANZA,
@@ -169,6 +171,9 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
   const [notaIA, setNotaIA] = useState(doc.metodo === 'ia' && !(doc.validaciones || []).length ? doc.extraido?.notas || '' : '')
   // Una cotización o un pedido de proveedor no es un gasto: se registra como cotización (SQL 84) y sale de la bandeja.
   const [comoCotizacion, setComoCotizacion] = useState(false)
+  // Un comprobante de pago A un proveedor: paga su factura o queda como anticipo (SQL 85).
+  const [comoPago, setComoPago] = useState(false)
+  const otroCamino = comoCotizacion || comoPago
   const pareceCotizacion = ['cotizacion', 'pedido'].includes(doc.extraido?.documento)
   const cambiar = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const t = tituloDocumento(doc)
@@ -240,7 +245,7 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
           {ocupado ? 'Leyendo…' : 'Leer con IA y llenar los datos'}
         </button>
       )}
-      {(releer || !cfdi) && !comoCotizacion && (
+      {(releer || !cfdi) && !otroCamino && (
         <div className="fila" style={{ flexWrap: 'wrap', marginBottom: 12 }}>
           {releer && (
             <button type="button" disabled={ocupado} onClick={leerIA}>
@@ -251,6 +256,11 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
             <button type="button" className={pareceCotizacion ? 'btn-primario' : ''} disabled={ocupado}
               onClick={() => setComoCotizacion(true)}>
               Es una cotización de proveedor…
+            </button>
+          )}
+          {!cfdi && (
+            <button type="button" disabled={ocupado} onClick={() => setComoPago(true)}>
+              Es un pago a proveedor…
             </button>
           )}
         </div>
@@ -265,7 +275,14 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
         </div>
       )}
 
-      {abierto && !comoCotizacion && (
+      {comoPago && (
+        <div className="tarjeta" style={{ marginBottom: 12 }}>
+          <h3 style={{ marginTop: 0 }}>Registrar como pago a proveedor</h3>
+          <PagoProveedorLeido doc={doc} cuentas={cuentas}
+            onListo={texto => onListo(texto)} onCancelar={() => setComoPago(false)} />
+        </div>
+      )}
+      {abierto && !otroCamino && (
         <div style={{ marginTop: 8 }}>
           <div className="opciones" role="radiogroup" aria-label="¿Qué hago con este documento?" style={{ marginBottom: 14 }}>
             {[['gasto', 'Registrar como gasto'], ['archivar', 'Solo guardar como respaldo']].map(([k, tx]) => (
@@ -276,7 +293,7 @@ function TarjetaDocumento({ doc, cuentas, onListo }) {
         </div>
       )}
 
-      {!comoCotizacion && (
+      {!otroCamino && (
         <div className="fila" style={{ marginTop: 8 }}>
           <button type="button" className="btn-primario" disabled={ocupado} onClick={aprobar}>
             {ocupado ? 'Guardando…' : abierto ? 'Aprobar' : accionRapida}
@@ -594,6 +611,7 @@ function PorPagar({ datos, pagos, cuentas, onCambio }) {
         </div>
       </div>
       {mensaje && <Alerta tipo="ok">{mensaje}</Alerta>}
+      <AnticiposProveedor ocultarVacio onAviso={t => { setMensaje(t); onCambio() }} />
       {datos.cuentas.length === 0 && (
         <div className="tarjeta">
           <p style={{ margin: 0 }}>No debes nada a proveedores. Una factura queda aquí cuando la apruebas como "Aún no la pago".</p>

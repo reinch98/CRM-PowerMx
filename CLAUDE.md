@@ -2901,7 +2901,7 @@ proveedor: paga una factura por pagar con saldo exacto o queda como **anticipo**
 clientes siguen entrando por el Expediente** de su cotización) y **factura** (se liga a su pago y a su
 cotización de proveedor; si es de material, registra la compra). Todo agrupado por proveedor. El almacenista
 no ve cotizaciones de proveedor (llevan costos). Partes: **A** proveedores (hecha) · **B** cotizaciones de
-proveedor (hecha) · **C** comprobantes de pago y anticipos · **D** la factura cierra el ciclo (y une la "doble
+proveedor (hecha) · **C** comprobantes de pago y anticipos (hecha) · **D** la factura cierra el ciclo (y une la "doble
 puerta": hoy la misma factura puede entrar por Compras y por Finanzas).
 
 **SQL 80 — Proveedores (parte A), aplicado y probado (11/11) con la CLI.** Tabla `proveedores` (nombre, RFC
@@ -2983,3 +2983,30 @@ descripción impresa, cantidad, precio en su moneda sin IVA). `requisiciones` ga
   la IA y cuánto saldo gasta).
 - **Falta:** que el lector reconozca al proveedor por su ficha (hoy sugiere por texto, como el de facturas), un
   aviso en Inicio de cotizaciones por vencer, y las partes C (comprobantes de pago y anticipos) y D.
+
+**SQL 85 — Comprobantes de pago a proveedor y anticipos (parte C, 18/10/2026), aplicado y probado (10/10)**
+con la CLI; tras él se repitieron 84, 80, 72, 76 y 77 (todas ok). El comprobante entra por la **bandeja de
+Finanzas** (ahí se cuida el archivo repetido) y su tarjeta tiene **"Es un pago a proveedor…"**
+(`src/PagoProveedorLeido.jsx`): lo lee con la IA en modo `banco` (quien RECIBE es el proveedor), busca qué se le
+debe y deja elegir a qué se aplica. Los cobros de clientes siguen por el Expediente.
+- `opciones_pago_proveedor(texto, monto)`: reconoce al proveedor SIN crear ficha y da sus facturas por pagar (la de
+  saldo exacto primero, marcada `exacta`) y sus cotizaciones vigentes/aceptadas con lo ya anticipado. **No es
+  `stable`**: `_proveedor_id` puede aprender un alias (escribe).
+- `registrar_pago_proveedor(datos, confirmar)`: con `cfdi_id` llama a `pagar_cfdi` (pago completo o parcial, IVA
+  proporcional; mayor que el saldo se rechaza); sin factura crea un egreso `pago_proveedor` **sin IVA** ("Anticipo a
+  …", con `cotizacion_proveedor_id` si es de una cotización — columna nueva del libro). El documento de la bandeja
+  queda "aprobado" y ligado. **Pago que parece repetido** (`_pagos_parecidos`: misma referencia, o mismo proveedor y
+  monto ±1 centavo a 7 días o menos): no escribe nada y devuelve `requiere_confirmar` con el aviso; la pantalla pide
+  "Sí, es otro pago: registrarlo".
+- `anticipos_proveedor(proveedor)`: egresos `pago_proveedor` sin factura y con proveedor, cada uno con las facturas
+  de ese proveedor que lo cubren. `aplicar_anticipo(mov, cfdi)`: mismo proveedor, no mayor que el saldo, gana el
+  IVA proporcional; `quitar_anticipo_de_factura(mov, motivo)` lo regresa. Nada se borra; todo en `auditoria`.
+- `_resumen_proveedor` (80) redefinida con `anticipos`.
+- Pantallas: `src/AnticiposProveedor.jsx` en **Finanzas → Por pagar** (todos; no aparece si no hay) y en la
+  **carpeta del proveedor** (los suyos; el indicador "Le debes" dice cuánto hay en anticipos sin factura). Reglas en
+  `src/lib/pagosProveedor.js` (5 pruebas). Medido en celular con un Supabase falso: 0 textos < 17 px, 0 contrastes
+  < 4.5, 0 objetivos < 48 px, 0 px de desborde. **Sin probar con un comprobante real.**
+- **Ojo:** los pagos a proveedor aprobados antes como gasto "pago_proveedor" en la bandeja (sin proveedor ligado) no
+  aparecen como anticipos: no tienen `proveedor_id`.
+- **Falta:** la parte D (la factura cierra el ciclo: ligar con su cotización de proveedor y sus pagos, y unir la doble
+  puerta Compras/Finanzas) y proponer los anticipos en el momento en que se aprueba la factura en la bandeja.

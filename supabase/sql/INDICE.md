@@ -114,6 +114,7 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
 | 80 | `proveedores` | E | ✔ | sí | Ficha y carpeta de cada proveedor; `proveedor_id` en compras, pedidos, vínculos, CFDI y libro (redefine `_expediente_cerrado_bloquea`). |
 | 81 | `archivos_repetidos` | E | ✔ | sí | El mismo archivo no se registra dos veces (`archivos_subidos` y candados). |
 | 84 | `cotizaciones_proveedor` | E | ✔ | sí | Cotizaciones de proveedor: registrar, aceptar (crea pedidos), rechazar y cancelar (redefine `_archivo_en_uso`). |
+| 85 | `pagos_proveedor` | E | ✔ | sí | Comprobantes de pago a proveedor y anticipos: pagar facturas, anticipos, aplicarlos (redefine `_resumen_proveedor`). |
 
 ## Funciones y cron en Supabase (fuera de esta carpeta)
 
