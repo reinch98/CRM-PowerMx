@@ -8,7 +8,36 @@ import assert from 'node:assert/strict'
 import { enlaceWhatsApp, agruparPorCita, cuandoCorto, etiquetaTipo, etiquetaPara } from '../src/lib/avisos.js'
 import {
   ventanaAbierta, estadoVentana, nombreConversacion, haceCuanto, esBorrador,
+  claseMedia, estadoArchivo, resumenTraidos,
 } from '../src/lib/whatsapp.js'
+
+// ---- fotos, documentos y audios (SQL 87) ----
+test('claseMedia: manda el tipo del archivo; sin archivo, null', () => {
+  assert.equal(claseMedia({ tipo: 'texto' }), null)
+  assert.equal(claseMedia({ media_id: 'x', tipo: 'imagen' }), 'imagen')
+  assert.equal(claseMedia({ media_ruta: 'a', media_mime: 'audio/ogg', tipo: 'audio' }), 'audio')
+  assert.equal(claseMedia({ media_ruta: 'a', media_mime: 'video/mp4', tipo: 'otro' }), 'video')
+  assert.equal(claseMedia({ media_ruta: 'a', media_mime: 'application/pdf', tipo: 'documento' }), 'documento')
+})
+
+test('estadoArchivo: guardado no dice nada; pendiente se puede traer hasta los 30 días', () => {
+  const ahora = new Date('2026-10-20T12:00:00Z')
+  assert.equal(estadoArchivo({ media_id: 'x', media_ruta: 'c/a.jpg' }, ahora), null)
+  const fresco = estadoArchivo({ media_id: 'x', tipo: 'imagen', created_at: '2026-10-19T12:00:00Z' }, ahora)
+  assert.equal(fresco.puede, true)
+  assert.match(fresco.texto, /^La foto todavía está en Meta/)
+  const conError = estadoArchivo({ media_id: 'x', tipo: 'audio', media_error: 'HTTP 500', created_at: '2026-10-19T12:00:00Z' }, ahora)
+  assert.match(conError.texto, /El audio no se pudo guardar: HTTP 500/)
+  const viejo = estadoArchivo({ media_id: 'x', tipo: 'documento', created_at: '2026-09-01T12:00:00Z' }, ahora)
+  assert.equal(viejo.puede, false)
+})
+
+test('resumenTraidos en una frase', () => {
+  assert.match(resumenTraidos({ revisados: 0 }), /No había/)
+  assert.equal(resumenTraidos({ revisados: 2, guardados: 2 }), 'Se guardaron 2 archivos.')
+  assert.equal(resumenTraidos({ revisados: 2, guardados: 1, fallidos: 1, errores: ['Meta ya no lo tiene.'] }),
+    'Se guardó 1 archivo. 1 no se pudo: Meta ya no lo tiene.')
+})
 
 test('enlaceWhatsApp arma wa.me con el 52 y el texto escapado', () => {
   const url = enlaceWhatsApp('999 123 4567', 'Cita el 26/09 a las 9:00 & confirmada')

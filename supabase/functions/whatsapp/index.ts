@@ -20,11 +20,13 @@
 //   WHATSAPP_VERIFY_TOKEN   texto que tú inventas; Meta lo repite al dar de alta el webhook
 //   WHATSAPP_APP_SECRET     "Clave secreta de la app" en Meta → Configuración → Básica
 //   BOT_EMAIL / BOT_PASSWORD  la cuenta con rol `bot` en el CRM
+//   WHATSAPP_TOKEN          el mismo de `enviar-whatsapp`: aquí baja fotos y documentos (SQL 87)
 // `SUPABASE_URL` y `SUPABASE_ANON_KEY` las pone Supabase sola.
 // ---------------------------------------------------------------------------
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { esBaja, errorDeAcuse } from "../_shared/whatsapp.js";
+import { bajarMedia } from "../_shared/mediaWa.js";
 
 // Meta reintenta si no contesta rápido; mejor un 200 seco que hacerlo esperar.
 const OK = () => new Response("ok", { status: 200 });
@@ -96,6 +98,7 @@ function leerMensaje(m: Record<string, any>) {
   const tipo = TIPOS[m.type] ?? "otro";
   let texto: string | null = null;
   let media: string | null = null;
+  let nombre: string | null = null;
 
   switch (m.type) {
     case "text":
@@ -115,17 +118,19 @@ function leerMensaje(m: Record<string, any>) {
       break;
     }
     default: {
-      // Imagen, documento, audio, video, sticker: el archivo se queda en Meta y
-      // se baja después (todavía no); por ahora se guarda su id y el pie de foto.
+      // Imagen, documento, audio, video, sticker: aquí solo llega su id; el archivo se baja
+      // aparte con `bajarMedia` (SQL 87), después de guardar el mensaje.
       const adjunto = m[m.type];
       if (adjunto && typeof adjunto === "object") {
         media = adjunto.id ?? null;
         texto = adjunto.caption ?? adjunto.filename ?? null;
+        nombre = adjunto.filename ?? null;
       }
     }
   }
 
   return {
+    nombreArchivo: nombre,
     p_telefono: m.from,
     p_wa_message_id: m.id,
     p_texto: texto,
@@ -153,6 +158,22 @@ function despertarAgente(conversacion: string) {
       console.error("No se pudo despertar al agente:", e instanceof Error ? e.message : e);
     }
   })());
+}
+
+// Baja el archivo sin hacer esperar a Meta. Si falla, `bajarMedia` deja el motivo en el
+// mensaje y la bandeja ofrece "Traer de Meta" (función `media-whatsapp`).
+function guardarArchivo(m: { wa_message_id: string; media_id: string; conversacion_id: string; nombre: string | null }) {
+  const sb = cliente;
+  if (!sb) return;
+  const tarea = bajarMedia({
+    sb,
+    token: Deno.env.get("WHATSAPP_TOKEN"),
+    version: Deno.env.get("WHATSAPP_API_VERSION") ?? "v23.0",
+  }, m).then((r: { ok: boolean; error?: string }) => {
+    if (!r.ok) console.error("No se pudo bajar el archivo", m.wa_message_id, r.error);
+  });
+  const rt = (globalThis as any).EdgeRuntime;
+  if (rt?.waitUntil) rt.waitUntil(tarea);
 }
 
 Deno.serve(async (req) => {
@@ -197,10 +218,20 @@ Deno.serve(async (req) => {
         const nombre = valor.contacts?.[0]?.profile?.name ?? null;
 
         for (const m of valor.messages ?? []) {
-          const datos = { ...leerMensaje(m), p_nombre_wa: nombre };
+          const { nombreArchivo, ...leido } = leerMensaje(m);
+          const datos = { ...leido, p_nombre_wa: nombre };
           const { data, error } = await sb.rpc("registrar_mensaje_entrante", datos);
           // Un mensaje que falla no debe tumbar a los demás del mismo aviso.
           if (error) { console.error("No se pudo guardar", m.id, error.message); continue; }
+
+          // Foto, documento o audio: se baja de Meta y se guarda en el bucket `whatsapp`
+          // (SQL 87) antes de que Meta lo borre. Va aparte para contestar 200 rápido.
+          if (datos.p_media_id && data?.conversacion_id && !data?.repetido) {
+            guardarArchivo({
+              wa_message_id: m.id, media_id: datos.p_media_id,
+              conversacion_id: data.conversacion_id, nombre: nombreArchivo,
+            });
+          }
 
           // "BAJA" (o el botón de baja de marketing de Meta): no más campañas a ese número.
           // El mensaje ya quedó guardado arriba; aquí solo se anota la baja (SQL 56) y no

@@ -459,3 +459,10 @@ verify_jwt = false
 # ---------------------------------------------------------------------------
 [functions.enviar-whatsapp]
 verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# media-whatsapp (SQL 87): trae de Meta las fotos de WhatsApp que faltan. La llama el admin
+# desde la bandeja; valida sola con auth.getUser, como leer-placa.
+# ---------------------------------------------------------------------------
+[functions.media-whatsapp]
+verify_jwt = false

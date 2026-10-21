@@ -4,12 +4,80 @@ import {
   nombreConversacion, haceCuanto, estadoVentana, enlaceWhatsApp, esBorrador,
   cargarBandeja, cargarMensajes, cargarContactos, registrarRespuesta,
   marcarLeida, cerrarConversacion, vincularConversacion,
-  cargarAgente, guardarAgente, marcarBorradorEnviado
+  cargarAgente, guardarAgente, marcarBorradorEnviado,
+  claseMedia, estadoArchivo, enlacesArchivos, traerArchivos, resumenTraidos
 } from './lib/whatsapp'
 import { cargarConfig, cargarCola, agruparCola, responderPorApi } from './lib/salidaWa'
 import { ColaSalida, Campanas } from './SalidaWhatsApp'
 
 const cuando = iso => iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : ''
+
+// ---------------------------------------------------------------------------
+// El archivo de un mensaje (SQL 87): la foto en miniatura (al tocarla se abre grande), el
+// audio o el video con su reproductor, o el documento con "Abrir". Si todavía no está en
+// el CRM, dice por qué y ofrece traerlo de Meta mientras no pasen los 30 días.
+// ---------------------------------------------------------------------------
+function ArchivoMensaje({ m, url, ocupado, onTraer }) {
+  const clase = claseMedia(m)
+  if (!clase) return null
+  const pendiente = estadoArchivo(m)
+  if (pendiente) {
+    return (
+      <div style={{ margin: '4px 0 6px' }}>
+        <span className="etiqueta etiqueta-aviso">{pendiente.puede ? 'Sin guardar' : 'Ya no está'}</span>
+        <span style={{ display: 'block', marginTop: 4 }}>{pendiente.texto}</span>
+        {pendiente.puede && (
+          <button type="button" style={{ marginTop: 6 }} disabled={ocupado} onClick={() => onTraer(m.id)}>
+            {ocupado ? 'Trayendo…' : 'Traer de Meta'}
+          </button>
+        )}
+      </div>
+    )
+  }
+  if (!url) return <span className="etiqueta etiqueta-aviso">No se pudo abrir el archivo: actualiza la conversación</span>
+  const nombre = m.media_nombre || { imagen: 'la foto', audio: 'el audio', video: 'el video', documento: 'el documento' }[clase]
+  return (
+    <div style={{ margin: '4px 0 6px' }}>
+      {clase === 'imagen' && (
+        <a href={url} target="_blank" rel="noreferrer" aria-label="Abrir la foto en grande">
+          <img src={url} alt={m.texto || 'Foto que mandó el cliente'} loading="lazy"
+            style={{ display: 'block', maxWidth: '100%', maxHeight: 280, borderRadius: 8 }} />
+        </a>
+      )}
+      {clase === 'audio' && <audio controls preload="none" src={url} style={{ width: '100%' }} />}
+      {clase === 'video' && <video controls preload="metadata" src={url} style={{ width: '100%', maxHeight: 320 }} />}
+      {/* El audio de WhatsApp (ogg) no suena en todos los iPhone: "Abrir" lo baja aparte. */}
+      <a className="btn" href={url} target="_blank" rel="noreferrer" style={{ marginTop: 6 }}>
+        Abrir {nombre}
+      </a>
+    </div>
+  )
+}
+
+// Botón de la bandeja: guarda de una vez lo que llegó antes de este cambio o falló al llegar.
+function TraerPendientes() {
+  const [ocupado, setOcupado] = useState(false)
+  const [resultado, setResultado] = useState(null)
+  async function traer() {
+    setOcupado(true); setResultado(null)
+    const r = await traerArchivos()
+    setOcupado(false)
+    setResultado(r.ok ? { tipo: r.fallidos ? 'aviso' : 'ok', texto: resumenTraidos(r) } : { tipo: 'error', texto: r.texto })
+  }
+  return (
+    <section className="tarjeta">
+      <h3>Fotos y documentos</h3>
+      <p className="ayuda">
+        Lo que te mandan se guarda solo en el CRM al llegar. Si algo quedó en Meta (llegó antes
+        de este cambio o falló), tráelo aquí: Meta lo borra a los 30 días.
+      </p>
+      <button type="button" disabled={ocupado} onClick={traer}>
+        {ocupado ? 'Trayendo…' : 'Traer lo que falta de los últimos 30 días'}
+      </button>
+      {resultado && <Alerta tipo={resultado.tipo}>{resultado.texto}</Alerta>}
+    </section>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Una conversación abierta: los mensajes y la caja para responder. Componente de nivel
@@ -22,11 +90,24 @@ function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState('')
   const [mensaje, setMensaje] = useState('')
+  const [enlaces, setEnlaces] = useState({})
+  const [trayendo, setTrayendo] = useState(null)
 
   async function cargar() {
     const r = await cargarMensajes(conv.id)
-    if (r.ok) setMensajes(r.mensajes)
-    else setError(r.texto)
+    if (!r.ok) return setError(r.texto)
+    setMensajes(r.mensajes)
+    setEnlaces(await enlacesArchivos(r.mensajes))
+  }
+
+  async function traer(id) {
+    setError(''); setMensaje(''); setTrayendo(id)
+    const r = await traerArchivos(id)
+    setTrayendo(null)
+    if (!r.ok) return setError(r.texto)
+    if (r.fallidos) setError(resumenTraidos(r))
+    else setMensaje(resumenTraidos(r))
+    cargar()
   }
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -128,7 +209,9 @@ function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
         {mensajes?.length === 0 && <p className="ayuda">Todavía no hay mensajes en esta conversación.</p>}
         {(mensajes || []).map(m => (
           <div key={m.id} className={`burbuja${m.direccion === 'saliente' ? ' burbuja-mia' : ''}`}>
-            {m.texto || `(${m.tipo})`}
+            <ArchivoMensaje m={m} url={enlaces[m.media_ruta]} ocupado={trayendo === m.id} onTraer={traer} />
+            {/* Un documento sin pie trae su nombre como texto: ya lo dice el botón "Abrir". */}
+            {m.texto && m.texto !== m.media_nombre ? m.texto : (claseMedia(m) ? null : `(${m.tipo})`)}
             <span className="ayuda" style={{ display: 'block' }}>
               {cuando(m.wa_timestamp || m.created_at)}
               {m.direccion === 'saliente' && m.enviado_por && <> · {m.enviado_por}</>}
@@ -284,6 +367,8 @@ export default function WhatsApp() {
       {pestana === 'campanas' && enLinea && <Campanas />}
       {pestana === 'bandeja' && <>
       {error && <Alerta tipo="error">{error}</Alerta>}
+
+      {enLinea && <TraerPendientes />}
 
       {/* El agente arranca apagado y en borrador: redacta y tú mandas. Se pasa a
           automático cuando lo hayas visto contestar unas cuantas veces. */}

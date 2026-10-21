@@ -82,7 +82,7 @@ export async function cargarBandeja(incluirCerradas = false) {
 export async function cargarMensajes(conversacionId) {
   try {
     const { data, error } = await supabase.from('mensajes_wa')
-      .select('id, direccion, tipo, texto, estado, enviado_por, wa_timestamp, created_at')
+      .select('id, direccion, tipo, texto, estado, enviado_por, wa_timestamp, created_at, media_id, media_ruta, media_mime, media_nombre, media_error')
       .eq('conversacion_id', conversacionId)
       .order('created_at')
     if (error) return { ok: false, texto: textoDeError(error) }
@@ -90,6 +90,76 @@ export async function cargarMensajes(conversacionId) {
   } catch (e) {
     return { ok: false, texto: textoDeError(e) }
   }
+}
+
+// ---- fotos, documentos y audios (SQL 87) ----
+
+export const BUCKET_MEDIA = 'whatsapp'
+const DIAS_EN_META = 30
+
+// Cómo se muestra el archivo de un mensaje: 'imagen' | 'audio' | 'video' | 'documento',
+// o null si el mensaje no trae archivo. Manda el tipo real del archivo; sin él, el del mensaje.
+export function claseMedia(m) {
+  if (!m?.media_id && !m?.media_ruta) return null
+  const mime = String(m.media_mime || '')
+  if (mime.startsWith('image/')) return 'imagen'
+  if (mime.startsWith('audio/')) return 'audio'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime) return 'documento'
+  return { imagen: 'imagen', audio: 'audio', documento: 'documento' }[m.tipo] || 'documento'
+}
+
+const NOMBRES = { imagen: 'La foto', audio: 'El audio', video: 'El video', documento: 'El documento' }
+
+// Qué pasa con un archivo que todavía no está en el CRM, en palabras, y si aún se puede traer.
+export function estadoArchivo(m, ahora = new Date()) {
+  if (!m?.media_id || m.media_ruta) return null
+  const quien = NOMBRES[claseMedia(m)] || 'El archivo'
+  const fecha = new Date(m.wa_timestamp || m.created_at)
+  const vencido = Number.isFinite(+fecha) && (ahora - fecha) > DIAS_EN_META * 86400000
+  if (vencido) return { puede: false, texto: `${quien} ya no se puede traer: Meta lo borra a los 30 días.` }
+  if (m.media_error) return { puede: true, texto: `${quien} no se pudo guardar: ${m.media_error}` }
+  return { puede: true, texto: `${quien} todavía está en Meta y no se ha guardado.` }
+}
+
+// Enlaces firmados (1 hora) de los archivos de una conversación, por ruta. Solo el admin
+// puede leer el bucket; sin enlace, la burbuja dice que no se pudo abrir.
+export async function enlacesArchivos(mensajes) {
+  const rutas = [...new Set((mensajes || []).map(m => m.media_ruta).filter(Boolean))]
+  if (!rutas.length) return {}
+  try {
+    const { data } = await supabase.storage.from(BUCKET_MEDIA).createSignedUrls(rutas, 3600)
+    return Object.fromEntries((data || []).filter(x => x.signedUrl).map(x => [x.path, x.signedUrl]))
+  } catch {
+    return {}
+  }
+}
+
+// Trae de Meta lo que falta (Edge Function `media-whatsapp`). Con `mensajeId`, solo ese.
+export async function traerArchivos(mensajeId = null) {
+  try {
+    const { data, error } = await supabase.functions.invoke('media-whatsapp', {
+      body: mensajeId ? { mensaje: mensajeId } : {},
+    })
+    if (error) {
+      let detalle = ''
+      try { detalle = (await error.context?.json())?.error || '' } catch { /* sin cuerpo */ }
+      return { ok: false, texto: detalle || 'No se pudo hablar con Meta.' }
+    }
+    if (data?.error) return { ok: false, texto: data.error }
+    return { ok: true, ...data }
+  } catch (e) {
+    return { ok: false, texto: textoDeError(e) }
+  }
+}
+
+// El resultado de traer archivos, en una frase.
+export function resumenTraidos(r) {
+  if (!r?.revisados) return 'No había archivos pendientes de los últimos 30 días.'
+  const partes = []
+  if (r.guardados) partes.push(r.guardados === 1 ? 'Se guardó 1 archivo.' : `Se guardaron ${r.guardados} archivos.`)
+  if (r.fallidos) partes.push(`${r.fallidos === 1 ? '1 no se pudo' : `${r.fallidos} no se pudieron`}: ${(r.errores || []).join(' ')}`)
+  return partes.join(' ')
 }
 
 // Personas a las que se puede ligar un número desconocido.

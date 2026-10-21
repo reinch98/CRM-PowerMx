@@ -1044,6 +1044,30 @@ PowerMx quedó **verificado en Meta el 04/10/2026**. Lo que faltaba para que la 
   (1) webhook en la app correcta + `messages`, (2) `subscribed_apps` de la WABA, (3) app publicada, (4) los
   secretos de ESA app.
 
+## Fotos, documentos y audios de WhatsApp (SQL 87, 20/10/2026) — aplicado, probado (7/7) y desplegado
+
+Pedido de Caña: "¿cómo puedo ver las imágenes que mandan al WhatsApp?". El número vive solo en la Cloud API
+(no está en la app del celular ni en WhatsApp Web, y Meta no tiene bandeja), así que **la bandeja del CRM es
+la única forma de verlas**. Antes el webhook guardaba solo el `media_id` y el archivo se quedaba en Meta,
+que lo borra a los **30 días**.
+- **Al llegar**, el webhook `whatsapp` baja el archivo de Meta (dos llamadas con `WHATSAPP_TOKEN`: pedir la
+  dirección temporal y bajarla) y lo sube al bucket privado **`whatsapp`** como `<conversación>/<wamid>.<ext>`.
+  Va en `EdgeRuntime.waitUntil` para seguir contestando 200 rápido. La lógica vive en
+  `supabase/functions/_shared/mediaWa.js` (`bajarMedia`, JS plano, 8 pruebas en `pruebas/mediaWa.prueba.js`)
+  y **nunca lanza**: un fallo queda como `mensajes_wa.media_error` con su motivo en palabras.
+- **Lo que quedó en Meta** (llegó antes o falló) se trae con la Edge Function **`media-whatsapp`** (solo admin,
+  con SU sesión; `verify_jwt = false` y valida con `auth.getUser`). `{}` = hasta 20 pendientes de los últimos
+  30 días; `{mensaje}` = ese, aunque ya haya fallado. `media_pendientes` se salta lo que falló 3 veces
+  (`media_intentos`); pedido a mano sí sale.
+- Permisos: el bucket lo **lee solo el admin**; el bot sube y reemplaza (`upsert`), no lee. Tope 25 MB.
+- Pantalla: en la conversación, foto en miniatura (al tocarla se abre grande), audio y video con reproductor,
+  y "Abrir …" para todo (el ogg de WhatsApp no suena en todos los iPhone). Sin guardar: "Sin guardar" +
+  "Traer de Meta"; pasados 30 días: "Ya no está". En la bandeja, tarjeta "Fotos y documentos" con "Traer lo
+  que falta de los últimos 30 días". Medido en celular: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos
+  < 48 px nuevos, 0 px de desborde.
+- Al aplicarlo había 3 mensajes con archivo, los 3 todavía dentro de los 30 días.
+- **Falta (punto 4, acordado para después):** "Guardar en el equipo / en la orden" desde la bandeja.
+
 ## Campañas mensuales de WhatsApp (SQL 57, 03/10/2026) — aplicado y probado en Supabase el 03/10/2026 (9 de 9 "ok")
 
 Sobre la cola de la 56. Solo clientes de PowerMx (los "PowerMx (confirmó)" de la hoja Asignación del
