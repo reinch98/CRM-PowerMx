@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase'
 import { Alerta } from './ui'
 import { aFormulario, paraGuardar } from './lib/formularios'
 import { todasLasFilas } from './lib/paginar'
+import { avisoMeta, enTandas, productosTexto } from './lib/meta'
 
 const CATEGORIAS = [
   ['generador', 'Generadores'],
@@ -112,6 +113,8 @@ export default function Inventario() {
 
   const [mov, setMov] = useState(vacioMovimiento)
   const [edicionRapida, setEdicionRapida] = useState({})  // { [id]: { precio, costo, minimo, grupo_equivalente } }
+  const [soloMeta, setSoloMeta] = useState(false)
+  const [marcandoMeta, setMarcandoMeta] = useState(false)
 
   useEffect(() => { cargar() }, [])
 
@@ -146,9 +149,40 @@ export default function Inventario() {
     const t = busqueda.trim().toLowerCase()
     return productos.filter(p =>
       (!categoria || p.categoria === categoria) &&
+      (!soloMeta || p.en_meta) &&
       (!t || p.sku.toLowerCase().includes(t) || (p.nombre || '').toLowerCase().includes(t))
     )
-  }, [productos, categoria, busqueda])
+  }, [productos, categoria, busqueda, soloMeta])
+
+  // -------------------------------------------------------------------------
+  // Catálogo de Meta (SQL 88): solo lo marcado va a Facebook, Instagram y WhatsApp. Se guarda
+  // al tocar la casilla; "los que se ven" usa el filtro de arriba (categoría y búsqueda).
+  // -------------------------------------------------------------------------
+  const enMeta = productos.filter(p => p.en_meta).length
+
+  async function marcarMeta(lista, valor) {
+    const ids = lista.filter(p => !!p.en_meta !== valor).map(p => p.id)
+    if (ids.length === 0) return
+    setError(''); setMensaje(''); setMarcandoMeta(true)
+    for (const tanda of enTandas(ids)) {
+      const { error: e } = await supabase.from('productos').update({ en_meta: valor }).in('id', tanda)
+      if (e) { setMarcandoMeta(false); setError(e.message); return cargar() }
+    }
+    setMarcandoMeta(false)
+    setMensaje(valor
+      ? `${productosTexto(ids.length)} ${ids.length === 1 ? 'irá' : 'irán'} a Meta en la siguiente actualización del sitio.`
+      : `${productosTexto(ids.length)} ya no ${ids.length === 1 ? 'irá' : 'irán'} a Meta.`)
+    cargar()
+  }
+
+  function marcarVisibles(valor) {
+    const cambian = visibles.filter(p => !!p.en_meta !== valor).length
+    if (cambian === 0) return
+    const ok = window.confirm(valor
+      ? `¿Mandar a Meta los ${productosTexto(cambian)} que se ven ahora?`
+      : `¿Quitar de Meta los ${productosTexto(cambian)} que se ven ahora?`)
+    if (ok) marcarMeta(visibles, valor)
+  }
 
   const existencias = useMemo(() => {
     const ids = new Set(visibles.map(p => p.id))
@@ -410,13 +444,33 @@ export default function Inventario() {
       {/* ------------------------------------------------------------------ */}
       {vista === 'catalogo' && (
         <>
+          <section className="tarjeta">
+            <h3 style={{ marginTop: 0 }}>Catálogo de Meta</h3>
+            <p className="ayuda" style={{ marginTop: 0 }}>
+              {productosTexto(enMeta)} {enMeta === 1 ? 'va' : 'van'} a Facebook, Instagram y WhatsApp. El sitio
+              sigue mostrando todo; a Meta solo va lo marcado, y se actualiza cuando se actualiza el sitio.
+            </p>
+            <label className="casilla">
+              <input type="checkbox" checked={soloMeta} onChange={e => setSoloMeta(e.target.checked)} />
+              Ver solo los que van a Meta
+            </label>
+            <div className="fila" style={{ marginTop: 8 }}>
+              <button type="button" disabled={marcandoMeta || visibles.length === 0} onClick={() => marcarVisibles(true)}>
+                Mandar a Meta los {visibles.length} que se ven
+              </button>
+              <button type="button" disabled={marcandoMeta || visibles.length === 0} onClick={() => marcarVisibles(false)}>
+                Quitar de Meta los que se ven
+              </button>
+            </div>
+          </section>
+
           <div className="tabla-scroll">
             <table>
               <thead>
                 <tr>
                   <th>SKU</th><th>Producto</th><th>Marca</th>
                   <th>Precio</th><th>Costo</th><th>Margen</th><th>Mínimo</th>
-                  <th>Grupo equivalente</th><th>Publicado</th><th></th>
+                  <th>Grupo equivalente</th><th>Publicado</th><th>Meta</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -468,6 +522,17 @@ export default function Inventario() {
                       </td>
                       <td>{p.publicar ? 'Sí' : <span className="estado estado-rechazada">No</span>}</td>
                       <td>
+                        <label className="casilla" style={{ whiteSpace: 'nowrap' }}>
+                          <input type="checkbox" checked={!!p.en_meta} disabled={marcandoMeta}
+                            aria-label={`Mandar ${p.sku} a Meta`}
+                            onChange={e => marcarMeta([p], e.target.checked)} />
+                          {p.en_meta ? 'Va' : 'No'}
+                        </label>
+                        {p.en_meta && avisoMeta(p) && (
+                          <div><span className="estado estado-pendiente">{avisoMeta(p)}</span></div>
+                        )}
+                      </td>
+                      <td>
                         <div className="fila" style={{ gap: 6 }}>
                           {edicionRapida[p.id] && <button className="btn-primario" onClick={() => guardarFila(p)}>Guardar</button>}
                           <button onClick={() => editarProducto(p)}>Editar</button>
@@ -478,7 +543,7 @@ export default function Inventario() {
                   )
                 })}
                 {visibles.length === 0 && (
-                  <tr><td colSpan={9} className="ayuda">No hay productos con esos filtros.</td></tr>
+                  <tr><td colSpan={11} className="ayuda">No hay productos con esos filtros.</td></tr>
                 )}
               </tbody>
             </table>

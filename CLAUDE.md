@@ -1068,6 +1068,25 @@ que lo borra a los **30 días**.
 - Al aplicarlo había 3 mensajes con archivo, los 3 todavía dentro de los 30 días.
 - **Falta (punto 4, acordado para después):** "Guardar en el equipo / en la orden" desde la bandeja.
 
+## Catálogo de Meta: Facebook, Instagram y WhatsApp (SQL 88, 22/10/2026) — SQL aplicado y probado (3/3)
+
+Pedido de Caña: promocionar los artículos desde Meta, **solo los seleccionados**. En México Meta no cobra
+dentro de Facebook/Instagram: el catálogo muestra y lleva al sitio (o al chat de WhatsApp); se cobra aparte.
+- **`productos.en_meta`** (nace en false). Se marca en **Inventario → Catálogo**: columna "Meta" con su casilla
+  (guarda al tocarla) y la tarjeta "Catálogo de Meta" con "Ver solo los que van a Meta" y "Mandar / Quitar de
+  Meta los que se ven" (usa el filtro de categoría y búsqueda; con confirmación; update en tandas de 100,
+  `src/lib/meta.js`, 4 pruebas). Un marcado que no saldrá lo dice: sin precio, en dólares, sin publicar, renta
+  o paquete (`avisoMeta`). `catalogo_publico()` (redefinida desde la viva) manda `en_meta`.
+- **El archivo lo arma el sitio** (repo `POWERMX-sitio`): `Inventario/feed-meta.js`, llamado al final de
+  `convertir.js`, escribe `sitio-publicar/catalogo-meta.csv` con los productos PÚBLICOS marcados (id = SKU,
+  precio "N MXN", `sale_price` si hay promoción, foto, marca, disponible = `in stock` / sobre pedido =
+  `available for order`). Fuera aunque estén marcados: sin precio, sin foto, en dólares. Corrido desde el
+  Excel no se toca (la selección vive en el CRM). Meta lo lee solo cada día de
+  `https://powermx.com.mx/catalogo-meta.csv` (se programa en el Administrador de ventas).
+- Cada producto tiene su enlace: `catalogo-generadores?sku=…` (resalta la tarjeta), `catalogo-solar?sku=…` y
+  `catalogo-refacciones?sku=…` (lo buscan por su código). Sin `.html`: Cloudflare lo redirige.
+- **Falta:** confirmar en el diagnóstico de Meta que acepta "available for order".
+
 ## Campañas mensuales de WhatsApp (SQL 57, 03/10/2026) — aplicado y probado en Supabase el 03/10/2026 (9 de 9 "ok")
 
 Sobre la cola de la 56. Solo clientes de PowerMx (los "PowerMx (confirmó)" de la hoja Asignación del

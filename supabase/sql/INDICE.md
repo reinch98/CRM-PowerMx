@@ -116,6 +116,7 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
 | 84 | `cotizaciones_proveedor` | E | ✔ | sí | Cotizaciones de proveedor: registrar, aceptar (crea pedidos), rechazar y cancelar (redefine `_archivo_en_uso`). |
 | 85 | `pagos_proveedor` | E | ✔ | sí | Comprobantes de pago a proveedor y anticipos: pagar facturas, anticipos, aplicarlos (redefine `_resumen_proveedor`). |
 | 86 | `factura_cierra_ciclo` | E | ✔ | sí | La factura se liga sola a su compra (UUID o folio+total) y a su cotización de proveedor; anticipos al aprobar (redefine `aprobar_documento`, `cotizaciones_proveedor_lista`, `carpeta_proveedor`). |
+| 88 | `productos_en_meta` | E | ✔ | sí | `productos.en_meta`: qué productos van al catálogo de Meta; `catalogo_publico()` lo manda. |
 | 87 | `media_whatsapp` | E | ✔ | sí | Fotos, documentos y audios de WhatsApp: columnas `media_*`, bucket privado `whatsapp`, `media_pendientes`, `guardar_media_wa`. |
 
 ## Funciones y cron en Supabase (fuera de esta carpeta)
