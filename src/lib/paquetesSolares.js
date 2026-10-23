@@ -58,11 +58,14 @@ export function tituloPaquete(p) {
   return partes.join(' · ')
 }
 
-export function textoRegla(r) {
+// margenHibrido: el de los híbridos A y B (SQL 89, Precios → Costeo); sin él, los híbridos usan la regla.
+export function textoRegla(r, margenHibrido = null) {
   if (!r) return 'Sin regla de margen: créala en Proveedor → Reglas de margen.'
   const sobre = r.sobre === 'precio' ? 'sobre el precio' : 'sobre el costo'
   const de = r.categoria ? 'la regla de paquetes' : 'la regla general'
-  return `Margen de ${de}: ${Number(r.margen_pct)} % ${sobre}. Precio con IVA, terminado en 999.`
+  if (margenHibrido == null) return `Margen de ${de}: ${Number(r.margen_pct)} % ${sobre}. Precio con IVA, terminado en 999.`
+  return `Interconectado: ${Number(r.margen_pct)} % ${sobre} (${de}). Híbridos: ${Number(margenHibrido)} % sobre el costo ` +
+    '(Precios → Costeo de paquetes solares). Precio con IVA, terminado en 999.'
 }
 
 // ---- llamadas ----

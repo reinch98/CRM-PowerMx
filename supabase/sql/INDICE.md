@@ -118,6 +118,7 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
 | 86 | `factura_cierra_ciclo` | E | ✔ | sí | La factura se liga sola a su compra (UUID o folio+total) y a su cotización de proveedor; anticipos al aprobar (redefine `aprobar_documento`, `cotizaciones_proveedor_lista`, `carpeta_proveedor`). |
 | 88 | `productos_en_meta` | E | ✔ | sí | `productos.en_meta`: qué productos van al catálogo de Meta; `catalogo_publico()` lo manda. |
 | 87 | `media_whatsapp` | E | ✔ | sí | Fotos, documentos y audios de WhatsApp: columnas `media_*`, bucket privado `whatsapp`, `media_pendientes`, `guardar_media_wa`. |
+| 89 | `margen_hibridos` | E | ✔ | sí | Margen propio de los paquetes híbridos (`parametros_costeo.margen_hibrido_pct`, 22 %); redefine `costear_paquete`. |
 
 ## Funciones y cron en Supabase (fuera de esta carpeta)
 

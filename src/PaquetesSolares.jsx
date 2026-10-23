@@ -257,6 +257,7 @@ export default function PaquetesSolares() {
   const lista = datos?.paquetes || []
   const pendientes = porPublicar(lista)
   const regla = lista.find(p => p.regla)?.regla
+  const margenHibrido = lista.find(p => p.margen_hibrido_pct != null)?.margen_hibrido_pct ?? null
 
   async function recalcular() {
     setOcupado(true)
@@ -288,7 +289,7 @@ export default function PaquetesSolares() {
               <span className="kpi-nota">{pendientes === 1 ? 'precio' : 'precios'} de {lista.length} paquetes</span>
             </div>
           </div>
-          <p className="ayuda">{textoRegla(regla)}</p>
+          <p className="ayuda">{textoRegla(regla, margenHibrido)}</p>
           <button type="button" disabled={ocupado} onClick={recalcular} style={{ marginBottom: 12 }}>
             {ocupado ? 'Recalculando…' : 'Recalcular ahora'}
           </button>

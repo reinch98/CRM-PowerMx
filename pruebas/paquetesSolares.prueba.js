@@ -37,6 +37,10 @@ test('título y regla', () => {
     'Margen de la regla general: 30 % sobre el costo. Precio con IVA, terminado en 999.')
   assert.match(textoRegla({ categoria: 'paquete_solar', margen_pct: 25, sobre: 'precio' }), /regla de paquetes: 25 % sobre el precio/)
   assert.match(textoRegla(null), /Sin regla de margen/)
+  // SQL 89: los híbridos con su propio margen.
+  assert.equal(textoRegla({ categoria: null, margen_pct: 30, sobre: 'costo' }, 22),
+    'Interconectado: 30 % sobre el costo (la regla general). Híbridos: 22 % sobre el costo ' +
+    '(Precios → Costeo de paquetes solares). Precio con IVA, terminado en 999.')
 })
 
 test('estados con palabra y cantidades', () => {

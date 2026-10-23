@@ -1963,6 +1963,18 @@ PROMOCIÓN, con un margen considerable pero comprándolo en Solarama".
   filtro "Híbrido" agrupa los dos con batería. Probado con el JSON de hoy (igual que antes) y con uno simulado.
 - **Falta:** el aviso de "precios por publicar" en Inicio; "Sistema a la medida" en Cotizaciones;
   promociones de paquetes.
+- **SQL 89 — margen propio de los híbridos (22/10/2026), aplicado y probado (5/5) con la CLI.** Tras una
+  investigación de Marketplace en Mérida (hoja "Comparativa mercado" del borrador de Excel), Caña pidió publicar
+  los híbridos con **22 % sobre el costo**. Los híbridos A de Essential a Elite seguían con precios viejos POR
+  DEBAJO del costo (68,000–120,000 contra 72,842–133,298 de costo). `parametros_costeo.margen_hibrido_pct`
+  (se edita en Precios → Costeo; borrarlo regresa los híbridos a la regla) y `costear_paquete` (redefinida
+  desde la viva) lo aplica a `hibrido_a` y `hibrido_b`; el interconectado sigue con la regla de margen (30 %).
+  **No sirve escribir el precio a mano:** `recalcular_paquetes` lo regresaría al 30 % en la siguiente
+  sincronización (la diferencia cae en el ±15 % automático). Publicados ese día con `publicar_precio_paquete`:
+  híbrido A Starter 91,999 · Essential 103,999 · Comfort 122,999 · Plus 158,999 · Premium 169,999 · Elite
+  188,999; híbrido B Starter 95,999. Los híbridos B de Essential a Elite siguen sin publicarse. De Comfort a
+  Elite el interconectado sigue con la composición vieja (no salió de la receta), así que su ficha en el sitio
+  dice kW viejos mientras el híbrido ya va con paneles de 630 W.
 
 ## Cotizaciones: editar, PDF, pago y garantía, eliminar (05/10/2026)
 
