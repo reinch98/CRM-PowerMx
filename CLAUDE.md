@@ -1088,7 +1088,8 @@ Pedido de Caña: "que el agente empiece a responder por sí mismo y que me notif
 - **Llaves VAPID:** las pone Caña con `node scripts/generar_llaves_avisos.mjs` (guarda `VAPID_PUBLIC_KEY`,
   `VAPID_PRIVATE_KEY` y `VAPID_CONTACTO` sin imprimirlas). Volver a correrlo cambia las llaves y obliga a reactivar cada
   dispositivo. Sin llaves, el webhook solo deja la nota "faltan las llaves VAPID" en su registro.
-- **Sin probar en un celular real:** el aviso de verdad (el cifrado se probó en Node, no contra Google/Apple).
+- **Llaves puestas y aviso de prueba recibido por Caña el 26/10/2026.** Falta ver llegar el aviso de un mensaje
+  real de un cliente y la primera respuesta automática del agente.
 
 ## Catálogo de Meta: Facebook, Instagram y WhatsApp (SQL 88, 22/10/2026) — SQL aplicado y probado (3/3)
 
