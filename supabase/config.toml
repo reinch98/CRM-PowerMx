@@ -466,3 +466,10 @@ verify_jwt = false
 # ---------------------------------------------------------------------------
 [functions.media-whatsapp]
 verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# avisos-push (SQL 90): llave publica y aviso de prueba. La llama el admin desde el CRM; valida sola
+# con auth.getUser, como media-whatsapp.
+# ---------------------------------------------------------------------------
+[functions.avisos-push]
+verify_jwt = false

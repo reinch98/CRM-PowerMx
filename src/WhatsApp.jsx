@@ -9,6 +9,7 @@ import {
 } from './lib/whatsapp'
 import { cargarConfig, cargarCola, agruparCola, responderPorApi } from './lib/salidaWa'
 import { ColaSalida, Campanas } from './SalidaWhatsApp'
+import { soporteAvisos, entornoActual, estadoAvisos, activarAvisos, quitarAvisos, probarAvisos } from './lib/avisosPush'
 
 const cuando = iso => iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : ''
 
@@ -51,6 +52,60 @@ function ArchivoMensaje({ m, url, ocupado, onTraer }) {
         Abrir {nombre}
       </a>
     </div>
+  )
+}
+
+// Avisos en este dispositivo (SQL 90): el celular o la compu suena cuando entra un WhatsApp.
+function AvisosDispositivo() {
+  const [estado, setEstado] = useState(null)   // null = revisando; { activo }
+  const [ocupado, setOcupado] = useState(false)
+  const [resultado, setResultado] = useState(null)
+  const soporte = soporteAvisos(entornoActual())
+
+  useEffect(() => {
+    let vivo = true
+    estadoAvisos().then(e => { if (vivo) setEstado(e) })
+    return () => { vivo = false }
+  }, [])
+
+  async function hacer(fn, exito) {
+    setOcupado(true); setResultado(null)
+    const r = await fn()
+    setOcupado(false)
+    if (!r.ok) return setResultado({ tipo: 'error', texto: r.texto })
+    setResultado({ tipo: 'ok', texto: typeof exito === 'function' ? exito(r) : exito })
+    setEstado(await estadoAvisos())
+  }
+
+  return (
+    <section className="tarjeta">
+      <h3>Avisos de mensajes nuevos</h3>
+      {!soporte.puede ? (
+        <Alerta tipo="info" palabra="En este dispositivo no">{soporte.motivo}</Alerta>
+      ) : estado?.activo ? (
+        <>
+          <p className="ayuda"><span className="etiqueta">Activos</span> Este dispositivo te avisa cada vez que alguien escribe al WhatsApp de PowerMx.</p>
+          <div className="fila">
+            <button type="button" disabled={ocupado} onClick={() => hacer(probarAvisos,
+              r => r.enviados ? 'Aviso de prueba enviado: debe llegarte en unos segundos.' : `No salió el aviso${r.fallas?.length ? `: ${r.fallas.join(' ')}` : '.'}`)}>
+              Mandar un aviso de prueba
+            </button>
+            <button type="button" disabled={ocupado} onClick={() => hacer(quitarAvisos, 'Este dispositivo ya no te avisa.')}>
+              Dejar de avisar aquí
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="ayuda">Activa los avisos en cada celular o computadora donde quieras enterarte. El navegador te va a pedir permiso.</p>
+          <button type="button" className="btn-primario" disabled={ocupado || estado === null}
+            onClick={() => hacer(activarAvisos, 'Listo: este dispositivo te va a avisar cuando llegue un mensaje.')}>
+            {ocupado ? 'Activando…' : 'Avisarme aquí cuando llegue un mensaje'}
+          </button>
+        </>
+      )}
+      {resultado && <Alerta tipo={resultado.tipo}>{resultado.texto}</Alerta>}
+    </section>
   )
 }
 
@@ -368,6 +423,7 @@ export default function WhatsApp() {
       {pestana === 'bandeja' && <>
       {error && <Alerta tipo="error">{error}</Alerta>}
 
+      {enLinea && <AvisosDispositivo />}
       {enLinea && <TraerPendientes />}
 
       {/* El agente arranca apagado y en borrador: redacta y tú mandas. Se pasa a

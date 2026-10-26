@@ -88,3 +88,34 @@ async function primeroLaCopia(peticion) {
   if (respuesta.ok) cache.put(peticion, respuesta.clone())
   return respuesta
 }
+
+// ---------------------------------------------------------------------------
+// Avisos en el celular (SQL 90): el webhook de WhatsApp manda un aviso cifrado cuando entra un
+// mensaje, y aquí se muestra. Tocarlo abre (o trae al frente) el CRM en la pantalla de WhatsApp.
+// ---------------------------------------------------------------------------
+self.addEventListener('push', evento => {
+  let aviso
+  try { aviso = evento.data ? evento.data.json() : {} } catch { aviso = { cuerpo: evento.data?.text() } }
+  evento.waitUntil(self.registration.showNotification(aviso.titulo || 'PowerMx CRM', {
+    body: aviso.cuerpo || 'Tienes un mensaje nuevo.',
+    icon: '/icono-192.png',
+    badge: '/icono-192.png',
+    tag: aviso.etiqueta || 'wa',       // varios mensajes del mismo número se juntan en un aviso
+    renotify: true,
+    data: { url: aviso.url || '/?ir=whatsapp' },
+  }))
+})
+
+self.addEventListener('notificationclick', evento => {
+  evento.notification.close()
+  const url = evento.notification.data?.url || '/?ir=whatsapp'
+  evento.waitUntil((async () => {
+    const abiertas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const propia = abiertas.find(c => new URL(c.url).origin === self.location.origin)
+    if (propia) {
+      await propia.focus()
+      return propia.navigate(url)
+    }
+    return self.clients.openWindow(url)
+  })())
+})

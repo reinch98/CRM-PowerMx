@@ -130,6 +130,23 @@ ${JSON.stringify(contexto)}`;
   return extra?.trim() ? `${base}\n\nIndicaciones de PowerMx:\n${extra.trim()}` : base;
 }
 
+// Que la respuesta salga ya, sin esperar al reloj de cada minuto. La llamada usa el mismo secreto
+// del reloj (CRON_SECRET, compartido por todas las funciones del proyecto). Si falla no pasa nada:
+// el reloj la manda en el siguiente minuto.
+async function despertarEnvio() {
+  const secreto = Deno.env.get("CRON_SECRET");
+  if (!secreto) return;
+  try {
+    await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/enviar-whatsapp`, {
+      method: "POST",
+      headers: { "x-cron-secret": secreto, "Content-Type": "application/json" },
+      body: "{}",
+    });
+  } catch (e) {
+    console.error("No se pudo despertar el envío:", e instanceof Error ? e.message : e);
+  }
+}
+
 function responder(cuerpo: unknown, estado = 200) {
   return new Response(JSON.stringify(cuerpo), { status: estado, headers: JSON_H });
 }
@@ -255,15 +272,27 @@ Deno.serve(async (req) => {
 
     if (!texto) return responder({ ok: true, omitido: true, motivo: "el agente no redactó nada" });
 
-    // En 'borrador' queda anotado y el admin lo manda desde la bandeja. En 'automatico'
-    // saldría por la API de WhatsApp; eso se enciende cuando haya número propio.
-    const estado = config?.modo === "automatico" ? "por_enviar" : "borrador";
+    // En 'automatico' la respuesta va a la cola de salida (SQL 90) y sale por la API; la base no
+    // la deja salir sola si la ventana de 24 h se cerró o si una persona del CRM escribió en esa
+    // conversación hace poco: en esos casos queda como borrador, igual que en modo 'borrador'.
+    let motivo: string | null = null;
+    if (config?.modo === "automatico") {
+      const { data: envio, error: errEnvio } = await sb.rpc("wa_enviar_respuesta_agente", {
+        p_conversacion: conversacion, p_texto: texto,
+      });
+      if (errEnvio) return responder({ error: errEnvio.message }, 400);
+      if (envio?.enviado) {
+        await despertarEnvio();
+        return responder({ ok: true, estado: "por_enviar", texto, cita, cotizacion });
+      }
+      motivo = envio?.motivo ?? null;
+    }
     const { error: errGuardar } = await sb.rpc("registrar_mensaje_saliente", {
-      p_conversacion: conversacion, p_texto: texto, p_estado: estado,
+      p_conversacion: conversacion, p_texto: texto, p_estado: "borrador",
     });
     if (errGuardar) return responder({ error: errGuardar.message }, 400);
 
-    return responder({ ok: true, estado, texto, cita, cotizacion });
+    return responder({ ok: true, estado: "borrador", motivo, texto, cita, cotizacion });
   } catch (e) {
     return responder({ error: "Falló el agente.", detalle: e instanceof Error ? e.message : String(e) }, 500);
   }

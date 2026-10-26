@@ -27,6 +27,7 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { esBaja, errorDeAcuse } from "../_shared/whatsapp.js";
 import { bajarMedia } from "../_shared/mediaWa.js";
+import { avisarATodos, avisoDeMensaje } from "../_shared/webpush.js";
 
 // Meta reintenta si no contesta rápido; mejor un 200 seco que hacerlo esperar.
 const OK = () => new Response("ok", { status: 200 });
@@ -160,6 +161,22 @@ function despertarAgente(conversacion: string) {
   })());
 }
 
+// Aviso push a los celulares del admin (SQL 90): "WhatsApp · <quién>: <qué mandó>". Aparte, para
+// contestarle a Meta de inmediato; si no hay llaves VAPID o nadie pidió avisos, no hace nada.
+function avisarMensaje(datos: { nombre: string | null; telefono: string; texto: string | null; tipo: string }) {
+  const sb = cliente;
+  if (!sb) return;
+  const tarea = avisarATodos(sb, avisoDeMensaje(datos), {
+    publica: Deno.env.get("VAPID_PUBLIC_KEY"),
+    privada: Deno.env.get("VAPID_PRIVATE_KEY"),
+    contacto: Deno.env.get("VAPID_CONTACTO") ?? "https://crm.powermx.com.mx",
+  }).then((r: { enviados: number; de: number; motivo?: string }) => {
+    if (r.motivo) console.error("Aviso push no salió:", r.motivo);
+  });
+  const rt = (globalThis as any).EdgeRuntime;
+  if (rt?.waitUntil) rt.waitUntil(tarea);
+}
+
 // Baja el archivo sin hacer esperar a Meta. Si falla, `bajarMedia` deja el motivo en el
 // mensaje y la bandeja ofrece "Traer de Meta" (función `media-whatsapp`).
 function guardarArchivo(m: { wa_message_id: string; media_id: string; conversacion_id: string; nombre: string | null }) {
@@ -223,6 +240,11 @@ Deno.serve(async (req) => {
           const { data, error } = await sb.rpc("registrar_mensaje_entrante", datos);
           // Un mensaje que falla no debe tumbar a los demás del mismo aviso.
           if (error) { console.error("No se pudo guardar", m.id, error.message); continue; }
+
+          // Aviso al celular del admin, solo por mensajes nuevos (un reintento de Meta no avisa dos veces).
+          if (!data?.repetido) {
+            avisarMensaje({ nombre, telefono: m.from, texto: datos.p_texto, tipo: datos.p_tipo });
+          }
 
           // Foto, documento o audio: se baja de Meta y se guarda en el bucket `whatsapp`
           // (SQL 87) antes de que Meta lo borre. Va aparte para contestar 200 rápido.

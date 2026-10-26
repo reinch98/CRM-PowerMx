@@ -1068,6 +1068,28 @@ que lo borra a los **30 días**.
 - Al aplicarlo había 3 mensajes con archivo, los 3 todavía dentro de los 30 días.
 - **Falta (punto 4, acordado para después):** "Guardar en el equipo / en la orden" desde la bandeja.
 
+## El agente contesta solo y avisos en el celular (SQL 90, 24/10/2026) — aplicado; agente en automático
+
+Pedido de Caña: "que el agente empiece a responder por sí mismo y que me notifique cuando nos envíen un mensaje".
+- **El modo automático no mandaba nada:** nació (27) antes de la cola de salida (56) y guardaba la respuesta como
+  `por_enviar` en `mensajes_wa`, que nadie vacía. Ahora `agente-whatsapp` llama `wa_enviar_respuesta_agente`, que la mete
+  a `salida_wa` (origen `respuesta`, aprobado por `agente`) y despierta `enviar-whatsapp` con `CRON_SECRET` para que salga
+  en segundos (si falla, el reloj la manda al minuto). **No contesta solo** con la ventana de 24 h cerrada ni si un ADMIN
+  escribió en esa conversación en los últimos `wa_agente.pausa_si_persona_min` (120): ahí deja borrador.
+  `wa_agente.modo = 'automatico'` desde el 24/10/2026 (tope 20 por número al día).
+- **Avisos push** (notificaciones web, estándar Web Push): `push_suscripciones` (una fila por navegador del admin, RLS
+  `push_propias`), `push_destinos()` y `push_resultado()` para la cuenta bot. El cifrado (RFC 8291) y la firma VAPID
+  (RFC 8292) están hechos a mano con WebCrypto en `supabase/functions/_shared/webpush.js`, sin dependencias; 5 pruebas en
+  `pruebas/webpush.prueba.js` descifran el aviso como lo haría el navegador y verifican la firma. El webhook `whatsapp`
+  avisa por cada mensaje nuevo (no por reintentos de Meta). `avisos-push` (admin; `verify_jwt = false`) da la llave
+  pública y manda un aviso de prueba. El service worker muestra el aviso y al tocarlo abre `/?ir=whatsapp`, que `App.jsx`
+  convierte en la pantalla WhatsApp. Pantalla: tarjeta "Avisos de mensajes nuevos" en la bandeja (`src/lib/avisosPush.js`,
+  5 pruebas). En iPhone solo funciona con el CRM abierto desde el ícono de la pantalla de inicio.
+- **Llaves VAPID:** las pone Caña con `node scripts/generar_llaves_avisos.mjs` (guarda `VAPID_PUBLIC_KEY`,
+  `VAPID_PRIVATE_KEY` y `VAPID_CONTACTO` sin imprimirlas). Volver a correrlo cambia las llaves y obliga a reactivar cada
+  dispositivo. Sin llaves, el webhook solo deja la nota "faltan las llaves VAPID" en su registro.
+- **Sin probar en un celular real:** el aviso de verdad (el cifrado se probó en Node, no contra Google/Apple).
+
 ## Catálogo de Meta: Facebook, Instagram y WhatsApp (SQL 88, 22/10/2026) — SQL aplicado y probado (3/3)
 
 Pedido de Caña: promocionar los artículos desde Meta, **solo los seleccionados**. En México Meta no cobra
@@ -1975,6 +1997,11 @@ PROMOCIÓN, con un margen considerable pero comprándolo en Solarama".
   188,999; híbrido B Starter 95,999. Los híbridos B de Essential a Elite siguen sin publicarse. De Comfort a
   Elite el interconectado sigue con la composición vieja (no salió de la receta), así que su ficha en el sitio
   dice kW viejos mientras el híbrido ya va con paneles de 630 W.
+- **Interconectado al 15 % (22/10/2026), sin SQL nuevo:** regla de margen de categoría `paquete_solar`, 15 %
+  sobre el costo (le gana a la general del 30 %; se ve en Proveedor → Reglas de margen; los híbridos siguen
+  con su 22 % del SQL 89). Publicados con `publicar_precio_paquete`: Starter 42,999 · Essential 53,999 ·
+  Comfort 72,999 · Plus 83,999 · Premium 93,999 · Elite 111,999. Comfort a Elite salieron por primera vez de la
+  receta, así que su ficha ya dice paneles de 630 W, kWp, ahorro e "incluye" nuevos.
 
 ## Cotizaciones: editar, PDF, pago y garantía, eliminar (05/10/2026)
 

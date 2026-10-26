@@ -131,7 +131,16 @@ export default function App() {
   // excepción: `inicio` es solo de admin, así que `clave` cae sola a su primera pantalla
   // permitida (el técnico a la Agenda, el almacenista a Almacén). Sin señal se entra directo a
   // Órdenes, que es la única que funciona desconectada.
-  const [pantalla, setPantalla] = useState(() => (navigator.onLine ? 'inicio' : 'ordenes'))
+  // Un aviso del celular abre la app en su pantalla (`/?ir=whatsapp`, SQL 90). Se limpia la
+  // dirección para que recargar después no vuelva a saltar ahí.
+  const [pantalla, setPantalla] = useState(() => {
+    const ir = new URLSearchParams(location.search).get('ir')
+    if (ir && PANTALLAS[ir]) {
+      history.replaceState(null, '', location.pathname)
+      return ir
+    }
+    return navigator.onLine ? 'inicio' : 'ordenes'
+  })
   // Cuántas cosas esperan en cada pantalla. Sin esto, agrupar las catorce pantallas solo
   // acomoda; con esto la barra avisa. `{}` mientras no se sepa: un globo que no está no
   // estorba, y si la consulta falla la barra se dibuja igual.
