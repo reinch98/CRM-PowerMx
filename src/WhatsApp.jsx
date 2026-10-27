@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alerta } from './ui'
 import {
   nombreConversacion, haceCuanto, estadoVentana, enlaceWhatsApp, esBorrador,
   cargarBandeja, cargarMensajes, cargarContactos, registrarRespuesta,
   marcarLeida, cerrarConversacion, vincularConversacion,
-  cargarAgente, guardarAgente, marcarBorradorEnviado,
+  cargarAgente, guardarAgente, marcarBorradorEnviado, estadoSugerencia, pedirSugerencia,
   claseMedia, estadoArchivo, enlacesArchivos, traerArchivos, resumenTraidos
 } from './lib/whatsapp'
 import { cargarConfig, cargarCola, agruparCola, responderPorApi } from './lib/salidaWa'
@@ -147,12 +147,35 @@ function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
   const [mensaje, setMensaje] = useState('')
   const [enlaces, setEnlaces] = useState({})
   const [trayendo, setTrayendo] = useState(null)
+  const [pensando, setPensando] = useState(false)
+  const [sugError, setSugError] = useState('')
+  const [borradorUsado, setBorradorUsado] = useState(null)
+  const yaPedida = useRef(false)
 
   async function cargar() {
     const r = await cargarMensajes(conv.id)
     if (!r.ok) return setError(r.texto)
     setMensajes(r.mensajes)
     setEnlaces(await enlacesArchivos(r.mensajes))
+    // El cliente escribió y nadie le ha contestado: se pide la sugerencia una sola vez por
+    // apertura (cada una gasta saldo de la API). Con la ventana cerrada no serviría de nada.
+    if (!yaPedida.current && estadoSugerencia(r.mensajes)?.pedir && estadoVentana(conv).puede) {
+      yaPedida.current = true
+      sugerir()
+    }
+  }
+
+  async function sugerir() {
+    setSugError(''); setPensando(true)
+    const r = await pedirSugerencia(conv.id)
+    setPensando(false)
+    if (!r.ok) return setSugError(r.texto)
+    cargar()
+  }
+
+  function usarSugerencia(b) {
+    setTexto(b.texto)
+    setBorradorUsado(b.id)
   }
 
   async function traer(id) {
@@ -173,6 +196,7 @@ function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
 
   const ventana = estadoVentana(conv)
   const enlace = enlaceWhatsApp(conv.telefono, texto)
+  const sugerencia = mensajes ? estadoSugerencia(mensajes) : null
 
   async function responder() {
     setError(''); setMensaje('')
@@ -181,8 +205,10 @@ function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
     const r = await registrarRespuesta(conv.id, texto)
     setOcupado(false)
     if (!r.ok) return setError(r.texto)
+    // La sugerencia que se usó ya no queda como "borrador sin enviar".
+    if (borradorUsado) await marcarBorradorEnviado(borradorUsado)
     setMensaje('Respuesta guardada en la conversación. Se abrió WhatsApp: ahí la mandas.')
-    setTexto('')
+    setTexto(''); setBorradorUsado(null)
     cargar(); onCambio()
   }
 
@@ -195,7 +221,7 @@ function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
     setOcupado(false)
     if (!r.ok) return setError(r.texto)
     setMensaje('En la cola: sale en el siguiente minuto.')
-    if (!borradorId) setTexto('')
+    if (textoAEnviar === texto) { setTexto(''); setBorradorUsado(null) }
     cargar(); onCambio()
   }
 
@@ -296,6 +322,31 @@ function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
         ))}
       </div>
 
+      {sugerencia && ventana.puede && (
+        <section className="tarjeta">
+          <h3>Sugerencia del agente</h3>
+          {sugerencia.borrador ? (
+            <>
+              <p style={{ whiteSpace: 'pre-wrap', margin: '0 0 8px' }}>{sugerencia.borrador.texto}</p>
+              <p className="ayuda">La escribió el agente: revísala y corrígela antes de mandarla.</p>
+              <button type="button" className="btn-primario" onClick={() => usarSugerencia(sugerencia.borrador)}>
+                Usar esta respuesta
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="ayuda">
+                {pensando ? 'El agente está redactando una respuesta…' : 'El cliente escribió y nadie le ha contestado.'}
+              </p>
+              <button type="button" disabled={pensando} onClick={sugerir}>
+                {pensando ? 'Pensando…' : 'Pedir sugerencia al agente'}
+              </button>
+            </>
+          )}
+          {sugError && <Alerta tipo="error" palabra="No hubo sugerencia">{sugError}</Alerta>}
+        </section>
+      )}
+
       <label className="campo">
         <span>Responder</span>
         <textarea rows={3} value={texto} onChange={e => setTexto(e.target.value)}
@@ -309,7 +360,7 @@ function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
       <div className="fila">
         {apiActiva ? (
           <button type="button" className="btn-primario" disabled={ocupado || !texto.trim() || !ventana.puede}
-            onClick={() => enviarPorApi(texto)}>{ocupado ? 'Enviando…' : 'Enviar'}</button>
+            onClick={() => enviarPorApi(texto, borradorUsado)}>{ocupado ? 'Enviando…' : 'Enviar'}</button>
         ) : !enlace ? (
           <span className="etiqueta etiqueta-aviso">El número no sirve para WhatsApp</span>
         ) : texto.trim() ? (

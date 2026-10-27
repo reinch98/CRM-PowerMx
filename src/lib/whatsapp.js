@@ -207,6 +207,43 @@ export async function guardarAgente(cambios) {
 
 // Un borrador que el admin sí mandó deja de ser borrador. Se marca aparte del enlace
 // porque `wa.me` no avisa si de verdad se envió: por eso el texto sigue a la vista.
+// ¿Qué toca mostrar arriba de "Responder"? (pura; los mensajes vienen del más viejo al más nuevo)
+// · { borrador }   el agente ya sugirió algo después del último mensaje del cliente
+// · { pedir: true } el cliente escribió y nadie le ha contestado ni hay sugerencia
+// · null           ya se le contestó (o no hay mensajes del cliente)
+export function estadoSugerencia(mensajes = []) {
+  let ultimoCliente = -1
+  mensajes.forEach((m, i) => { if (m.direccion === 'entrante') ultimoCliente = i })
+  if (ultimoCliente < 0) return null
+  const despues = mensajes.slice(ultimoCliente + 1).filter(m => m.direccion === 'saliente')
+  const borrador = [...despues].reverse().find(esBorrador)
+  if (borrador) return { borrador }
+  return despues.length ? null : { pedir: true }
+}
+
+// Le pide al agente una sugerencia para esta conversación. Queda guardada como borrador: nunca
+// se envía sola, aunque el agente esté en automático o apagado.
+export async function pedirSugerencia(conversacionId) {
+  try {
+    const { data, error } = await supabase.functions.invoke('agente-whatsapp', {
+      body: { conversacion: conversacionId, solo_sugerir: true },
+    })
+    if (error) {
+      let detalle = ''
+      try {
+        const cuerpo = await error.context?.json()
+        detalle = [cuerpo?.error, cuerpo?.detalle].filter(Boolean).join(' · ')
+      } catch { /* sin cuerpo */ }
+      return { ok: false, texto: detalle || 'No se pudo hablar con el agente.' }
+    }
+    if (data?.error) return { ok: false, texto: data.error }
+    if (data?.omitido) return { ok: false, texto: `El agente no sugirió nada: ${data.motivo}.` }
+    return { ok: true, texto: data?.texto || '' }
+  } catch (e) {
+    return { ok: false, texto: textoDeError(e) }
+  }
+}
+
 export async function marcarBorradorEnviado(id) {
   try {
     const { error } = await supabase.from('mensajes_wa').update({ estado: 'enviado' }).eq('id', id)

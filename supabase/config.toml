@@ -480,3 +480,11 @@ verify_jwt = false
 # ---------------------------------------------------------------------------
 [functions.tipo-cambio]
 verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# agente-whatsapp: la despierta el webhook con la sesión del bot. Era la única con verify_jwt
+# encendido y nunca dejó un borrador (26/10/2026): con el sistema nuevo de llaves la validación
+# de la plataforma rechazaba la llamada. La función ya valida sola (auth.getUser + rol bot/admin).
+# ---------------------------------------------------------------------------
+[functions.agente-whatsapp]
+verify_jwt = false

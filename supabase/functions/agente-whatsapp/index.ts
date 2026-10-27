@@ -171,13 +171,16 @@ Deno.serve(async (req) => {
       return responder({ error: "Esta función es del conector de WhatsApp." }, 403);
     }
 
-    const { conversacion } = await req.json().catch(() => ({}));
+    const { conversacion, solo_sugerir } = await req.json().catch(() => ({}));
     if (!conversacion) return responder({ error: "Falta la conversación." }, 400);
+    // La pantalla del admin pide una sugerencia: siempre queda en borrador (nunca se envía) y no
+    // depende de que el agente esté encendido. Solo el admin puede pedirla así.
+    const sugerencia = solo_sugerir === true && perfil?.rol === "admin";
 
     // ¿Está encendido y dentro del tope del día?
     const { data: permiso, error: errPermiso } = await sb.rpc("wa_puede_responder", { p_conversacion: conversacion });
     if (errPermiso) return responder({ error: errPermiso.message }, 400);
-    if (!permiso?.puede) {
+    if (!sugerencia && !permiso?.puede) {
       return responder({ ok: true, omitido: true, motivo: permiso?.activo ? "tope del día" : "el agente está apagado" });
     }
 
@@ -276,7 +279,7 @@ Deno.serve(async (req) => {
     // la deja salir sola si la ventana de 24 h se cerró o si una persona del CRM escribió en esa
     // conversación hace poco: en esos casos queda como borrador, igual que en modo 'borrador'.
     let motivo: string | null = null;
-    if (config?.modo === "automatico") {
+    if (config?.modo === "automatico" && !sugerencia) {
       const { data: envio, error: errEnvio } = await sb.rpc("wa_enviar_respuesta_agente", {
         p_conversacion: conversacion, p_texto: texto,
       });
