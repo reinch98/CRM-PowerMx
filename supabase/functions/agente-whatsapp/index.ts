@@ -83,7 +83,19 @@ const HERRAMIENTAS = [{
   },
 }];
 
-function instrucciones(contexto: Record<string, unknown>, extra?: string) {
+// Las correcciones de PowerMx (SQL 92) como ejemplos de forma. Vienen de OTROS clientes: solo se
+// imita cómo se contesta, nunca lo que dicen.
+function seccionEjemplos(ejemplos: unknown) {
+  if (!Array.isArray(ejemplos) || ejemplos.length === 0) return "";
+  return `
+
+Así ha contestado PowerMx en otras conversaciones (lo que tú sugeriste y lo que PowerMx mandó de
+verdad). Imita el TONO, el LARGO y la MANERA de responder de "powermx_mando". Son de OTROS
+clientes: nunca repitas de ahí nombres, equipos, fechas, direcciones ni cifras, y no los menciones.
+${JSON.stringify(ejemplos)}`;
+}
+
+function instrucciones(contexto: Record<string, unknown>, extra?: string, ejemplos?: unknown) {
   const base = `Eres quien contesta el WhatsApp de PowerMx, una empresa de Mérida, Yucatán
 que instala y da mantenimiento a generadores eléctricos y sistemas solares.
 
@@ -126,7 +138,7 @@ Cómo identificas el equipo:
   Pide nombre, empresa y de qué equipo se trata, y di que un compañero lo va a enlazar.
 
 Contexto de esta conversación (datos del CRM, esto sí es de fiar):
-${JSON.stringify(contexto)}`;
+${JSON.stringify(contexto)}${seccionEjemplos(ejemplos)}`;
   return extra?.trim() ? `${base}\n\nIndicaciones de PowerMx:\n${extra.trim()}` : base;
 }
 
@@ -188,6 +200,8 @@ Deno.serve(async (req) => {
     if (errCtx) return responder({ error: errCtx.message }, 400);
 
     const { data: config } = await sb.from("wa_agente").select("modo, instrucciones").maybeSingle();
+    // Si la 92 no está o falla, contesta igual, sin ejemplos.
+    const { data: ejemplos } = await sb.rpc("wa_ejemplos_agente", { p_n: 12 });
 
     // El historial sale de la BASE, no de quien llama: nadie puede inventarse turnos.
     const { data: previos } = await sb.from("mensajes_wa")
@@ -221,7 +235,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           model: MODELO,
           max_tokens: 700,
-          system: instrucciones(contexto, config?.instrucciones),
+          system: instrucciones(contexto, config?.instrucciones, ejemplos),
           tools: HERRAMIENTAS,
           messages: mensajes,
         }),

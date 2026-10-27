@@ -5,6 +5,7 @@ import {
   cargarBandeja, cargarMensajes, cargarContactos, registrarRespuesta,
   marcarLeida, cerrarConversacion, vincularConversacion,
   cargarAgente, guardarAgente, marcarBorradorEnviado, estadoSugerencia, pedirSugerencia,
+  guardarEjemplo, cargarEjemplos, imitarEjemplo,
   claseMedia, estadoArchivo, enlacesArchivos, traerArchivos, resumenTraidos
 } from './lib/whatsapp'
 import { cargarConfig, cargarCola, agruparCola, responderPorApi } from './lib/salidaWa'
@@ -109,6 +110,57 @@ function AvisosDispositivo() {
   )
 }
 
+// Lo que el agente imita (SQL 92): cada sugerencia que usaste y lo que de verdad mandaste. Se le
+// pasan las más recientes (primero las corregidas); "No imitar este" la saca.
+function EjemplosAgente() {
+  const [ejemplos, setEjemplos] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let vivo = true
+    cargarEjemplos().then(r => {
+      if (!vivo) return
+      if (r.ok) setEjemplos(r.ejemplos)
+      else setError(r.texto)
+    })
+    return () => { vivo = false }
+  }, [])
+
+  async function cambiar(e) {
+    const r = await imitarEjemplo(e.id, !e.activo)
+    if (!r.ok) return setError(r.texto)
+    setEjemplos(lista => lista.map(x => x.id === e.id ? { ...x, activo: !e.activo } : x))
+  }
+
+  const activos = (ejemplos || []).filter(e => e.activo).length
+  return (
+    <div style={{ marginTop: 12 }}>
+      <h4 style={{ margin: '0 0 4px' }}>Lo que el agente imita{ejemplos ? ` (${activos})` : ''}</h4>
+      <p className="ayuda">
+        Cada sugerencia que usas queda aquí con lo que de verdad mandaste. El agente toma las 12 más
+        recientes, primero las que corregiste, para copiar tu forma de contestar. Nunca repite datos
+        de otros clientes, y teléfonos y correos se le borran.
+      </p>
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {ejemplos?.length === 0 && <p className="ayuda">Todavía no hay: aparecen al mandar una sugerencia.</p>}
+      {(ejemplos || []).map(e => (
+        <div key={e.id} className="tarjeta" style={{ padding: 10, marginBottom: 8 }}>
+          <p className="ayuda" style={{ margin: 0 }}>
+            {cuando(e.created_at)} · <span className="etiqueta">{e.corregido ? 'Corregida' : 'Tal cual'}</span>
+            {!e.activo && <> · <span className="etiqueta etiqueta-aviso">No se imita</span></>}
+          </p>
+          {e.cliente_escribio && <p style={{ margin: '6px 0', whiteSpace: 'pre-wrap' }}><strong>Cliente:</strong> {e.cliente_escribio}</p>}
+          {e.corregido && <p style={{ margin: '6px 0', whiteSpace: 'pre-wrap' }}><strong>Sugirió:</strong> {e.sugerido}</p>}
+          <p style={{ margin: '6px 0', whiteSpace: 'pre-wrap' }}><strong>Mandaste:</strong> {e.enviado}</p>
+          <button type="button" onClick={() => cambiar(e)}>
+            {e.activo ? 'No imitar este' : 'Volver a imitarlo'}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // Botón de la bandeja: guarda de una vez lo que llegó antes de este cambio o falló al llegar.
 function TraerPendientes() {
   const [ocupado, setOcupado] = useState(false)
@@ -206,7 +258,10 @@ function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
     setOcupado(false)
     if (!r.ok) return setError(r.texto)
     // La sugerencia que se usó ya no queda como "borrador sin enviar".
-    if (borradorUsado) await marcarBorradorEnviado(borradorUsado)
+    if (borradorUsado) {
+      await guardarEjemplo(borradorUsado, texto)   // el agente aprende de lo que mandaste (SQL 92)
+      await marcarBorradorEnviado(borradorUsado)
+    }
     setMensaje('Respuesta guardada en la conversación. Se abrió WhatsApp: ahí la mandas.')
     setTexto(''); setBorradorUsado(null)
     cargar(); onCambio()
@@ -517,6 +572,7 @@ export default function WhatsApp() {
             <textarea rows={2} value={agente.instrucciones || ''}
               onChange={e => cambiarAgente({ instrucciones: e.target.value })} />
           </label>
+          <EjemplosAgente />
         </details>
       )}
 

@@ -244,6 +244,33 @@ export async function pedirSugerencia(conversacionId) {
   }
 }
 
+// Lo que el agente imita (SQL 92). Con la API, el ejemplo se guarda solo al enviar; por wa.me
+// la pantalla lo avisa con guardarEjemplo.
+export const guardarEjemplo = (borradorId, enviado) =>
+  llamar('guardar_ejemplo_wa', { p_borrador: borradorId, p_enviado: enviado })
+
+export async function cargarEjemplos() {
+  try {
+    const { data, error } = await supabase.from('wa_ejemplos')
+      .select('id, cliente_escribio, sugerido, enviado, corregido, activo, created_at')
+      .order('created_at', { ascending: false }).limit(40)
+    if (error) return { ok: false, texto: textoDeError(error) }
+    return { ok: true, ejemplos: data || [] }
+  } catch (e) {
+    return { ok: false, texto: textoDeError(e) }
+  }
+}
+
+export async function imitarEjemplo(id, activo) {
+  try {
+    const { error } = await supabase.from('wa_ejemplos').update({ activo }).eq('id', id)
+    if (error) return { ok: false, texto: textoDeError(error) }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, texto: textoDeError(e) }
+  }
+}
+
 export async function marcarBorradorEnviado(id) {
   try {
     const { error } = await supabase.from('mensajes_wa').update({ estado: 'enviado' }).eq('id', id)

@@ -1090,6 +1090,25 @@ Pedido de Caña: "que el agente empiece a responder por sí mismo y que me notif
   dispositivo. Sin llaves, el webhook solo deja la nota "faltan las llaves VAPID" en su registro.
 - **Llaves puestas y aviso de prueba recibido por Caña el 26/10/2026.** Falta ver llegar el aviso de un mensaje
   real de un cliente y la primera respuesta automática del agente.
+- **El agente nunca había dejado un borrador** (comprobado el 26/10/2026: cero en la base). `agente-whatsapp` era la
+  única función con `verify_jwt` encendido; se apagó (valida sola con `auth.getUser` + rol). Aun así, el mensaje de
+  esa noche tampoco dejó borrador: **sigue sin saberse por qué falla la llamada desde el webhook** (ver el Log de
+  `whatsapp`, donde queda "El agente no pudo contestar").
+- **Sugerencia arriba de "Responder" (26/10/2026):** al abrir una conversación sin contestar, la pantalla pide la
+  sugerencia con la sesión del admin (`solo_sugerir`: siempre borrador, nunca se envía, funciona con el agente
+  apagado) y la muestra con "Usar esta respuesta"; si falla, dice el error. **Funcionó con un mensaje real.**
+  `estadoSugerencia` (pura, 5 pruebas en `pruebas/sugerencia.prueba.js`).
+
+## El agente imita tus correcciones (SQL 92, 26/10/2026) — aplicado y probado (6/6)
+
+Pedido de Caña: que la sugerencia "se retroalimente". No es un modelo entrenado: son **ejemplos en el prompt**.
+- `wa_ejemplos`: una fila por sugerencia usada (`borrador_id` único), con lo que el cliente escribió, lo que
+  sugirió el agente, lo que se mandó y `corregido`. Se llena sola con un disparador en `salida_wa` (respuesta con
+  `origen_id` = el borrador, que no sea del agente); por wa.me la pantalla llama a `guardar_ejemplo_wa`.
+- `wa_ejemplos_agente(12)`: primero las corregidas, sin teléfonos ni correos (`_sin_datos_wa`). Los ejemplos son
+  de OTROS clientes: el prompt dice que solo se imita tono, largo y forma, nunca nombres, equipos, fechas ni cifras.
+- Panel Agente → "Lo que el agente imita": cada pareja con "No imitar este" / "Volver a imitarlo".
+- Cada ejemplo hace la respuesta un poco más cara (tope 12, hasta 500 caracteres por campo).
 
 ## Catálogo de Meta: Facebook, Instagram y WhatsApp (SQL 88, 22/10/2026) — SQL aplicado y probado (3/3)
 

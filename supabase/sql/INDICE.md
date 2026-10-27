@@ -119,6 +119,7 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
 | 88 | `productos_en_meta` | E | ✔ | sí | `productos.en_meta`: qué productos van al catálogo de Meta; `catalogo_publico()` lo manda. |
 | 87 | `media_whatsapp` | E | ✔ | sí | Fotos, documentos y audios de WhatsApp: columnas `media_*`, bucket privado `whatsapp`, `media_pendientes`, `guardar_media_wa`. |
 | 89 | `margen_hibridos` | E | ✔ | sí | Margen propio de los paquetes híbridos (`parametros_costeo.margen_hibrido_pct`, 22 %); redefine `costear_paquete`. |
+| 92 | `ejemplos_agente` | E | ✔ | sí | El agente imita tus correcciones: `wa_ejemplos` (sugerido / enviado), disparador en `salida_wa`, `guardar_ejemplo_wa`, `wa_ejemplos_agente` (sin teléfonos ni correos). |
 | 90 | `agente_automatico_y_avisos` | E | ✔ | — | El agente en automático manda por `salida_wa` (`wa_enviar_respuesta_agente`, pausa si contestó una persona); `push_suscripciones`, `push_destinos`, `push_resultado` para los avisos en el celular. |
 
 ## Funciones y cron en Supabase (fuera de esta carpeta)
