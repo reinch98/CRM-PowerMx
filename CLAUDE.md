@@ -1940,6 +1940,36 @@ PROMOCIÓN, con un margen considerable pero comprándolo en Solarama".
   o 4): aplica el 30 % sobre el costo (los precios bajan ~3.7 % contra el 35 % de antes, o ~9 % si ya se había
   sincronizado con la 51) y calcula las promociones; (4) opción 2 para actualizar el sitio.
 
+## Tipo de cambio del DOF en el encabezado (SQL 91, 26/10/2026) — aplicado, función desplegada y probada de punta a punta
+
+Pedido de Caña: ver arriba, en el encabezado, el dólar "real" del DOF, que se actualice solo cada día.
+- **De dónde sale:** `https://dof.gob.mx/indicadores.php` — **sin "www"**: el certificado de `www.dof.gob.mx` no
+  coincide y la conexión falla (curl `SEC_E_WRONG_PRINCIPAL`). El bloque "Tipo de Cambio y Tasas al
+  DD/MM/AAAA — DOLAR 18.6670" es el FIX de Banxico (serie SF43718) publicado en el DOF: el mismo número que
+  usa el sync del proveedor, **sin token** (no hay `BANXICO_TOKEN` en los secretos y no hizo falta).
+- **Cómo:** Edge Function `tipo-cambio` (`verify_jwt = false`; la llama el reloj con `x-cron-secret` o un admin con
+  su sesión) → lee el DOF con `leerDof` (`supabase/functions/_shared/tipoCambio.js`, 8 pruebas en
+  `pruebas/tipoCambio.prueba.js`, probado también contra la página real) → entra como `bot` →
+  `registrar_tipo_cambio(fecha, valor, fuente)`. **No guarda nada si lo leído no tiene sentido** (otra página, dólar
+  fuera de 5–100, fecha a más de 10 días de hoy): un número malo con cara de bueno se cobraría en las cotizaciones.
+  La base vuelve a validar y guarda por `(fecha, moneda)`, así que repetir el mismo día no duplica.
+- **Reloj** `tipo-cambio-dof` (pg_cron): 14:30 y 20:30 UTC = **08:30 y 14:30 de Mérida**. Usa el mismo secreto del
+  Vault (`enviar_whatsapp_cron`) y el mismo `CRON_SECRET` que `enviar-whatsapp`: no hay secretos nuevos. Revisar:
+  `select * from cron.job_run_details order by start_time desc limit 5;` y el Log de la función.
+- **Una sola tabla:** `tipos_cambio`. El encabezado y **Cotizaciones** leen su último valor, así que lo que se ve es
+  exactamente lo que se aplica a los equipos en dólares (GP15500EFI y los Air Cooled). El 26/10/2026 guardó 18.6670
+  (el anterior, 18.50 a mano del 30/09; +0.9 %).
+- **Franja** (`src/TipoCambio.jsx`, `src/lib/tipoCambio.js`): "Dólar DOF $18.6670 al 26/10/26" y un botón ↻
+  ("Actualizar", llama a la función a mano por si el DOF publicó tarde). **Solo admin**: no se le agrega una consulta
+  al arranque del técnico. Se relee al cambiar de pantalla. Si el dato tiene más de **4 días** sin cambiar, lo dice con
+  palabras y con ⚠ ("Sin actualizar desde el 20/10/26"); sin dato, "Sin tipo de cambio guardado". Medido en celular
+  (375 px, con un Supabase falso): 56 px de alto, 0 px de desborde, texto mínimo de 17 px, contraste mínimo de 8.55 y
+  botón de 48×48 (en pantallas angostas solo el ícono, con nombre accesible).
+- **Lo que NO hace:** el sync del proveedor (`scripts/proveedor/sync.js`) sigue pidiendo `BANXICO_TOKEN` o
+  `TIPO_CAMBIO` a mano; podría leer este mismo valor de `tipos_cambio` y dejar de pedir token.
+- Tropiezo: probando el DOF desde aquí, `https://www.dof.gob.mx` falla por certificado y parecía que estaba
+  caído; la dirección sin "www" responde bien.
+
 ## Paquetes solares — borrador y decisiones (30/09 y 01/10/2026)
 
 - **Borrador** en el escritorio de Caña: `Borrador paquetes solares PowerMx.xlsx` (4 a 14 paneles JA 630 W,

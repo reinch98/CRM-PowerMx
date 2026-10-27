@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase'
 import { leerLocal, escribirLocal, borrarLocal, usuarioLocal } from './lib/local'
 import { Logo, Alerta } from './ui'
 import Login from './Login'
+import TipoCambio from './TipoCambio'
 
 // Cada pantalla es su propio paquete, que el celular descarga solo la primera vez que se
 // abre: un técnico nunca baja el código de Cotizaciones, Tarifas o el Agente, ni un
@@ -281,6 +282,8 @@ export default function App() {
         </div>
         <button onClick={() => supabase.auth.signOut()}>Salir</button>
       </div>
+      {/* El dólar del DOF: solo el admin (es quien cotiza; al técnico no se le agrega una consulta). */}
+      {rol === 'admin' && <TipoCambio pantalla={pantalla} />}
       {porGrupos && (
         <nav className="nav nav-grupos" aria-label="Áreas">
           {grupos.map(g => (

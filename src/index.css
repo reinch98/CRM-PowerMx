@@ -273,6 +273,27 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
 }
 .barra button:hover:not(:disabled) { background: #1e293b; }
 
+/* Franja del dólar del DOF (SQL 91), solo para el admin. Envuelve en el celular: el texto no baja
+   de 17 px, así que el botón y los avisos pasan al renglón de abajo en vez de apretarse. */
+.barra-cambio {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 14px;
+  row-gap: 2px;
+  padding: 0 16px 8px;
+  color: #cbd5e1;
+}
+.cambio-dato { display: inline-flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
+.cambio-valor { color: var(--blanco); font-size: 1.15em; }
+/* El ámbar solo como texto sobre el azul noche (contraste alto): nunca sobre fondo claro. */
+.cambio-aviso { color: var(--ambar); font-weight: 700; }
+.barra-cambio button { margin-left: auto; }
+@media (max-width: 520px) {
+  .cambio-boton-texto { display: none; }
+  .barra-cambio button { min-width: 48px; padding-left: 12px; padding-right: 12px; }
+}
+
 .nav {
   display: flex;
   gap: 8px;

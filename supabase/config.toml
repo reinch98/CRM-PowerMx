@@ -473,3 +473,10 @@ verify_jwt = false
 # ---------------------------------------------------------------------------
 [functions.avisos-push]
 verify_jwt = false
+
+# ---------------------------------------------------------------------------
+# tipo-cambio (SQL 91): lee el dolar del DOF y lo guarda. La despierta pg_cron (sin token de
+# Supabase) o un admin desde el encabezado; valida sola, como enviar-whatsapp.
+# ---------------------------------------------------------------------------
+[functions.tipo-cambio]
+verify_jwt = false
