@@ -1965,6 +1965,15 @@ Pedido de Caña: ver arriba, en el encabezado, el dólar "real" del DOF, que se 
   palabras y con ⚠ ("Sin actualizar desde el 20/10/26"); sin dato, "Sin tipo de cambio guardado". Medido en celular
   (375 px, con un Supabase falso): 56 px de alto, 0 px de desborde, texto mínimo de 17 px, contraste mínimo de 8.55 y
   botón de 48×48 (en pantallas angostas solo el ícono, con nombre accesible).
+- **También en el sitio público (SQL 92, 26/10/2026) — aplicado y desplegado.** Pedido de Caña. El sitio es
+  estático y sin sesión, así que lee el valor por la **misma Edge Function `tipo-cambio`, rama GET**: entra como
+  `bot`, llama a `tipo_cambio_publico()` (solo `{valor, fecha}`; bot o admin, revocada a `anon`) y responde con
+  CORS solo para `powermx.com.mx` y `www`, caché de 1 h. **No se abrió nada a `anon`.** El valor es el del día
+  (no espera a republicar el sitio). `sitio-publicar/tipo-cambio.js` (en las 9 páginas que cargan `carrito.js`)
+  pone una línea pequeña "Dólar DOF $18.6670 al 26/10/26" en la esquina superior de la barra, sin ocupar lugar
+  en el menú (en el inicio ya va justo a 1280 px: como elemento del menú lo partía en dos renglones). Si el dato
+  tiene más de 5 días o la lectura falla, **no muestra nada**. Medido en escritorio y en celular (375 px): 0 px de
+  desborde y sin empalme con el CTA ni con "Volver al inicio".
 - **Lo que NO hace:** el sync del proveedor (`scripts/proveedor/sync.js`) sigue pidiendo `BANXICO_TOKEN` o
   `TIPO_CAMBIO` a mano; podría leer este mismo valor de `tipos_cambio` y dejar de pedir token.
 - Tropiezo: probando el DOF desde aquí, `https://www.dof.gob.mx` falla por certificado y parecía que estaba

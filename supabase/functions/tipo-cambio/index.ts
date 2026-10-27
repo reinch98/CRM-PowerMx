@@ -64,7 +64,38 @@ async function autorizado(req: Request): Promise<boolean> {
 // 'AAAA-MM-DD' de hoy en hora de Mérida (en-CA escribe la fecha en ese orden).
 const hoyMerida = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Merida" });
 
+// Lectura pública para el sitio (GET): solo {valor, fecha} del DOF, con CORS para powermx.com.mx
+// y caché de una hora. Entra como `bot`; no abre nada a `anon`.
+const ORIGENES = (Deno.env.get("SOLICITUD_ORIGENES") ??
+  "https://powermx.com.mx,https://www.powermx.com.mx")
+  .split(",").map((s) => s.trim()).filter(Boolean);
+
+async function lecturaPublica(req: Request): Promise<Response> {
+  const origen = req.headers.get("origin") ?? "";
+  const h: Record<string, string> = {
+    "Content-Type": "application/json",
+    "Vary": "Origin",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Cache-Control": "public, max-age=3600",
+  };
+  if (ORIGENES.includes(origen)) h["Access-Control-Allow-Origin"] = origen;
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: h });
+  try {
+    const sb = await comoBot();
+    const { data, error } = await sb.rpc("tipo_cambio_publico");
+    if (error) {
+      bot = null;
+      return new Response(JSON.stringify({ error: "sin dato" }), { status: 502, headers: { ...h, "Cache-Control": "no-store" } });
+    }
+    return new Response(JSON.stringify(data ?? {}), { status: 200, headers: h });
+  } catch {
+    bot = null;
+    return new Response(JSON.stringify({ error: "sin dato" }), { status: 502, headers: { ...h, "Cache-Control": "no-store" } });
+  }
+}
+
 Deno.serve(async (req) => {
+  if (req.method === "GET" || req.method === "OPTIONS") return lecturaPublica(req);
   if (req.method !== "POST") return json({ error: "solo POST" }, 405);
   if (!await autorizado(req)) return json({ error: "no autorizado" }, 401);
 
