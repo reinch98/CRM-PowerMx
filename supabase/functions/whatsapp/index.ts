@@ -149,14 +149,30 @@ function leerMensaje(m: Record<string, any>) {
 function despertarAgente(conversacion: string) {
   const sb = cliente;
   const rt = (globalThis as any).EdgeRuntime;
-  if (!sb || !rt?.waitUntil) return;
+  const corto = conversacion.slice(0, 8);
+  if (!sb || !rt?.waitUntil) {
+    console.error(`Agente ${corto}: no se despertó (${!sb ? "sin sesión del bot" : "sin EdgeRuntime.waitUntil"})`);
+    return;
+  }
   rt.waitUntil((async () => {
     try {
       // Va con la sesión del bot, que es lo que `agente-whatsapp` exige.
-      const { error } = await sb.functions.invoke("agente-whatsapp", { body: { conversacion } });
-      if (error) console.error("El agente no pudo contestar:", error.message);
+      const { data, error } = await sb.functions.invoke("agente-whatsapp", { body: { conversacion } });
+      if (error) {
+        // El cuerpo trae el motivo en palabras (nunca el texto del cliente).
+        let detalle = "";
+        try {
+          const c = await (error as any).context?.json();
+          detalle = [c?.error, c?.detalle].filter(Boolean).join(" · ");
+        } catch { /* sin cuerpo */ }
+        console.error(`Agente ${corto}: falló (${error.message}${detalle ? ` — ${detalle.slice(0, 300)}` : ""})`);
+      } else if (data?.omitido) {
+        console.log(`Agente ${corto}: omitido — ${data.motivo}`);
+      } else {
+        console.log(`Agente ${corto}: ${data?.estado ?? "sin estado"}${data?.motivo ? ` (${data.motivo})` : ""}`);
+      }
     } catch (e) {
-      console.error("No se pudo despertar al agente:", e instanceof Error ? e.message : e);
+      console.error(`Agente ${corto}: no se pudo despertar:`, e instanceof Error ? e.message : e);
     }
   })());
 }
@@ -269,6 +285,9 @@ Deno.serve(async (req) => {
           // El agente contesta APARTE: pensar tarda segundos y Meta reintenta el aviso si
           // no le respondemos rápido. Si el agente está apagado, la llamada no hace nada.
           if (data?.conversacion_id && !data?.repetido) despertarAgente(data.conversacion_id);
+          else if (!data?.repetido) {
+            console.error(`Agente: no se despertó: la base no devolvió la conversación (llaves: ${Object.keys(data ?? {}).join(", ") || "ninguna"})`);
+          }
         }
 
         // Acuses de lo que mandó el CRM por la API (SQL 56): enviado → entregado → leído, o
