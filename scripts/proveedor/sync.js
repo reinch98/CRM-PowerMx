@@ -6,7 +6,8 @@
 //
 // Variables de entorno (las mismas cuentas que el webhook de WhatsApp y `convertir.js`):
 //   SUPABASE_URL, SUPABASE_ANON_KEY, BOT_EMAIL, BOT_PASSWORD
-//   BANXICO_TOKEN  (o TIPO_CAMBIO a mano si Banxico no responde)
+//   El dólar sale del que el CRM ya guardó del DOF (tipos_cambio); BANXICO_TOKEN y TIPO_CAMBIO
+//   quedan como respaldo (ver banxico.js).
 //
 // Este script NO calcula precios ni decide qué se publica: eso vive en la base
 // (`sync_aplicar`, con sus candados). Aquí solo se lee al proveedor, se entrega la lectura
@@ -100,7 +101,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       throw new Error(`Lectura rechazada: ${cierre.filas} filas contra ${cierre.previas} de la anterior. No se aplicó nada.`)
     }
 
-    const fix = await tipoDeCambio(env)
+    const fix = await tipoDeCambio(env, fetch, () => rpc('tipo_cambio_publico', {}))
     console.log(`Tipo de cambio: ${fix.valor} (${fix.fuente}${fix.fecha ? `, ${fix.fecha}` : ''}).`)
     const r = await rpc('sync_aplicar', {
       p_corrida: corrida, p_tipo_cambio: fix.valor, p_tc_fecha: fix.fecha, p_tc_fuente: fix.fuente,

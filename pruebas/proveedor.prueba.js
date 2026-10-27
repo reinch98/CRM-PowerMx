@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizarHoja } from '../scripts/proveedor/adaptadores/normalizar.js'
 import { adaptador } from '../scripts/proveedor/adaptadores/index.js'
-import { parsearFix, tipoDeCambio } from '../scripts/proveedor/banxico.js'
+import { parsearFix, tipoDeCambio, revisarGuardado } from '../scripts/proveedor/banxico.js'
 import { partir, leerArgumentos } from '../scripts/proveedor/sync.js'
 
 // Encabezados tal como los deja el Excel de XLStore (con acentos y mayúsculas).
@@ -84,6 +84,29 @@ test('tipo de cambio: el manual gana; sin token no hay tipo de cambio', async ()
   assert.equal((await tipoDeCambio({ BANXICO_TOKEN: 't' }, falso)).valor, 18.1)
   const caido = async () => ({ ok: false, status: 503 })
   await assert.rejects(tipoDeCambio({ BANXICO_TOKEN: 't' }, caido), /503/)
+})
+
+test('tipo de cambio: usa el que guardó el CRM si es reciente, sin pedir token', async () => {
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Merida' })
+  const fresco = async () => ({ valor: 18.667, fecha: hoy })
+  assert.deepEqual(await tipoDeCambio({}, undefined, fresco), { valor: 18.667, fecha: hoy, fuente: 'dof' })
+  // el manual sigue ganando
+  assert.equal((await tipoDeCambio({ TIPO_CAMBIO: '19.5' }, undefined, fresco)).fuente, 'manual')
+})
+
+test('tipo de cambio: un guardado viejo, vacío o roto no se usa; sin respaldo se detiene diciendo por qué', async () => {
+  assert.equal(revisarGuardado({ valor: 18.5, fecha: '2026-10-20' }, '2026-10-26').dato, null)
+  assert.match(revisarGuardado({ valor: 18.5, fecha: '2026-10-20' }, '2026-10-26').motivo, /hace 6 días/)
+  assert.equal(revisarGuardado({ valor: 18.5, fecha: '2026-10-22' }, '2026-10-26').dato.valor, 18.5) // fin de semana largo
+  assert.equal(revisarGuardado({}, '2026-10-26').dato, null)
+  assert.equal(revisarGuardado({ valor: 3, fecha: '2026-10-26' }, '2026-10-26').dato, null)
+  const viejo = async () => ({ valor: 18.5, fecha: '2020-01-01' })
+  await assert.rejects(tipoDeCambio({}, undefined, viejo), /Sin tipo de cambio.*hace/)
+  const roto = async () => { throw new Error('sin red') }
+  await assert.rejects(tipoDeCambio({}, undefined, roto), /sin red/)
+  // con token, cae a Banxico
+  const falso = async () => ({ ok: true, json: async () => respuestaBanxico('18.1') })
+  assert.equal((await tipoDeCambio({ BANXICO_TOKEN: 't' }, falso, viejo)).fuente, 'banxico:SF43718')
 })
 
 test('lotes y argumentos', () => {
