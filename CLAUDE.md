@@ -3033,6 +3033,41 @@ registro) → `66` y su prueba → `67` y su prueba → publicar el CRM → Fina
   `cargarPagos` trae la cuenta de cada pago desde sus egresos.
 - **Falta:** que el contador confirme las tasas de RESICO; probar la conciliación con un estado de Banorte real.
 
+## Timbrado de facturas desde el CRM (CFDI 4.0) — plan del 28/10/2026, sin construir
+
+Hoy se factura a mano en el portal del SAT y el CRM solo recibe el XML. Para timbrar desde el CRM:
+
+**Una sola vez (fuera del código):** e.firma vigente → tramitar el **CSD** (sello digital, distinto de la e.firma;
+`.cer` + `.key` + contraseña) → cuenta en un **PAC** (Facturama, Finkok, SW Sapien…) con su ambiente de pruebas.
+**El CSD se sube al PAC, nunca al CRM**: el PAC sella y timbra, y el CRM no guarda la llave privada. La llave de la
+API del PAC va como secreto de Supabase. Emisor: ya en `empresa_fiscal` (régimen 626, CP de expedición).
+
+**Datos que faltan en el CRM:**
+- Clave SAT de producto/servicio, clave de unidad (H87, E48…) y objeto de impuesto en cada producto **y** en las
+  partidas libres (diagnóstico, traslado, servicios de catálogo de `tarifas_servicio`).
+- Datos fiscales del cliente idénticos a su Constancia (`datos_fiscales`): RFC, razón social **sin régimen
+  societario** (CFDI 4.0 rechaza si no coincide), CP fiscal, régimen y uso de CFDI. Validarlos con el PAC antes.
+
+**Reglas de cada factura:** PUE si ya se cobró completo, PPD si hay anticipo o crédito (forma de pago 99).
+RESICO: un cliente **persona moral retiene 1.25 % de ISR** y la factura lo lleva.
+
+**Flujo:** cotización aceptada / trabajo cerrado → prefactura (copia partidas y datos fiscales; PUE/PPD, forma de
+pago, uso de CFDI, retención) → validar en el CRM (claves completas, receptor, totales = cotización) → Edge Function
+`timbrar-factura` (solo admin) → PAC → XML + UUID → bucket `finanzas`, fila en `cfdi` (emitida) ligada a la
+cotización (`ligar_cfdi_cotizacion` ya existe) → PDF → "Enviar al cliente".
+- **PPD:** cada cobro del Expediente debe generar su **complemento de pago (REP)**, timbrado también, a más tardar
+  el día 5 del mes siguiente. Es lo que más se olvida.
+- **Cancelar:** por el PAC, con motivo (01 = se sustituye, con el UUID de la nueva); arriba de cierto monto el
+  receptor tiene que aceptar.
+
+**Orden:** (1) CSD + PAC en pruebas; (2) claves SAT y datos fiscales de clientes; (3) SQL de prefactura + Edge
+Function contra el ambiente de pruebas; (4) una PUE real comparada con una del portal; (5) PPD con REP, cancelación
+y envío. **Antes del paso 3, que el contador confirme la retención de 1.25 % y las claves SAT de los servicios.**
+
+Contexto: Caña pidió a unos estudiantes de ingeniería un levantamiento del proceso administrativo y de facturación;
+el formulario que mandaron (28/10/2026) salió enfocado en captación de prospectos por Meta. Se les propuso reencuadrar
+el alcance a facturación, cobranza, cumplimiento RESICO e indicadores administrativos.
+
 ## Ciclo de compras con proveedores (10/10/2026) — plan acordado con Caña
 
 Tres documentos que se ligan entre sí: **cotización de proveedor** (se lee en Finanzas o en Compras; puede
