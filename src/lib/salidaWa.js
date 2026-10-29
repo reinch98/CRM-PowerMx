@@ -137,6 +137,27 @@ export async function cargarPlantillas() {
     .select('nombre, idioma, categoria, uso, variables, encabezado, estado, notas').order('nombre'))
   return r.ok ? { ok: true, plantillas: r.data || [] } : r
 }
+// ---- Escribirle a un cliente con una plantilla (SQL 93) ----
+
+// Las que se pueden mandar a mano: aprobadas, sin documento, y que no sean de avisos de cita ni de
+// la orden (esas arman sus datos solas). La misma regla que valida escribir_a_cliente en la base.
+export const plantillasParaEscribir = (plantillas = []) => plantillas.filter(p =>
+  p.estado === 'aprobada' && (p.encabezado || 'ninguno') === 'ninguno'
+  && p.uso !== 'orden' && !String(p.uso || '').startsWith('aviso:'))
+
+const ETIQUETAS = {
+  nombre: 'Nombre del cliente', equipo: 'Equipo', fecha: 'Fecha', hora: 'Hora',
+  servicio: 'Servicio', folio: 'Folio',
+}
+export const etiquetaVariable = v => ETIQUETAS[v] || (v.charAt(0).toUpperCase() + v.slice(1).replace(/_/g, ' '))
+
+// Los datos que la plantilla pide y todavía están vacíos.
+export const datosQueFaltan = (plantilla, valores = {}) =>
+  (plantilla?.variables || []).filter(v => !String(valores[v] ?? '').trim())
+
+export const escribirACliente = (telefono, plantilla, variables) =>
+  llamar('escribir_a_cliente', { p_telefono: telefono, p_plantilla: plantilla, p_variables: variables })
+
 export const guardarPlantilla = (nombre, cambios) =>
   tabla(supabase.from('wa_plantillas').update({ ...cambios, updated_at: new Date().toISOString() }).eq('nombre', nombre))
 

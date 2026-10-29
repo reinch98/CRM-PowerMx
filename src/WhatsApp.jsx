@@ -10,6 +10,7 @@ import {
 } from './lib/whatsapp'
 import { cargarConfig, cargarCola, agruparCola, responderPorApi } from './lib/salidaWa'
 import { ColaSalida, Campanas } from './SalidaWhatsApp'
+import EscribirACliente from './EscribirACliente'
 import { soporteAvisos, entornoActual, estadoAvisos, activarAvisos, quitarAvisos, probarAvisos } from './lib/avisosPush'
 
 const cuando = iso => iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : ''
@@ -402,6 +403,17 @@ function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
         </section>
       )}
 
+      {/* Ventana cerrada: el texto libre no sale; solo una plantilla aprobada (SQL 93). */}
+      {apiActiva && !ventana.puede && (
+        <details className="tarjeta" open>
+          <summary className="resumen">Mandarle una plantilla</summary>
+          <div style={{ marginTop: 8 }}>
+            <EscribirACliente telefonoFijo={conv.telefono} nombreSugerido={nombreConversacion(conv)}
+              onEnviado={() => setTimeout(cargar, 1500)} />
+          </div>
+        </details>
+      )}
+
       <label className="campo">
         <span>Responder</span>
         <textarea rows={3} value={texto} onChange={e => setTexto(e.target.value)}
@@ -529,6 +541,14 @@ export default function WhatsApp() {
       {pestana === 'bandeja' && <>
       {error && <Alerta tipo="error">{error}</Alerta>}
 
+      {enLinea && (
+        <details className="tarjeta">
+          <summary className="resumen">Escribirle a un cliente</summary>
+          <div style={{ marginTop: 8 }}>
+            <EscribirACliente contactos={contactos} onEnviado={contarCola} />
+          </div>
+        </details>
+      )}
       {enLinea && <AvisosDispositivo />}
       {enLinea && <TraerPendientes />}
 

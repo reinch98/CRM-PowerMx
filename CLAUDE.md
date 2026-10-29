@@ -1110,6 +1110,24 @@ Pedido de Caña: que la sugerencia "se retroalimente". No es un modelo entrenado
 - Panel Agente → "Lo que el agente imita": cada pareja con "No imitar este" / "Volver a imitarlo".
 - Cada ejemplo hace la respuesta un poco más cara (tope 12, hasta 500 caracteres por campo).
 
+## Escribirle a un cliente con una plantilla (SQL 93, 29/10/2026) — aplicado y probado (6/6)
+
+Pedido de Caña: "¿cómo envío un mensaje a un cliente?". Con la ventana de 24 h cerrada, o a alguien que nunca
+escribió, WhatsApp solo deja mandar una **plantilla aprobada**; antes solo salían solas (avisos de cita, campañas).
+- `escribir_a_cliente(telefono, plantilla, variables)` (solo admin) mete el envío a `salida_wa` con origen nuevo
+  **`manual`** (se amplió `salida_wa_origen_check`). Sale por la misma cola y las mismas reglas de `tomar_salida`.
+  Solo plantillas aprobadas, sin documento, que no sean de aviso de cita ni de la orden. Variables aplanadas y
+  recortadas; ninguna vacía. Marketing a un número con BAJA se rechaza. El mismo número y plantilla en 10 minutos
+  no se duplica (`repetido`). `texto` guarda "Plantilla X: nombre = … · equipo = …", que es lo que queda en la
+  conversación (la tabla no guarda el texto aprobado por Meta).
+- Pantalla `src/EscribirACliente.jsx` (reglas en `salidaWa.js`: `plantillasParaEscribir`, `etiquetaVariable`,
+  `datosQueFaltan`; 3 pruebas): en la bandeja, plegable **"Escribirle a un cliente"** (persona de Contactos o
+  número a mano); en una conversación con la ventana cerrada y la API encendida, **"Mandarle una plantilla"** con
+  el número fijo. "Revisar y enviar" → resumen → "Sí, mandarlo". Avisa si la API está apagada o si era repetido.
+- Plantillas aprobadas útiles al 29/10/2026: `seguimiento_pendiente` (utilidad; nombre, equipo) y, de publicidad,
+  `reactivacion_cliente`, `recordatorio_mantenimiento`, `mantenimiento_programado`.
+- **Sin ver en el emulador ni con un envío real.**
+
 ## Catálogo de Meta: Facebook, Instagram y WhatsApp (SQL 88, 22/10/2026) — SQL aplicado y probado (3/3)
 
 Pedido de Caña: promocionar los artículos desde Meta, **solo los seleccionados**. En México Meta no cobra
