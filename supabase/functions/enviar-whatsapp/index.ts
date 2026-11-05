@@ -98,7 +98,12 @@ Deno.serve(async (req) => {
     try {
       // El PDF de la orden: enlace firmado por 1 hora, solo de ordenes/enviados/ (SQL 58).
       let enlace: string | null = null;
-      if (m.documento_ruta) {
+      if (m.media_ruta) {
+        // Foto o documento de la conversación (SQL 96): el bot solo lee whatsapp/enviados/.
+        const { data: f, error: ef } = await sb.storage.from("whatsapp").createSignedUrl(m.media_ruta, 3600);
+        if (ef || !f?.signedUrl) throw Object.assign(new Error(`No se pudo leer el archivo: ${ef?.message ?? "sin enlace"}`), { permanente: true });
+        enlace = f.signedUrl;
+      } else if (m.documento_ruta) {
         const { data: f, error: ef } = await sb.storage.from("ordenes").createSignedUrl(m.documento_ruta, 3600);
         if (ef || !f?.signedUrl) throw Object.assign(new Error(`No se pudo leer el PDF: ${ef?.message ?? "sin enlace"}`), { permanente: true });
         enlace = f.signedUrl;

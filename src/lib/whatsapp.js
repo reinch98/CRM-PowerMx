@@ -13,6 +13,7 @@
 import { supabase } from './supabase'
 import { explicarError } from './errores'
 import { normalizarTelefono } from './contactos'
+import { redimensionar } from './imagen'
 
 // ---- reglas puras ----
 
@@ -286,3 +287,67 @@ export const cerrarConversacion = (id, abrir = false) =>
   llamar('cerrar_conversacion', { p_conversacion: id, p_abrir: abrir })
 export const vincularConversacion = (conversacionId, contactoId) =>
   llamar('vincular_conversacion', { p_conversacion: conversacionId, p_contacto: contactoId })
+
+// ---- mandar fotos y documentos desde la conversación (SQL 96) ----
+
+// Lo que WhatsApp acepta como documento. La misma lista vive en `_wa_mime_documento` (SQL 96).
+export const MIME_DOCUMENTO = [
+  'application/pdf', 'text/plain',
+  'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+]
+const MB = 1024 * 1024
+export const MAX_FOTO_WA = 5 * MB          // tope de Meta para fotos
+export const MAX_DOCUMENTO_WA = 25 * MB    // tope del bucket `whatsapp` (Meta deja hasta 100)
+
+// ¿Se puede mandar este archivo? Una foto que no es JPG/PNG (la HEIC del iPhone, WebP) o que
+// pasa de 5 MB se convierte a JPG antes de subirla; un documento no se toca.
+export function revisarArchivoWa(archivo) {
+  if (!archivo) return { ok: false, texto: 'Elige un archivo.' }
+  const mime = String(archivo.type || '').toLowerCase()
+  if (mime.startsWith('image/')) {
+    const directo = (mime === 'image/jpeg' || mime === 'image/png') && archivo.size <= MAX_FOTO_WA
+    return { ok: true, tipo: 'imagen', convertir: !directo }
+  }
+  if (MIME_DOCUMENTO.includes(mime)) {
+    if (archivo.size > MAX_DOCUMENTO_WA) return { ok: false, texto: 'El documento pasa de 25 MB: WhatsApp no lo va a recibir bien.' }
+    return { ok: true, tipo: 'documento', convertir: false }
+  }
+  return { ok: false, texto: 'WhatsApp no acepta ese tipo de archivo: manda una foto o un PDF, Word, Excel, PowerPoint o texto.' }
+}
+
+// Tamaño en palabras: "850 KB", "2.4 MB".
+export const pesoLegible = bytes => bytes >= MB ? `${(bytes / MB).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
+
+const EXTENSION = { 'image/jpeg': 'jpg', 'image/png': 'png', 'application/pdf': 'pdf', 'text/plain': 'txt' }
+
+// Sube el archivo a `whatsapp/enviados/<conversación>/` y lo mete a la cola. La base vuelve a
+// revisar tipo, tamaño y ventana con lo que Storage guardó.
+export async function enviarArchivoWa(conversacionId, archivo, pie = '') {
+  const revision = revisarArchivoWa(archivo)
+  if (!revision.ok) return revision
+  let cuerpo = archivo
+  let nombre = archivo.name || (revision.tipo === 'imagen' ? 'foto.jpg' : 'documento')
+  if (revision.convertir) {
+    try {
+      cuerpo = await redimensionar(archivo, 2048, 0.85)
+    } catch {
+      return { ok: false, texto: 'No se pudo preparar la foto: guárdala como JPG y vuelve a intentarlo.' }
+    }
+    if (!cuerpo || cuerpo.size > MAX_FOTO_WA) return { ok: false, texto: 'La foto sigue pasando de 5 MB.' }
+    nombre = nombre.replace(/\.[^.]*$/, '') + '.jpg'
+  }
+  const mime = revision.convertir ? 'image/jpeg' : String(archivo.type).toLowerCase()
+  const ext = EXTENSION[mime] || (nombre.match(/\.([a-z0-9]{1,5})$/i)?.[1] || 'bin').toLowerCase()
+  const ruta = `enviados/${conversacionId}/${crypto.randomUUID()}.${ext}`
+  try {
+    const { error } = await supabase.storage.from(BUCKET_MEDIA).upload(ruta, cuerpo, { contentType: mime, upsert: false })
+    if (error) return { ok: false, texto: textoDeError(error) }
+  } catch (e) {
+    return { ok: false, texto: textoDeError(e) }
+  }
+  return llamar('responder_whatsapp_archivo', {
+    p_conversacion: conversacionId, p_ruta: ruta, p_nombre: nombre, p_pie: pie?.trim() || null,
+  })
+}

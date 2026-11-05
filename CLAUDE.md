@@ -1110,6 +1110,27 @@ Pedido de Caña: que la sugerencia "se retroalimente". No es un modelo entrenado
 - Panel Agente → "Lo que el agente imita": cada pareja con "No imitar este" / "Volver a imitarlo".
 - Cada ejemplo hace la respuesta un poco más cara (tope 12, hasta 500 caracteres por campo).
 
+## Mandar fotos y documentos desde la conversación (SQL 96, 05/11/2026) — aplicado, probado (11/11) y desplegado
+
+Pedido de Caña: "quiero la opción de enviar documentos e imágenes en el chat". Va por la MISMA cola que el texto.
+- La pantalla sube el archivo al bucket privado `whatsapp` en `enviados/<conversación>/<uuid>.<ext>` y llama a
+  `responder_whatsapp_archivo(conversación, ruta, nombre, pie)` (solo admin). La base revisa con lo que **Storage
+  guardó**, no con lo que diga el navegador: ventana de 24 h abierta, ruta de ESA conversación, foto JPG/PNG de hasta
+  5 MB o documento PDF/Word/Excel/PowerPoint/texto (`_wa_mime_documento`; el bucket corta en 25 MB), pie de hasta
+  1,024. El mismo archivo dos veces devuelve `repetido`.
+- `salida_wa.tipo` acepta `imagen` y `documento` con `media_ruta`/`media_mime`/`media_nombre` (check: archivo ⇔ ruta).
+  `tomar_salida` exige la ventana a todo lo que no sea plantilla y entrega la ruta; `marcar_salida` deja el mensaje en
+  la conversación CON su archivo, así la burbuja muestra la foto o "Abrir" igual que lo que manda el cliente.
+- El bot lee solo `whatsapp/enviados/` (política `whatsapp_bot_lee_enviados`); lo que mandan los clientes lo sigue
+  leyendo solo el admin. `enviar-whatsapp` firma un enlace de 1 h y Meta lo descarga (`cuerpoMensaje`: `image` con
+  `caption`, `document` con `filename`). Desplegada el 05/11/2026; el webhook no cambió.
+- Pantalla: en la conversación, plegable **"Mandar una foto o documento"** (solo con la API encendida y la ventana
+  abierta): vista previa, peso, pie opcional y "Mandar la foto / el documento". Una foto HEIC/WebP o de más de 5 MB se
+  convierte a JPG (2048 px) antes de subir (`revisarArchivoWa`, `enviarArchivoWa` en `src/lib/whatsapp.js`; 5 pruebas
+  en `pruebas/archivosWa.prueba.js` y 3 en `enviarWhatsapp.prueba.js`). Medido en celular con un Supabase falso: 0
+  textos < 17 px, 0 px de desborde; el selector de archivo mide 21 px dentro de su etiqueta de 53.
+- **Sin probar con un envío real** a un celular.
+
 ## Escribirle a un cliente con una plantilla (SQL 93, 29/10/2026) — aplicado y probado (6/6)
 
 Pedido de Caña: "¿cómo envío un mensaje a un cliente?". Con la ventana de 24 h cerrada, o a alguien que nunca
@@ -2784,6 +2805,28 @@ precio que se olvidó capturar.
 - **Falta (fase 5):** que el paquete se aprenda de lo que de verdad se usó en visitas
   anteriores. Ya tiene de dónde: `orden_surtido.cantidad_usada` guarda las piezas
   estructuradas desde la 18.
+
+## Modelos Generac y kits de mantenimiento (SQL 94–95, 30/10/2026) — aplicado y probado
+
+Pedido de Caña desde `REFACCIONAMIENTO GENERAC.xlsx`, hojas Air Cooled y Liquid Cooled. Los kits los
+genera `scripts/generar_modelos_generac.py` en `95_kits_sin_bujias.sql`: no se edita a mano. El
+mismo día Caña pidió descartar las bujías: la 95 borró los 25 kits de la 94 y dejó 16.
+- **`modelos_generador`**: 1,100 modelos (511 air, 589 liquid) con `capacidad_kw`, `enfriamiento` y
+  los códigos del Excel, aunque la pieza no esté en `productos`. La leen admin, técnico y almacén;
+  solo el admin la cambia. La clave pasa por `_clave_modelo` ("g00703-11" = G0070311).
+- **Kits** = filas de `paquetes_mantenimiento` con `kit = true`: una por combinación de filtro de
+  aceite y filtro de aire. Son 16; solo llevan piezas del catálogo y `notas` dice cuál falta. 58
+  modelos no tienen ninguna de las dos piezas en el catálogo y quedan sin kit. El código de la bujía
+  sigue en `modelos_generador` como referencia. **Existencia 0** al crearlos: "lo que tenemos"
+  significó dado de alta en el catálogo, no en estante.
+- **Un kit se aplica por el modelo del equipo y sirve para menor y mayor.** Los kits no tienen marca,
+  modelo ni clase: sin el filtro `not p.kit`, `_paquete_de_equipo` se los daría a cualquier equipo.
+  Orden: paquete del modelo exacto, kit del modelo, general.
+- **Trigger `equipo_desde_modelo`**: al guardar un generador con modelo de la lista llena marca,
+  capacidad y `atributos.enfriamiento` si están vacíos, venga de la oficina o del técnico.
+- `070185ES` y `070185ES-G` comparten `grupo_equivalente`. Al crear una pieza faltante, se agrega al
+  kit desde Precios; no hace falta regenerar.
+- La columna KW de los modelos Pramac puede venir en kVA: la descripción dice "10KVA".
 
 ## Fase 5 · el paquete se aprende y precarga el surtido (SQL 29, 25/09/2026)
 

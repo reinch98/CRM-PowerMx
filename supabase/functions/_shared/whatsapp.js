@@ -9,6 +9,18 @@
 // Lo que Meta recibe para UN mensaje de la cola (lo que devuelve `tomar_salida`, SQL 56).
 // `enlaceDocumento`: URL firmada del PDF cuando la plantilla lleva encabezado de documento.
 export function cuerpoMensaje(m, enlaceDocumento = null) {
+  // Foto o documento que la oficina manda desde la conversación (SQL 96): Meta descarga el
+  // archivo del enlace firmado. El pie va como `caption` (máx. 1,024 caracteres).
+  if (m.tipo === 'imagen' || m.tipo === 'documento') {
+    if (!enlaceDocumento) throw new Error('El archivo no tiene enlace: no se pudo leer del bucket.')
+    const pie = m.texto ? { caption: String(m.texto).slice(0, 1024) } : {}
+    return m.tipo === 'imagen'
+      ? { messaging_product: 'whatsapp', to: m.to, type: 'image', image: { link: enlaceDocumento, ...pie } }
+      : {
+          messaging_product: 'whatsapp', to: m.to, type: 'document',
+          document: { link: enlaceDocumento, filename: m.media_nombre || 'documento', ...pie },
+        }
+  }
   if (m.tipo === 'texto') {
     return {
       messaging_product: 'whatsapp',

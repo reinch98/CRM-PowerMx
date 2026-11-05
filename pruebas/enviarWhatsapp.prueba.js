@@ -83,3 +83,18 @@ test('errorDeAcuse: el error que trae un acuse fallido', () => {
   assert.equal(errorDeAcuse({ status: 'delivered' }), null)
   assert.match(errorDeAcuse({ errors: [{ code: 131026, title: 'Undeliverable' }] }), /^131026: no se pudo entregar/)
 })
+
+test('foto de la conversación: va como imagen con su pie (SQL 96)', () => {
+  const c = cuerpoMensaje({ tipo: 'imagen', to: '529991234567', texto: 'Así quedó', media_nombre: 'a.jpg' }, 'https://x/a.jpg?t=1')
+  assert.deepEqual(c, { messaging_product: 'whatsapp', to: '529991234567', type: 'image', image: { link: 'https://x/a.jpg?t=1', caption: 'Así quedó' } })
+})
+
+test('documento sin pie: lleva su nombre y no manda caption vacío', () => {
+  const c = cuerpoMensaje({ tipo: 'documento', to: '52', media_nombre: 'Cotizacion.pdf' }, 'https://x/b.pdf')
+  assert.deepEqual(c.document, { link: 'https://x/b.pdf', filename: 'Cotizacion.pdf' })
+  assert.equal(c.type, 'document')
+})
+
+test('archivo sin enlace: no sale a medias', () => {
+  assert.throws(() => cuerpoMensaje({ tipo: 'imagen', to: '52', media_ruta: 'enviados/x/a.jpg' }))
+})

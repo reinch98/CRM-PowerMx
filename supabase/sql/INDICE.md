@@ -119,6 +119,9 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
 | 88 | `productos_en_meta` | E | ✔ | sí | `productos.en_meta`: qué productos van al catálogo de Meta; `catalogo_publico()` lo manda. |
 | 87 | `media_whatsapp` | E | ✔ | sí | Fotos, documentos y audios de WhatsApp: columnas `media_*`, bucket privado `whatsapp`, `media_pendientes`, `guardar_media_wa`. |
 | 89 | `margen_hibridos` | E | ✔ | sí | Margen propio de los paquetes híbridos (`parametros_costeo.margen_hibrido_pct`, 22 %); redefine `costear_paquete`. |
+| 96 | `enviar_archivos_whatsapp` | E | ✔ | sí | Mandar fotos y documentos desde la conversación: `salida_wa` acepta `imagen`/`documento` con `media_ruta`, `responder_whatsapp_archivo`, el bot lee solo `whatsapp/enviados/`; `tomar_salida` y `marcar_salida` redefinidas. |
+| 95 | `kits_sin_bujias` | D | ✔ | sí | Generado por `scripts/generar_modelos_generac.py`: rehace los kits de la 94 sin bujías (16 kits de filtro de aceite y filtro de aire). |
+| 94 | `modelos_generador` | E | ✔ | sí | 1,100 modelos Generac con kW y enfriamiento, kits (`paquetes_mantenimiento.kit`), trigger que completa el equipo y `_paquete_de_equipo` que los usa. |
 | 93 | `escribir_a_cliente` | E | ✔ | sí | Mandar a mano una plantilla aprobada a un cliente (ventana cerrada o primer contacto): `escribir_a_cliente`, origen `manual` en `salida_wa`. |
 | 92 | `ejemplos_agente` | E | ✔ | sí | El agente imita tus correcciones: `wa_ejemplos` (sugerido / enviado), disparador en `salida_wa`, `guardar_ejemplo_wa`, `wa_ejemplos_agente` (sin teléfonos ni correos). |
 | 90 | `agente_automatico_y_avisos` | E | ✔ | — | El agente en automático manda por `salida_wa` (`wa_enviar_respuesta_agente`, pausa si contestó una persona); `push_suscripciones`, `push_destinos`, `push_resultado` para los avisos en el celular. |

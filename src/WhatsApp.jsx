@@ -6,7 +6,8 @@ import {
   marcarLeida, cerrarConversacion, vincularConversacion,
   cargarAgente, guardarAgente, marcarBorradorEnviado, estadoSugerencia, pedirSugerencia,
   guardarEjemplo, cargarEjemplos, imitarEjemplo,
-  claseMedia, estadoArchivo, enlacesArchivos, traerArchivos, resumenTraidos
+  claseMedia, estadoArchivo, enlacesArchivos, traerArchivos, resumenTraidos,
+  revisarArchivoWa, enviarArchivoWa, pesoLegible
 } from './lib/whatsapp'
 import { cargarConfig, cargarCola, agruparCola, responderPorApi } from './lib/salidaWa'
 import { ColaSalida, Campanas } from './SalidaWhatsApp'
@@ -43,7 +44,7 @@ function ArchivoMensaje({ m, url, ocupado, onTraer }) {
     <div style={{ margin: '4px 0 6px' }}>
       {clase === 'imagen' && (
         <a href={url} target="_blank" rel="noreferrer" aria-label="Abrir la foto en grande">
-          <img src={url} alt={m.texto || 'Foto que mandó el cliente'} loading="lazy"
+          <img src={url} alt={m.texto || (m.direccion === 'saliente' ? 'Foto que mandaste' : 'Foto que mandó el cliente')} loading="lazy"
             style={{ display: 'block', maxWidth: '100%', maxHeight: 280, borderRadius: 8 }} />
         </a>
       )}
@@ -191,6 +192,90 @@ function TraerPendientes() {
 // Una conversación abierta: los mensajes y la caja para responder. Componente de nivel
 // superior (no dentro de otro) para que la caja de texto no pierda el foco al escribir.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Mandar una foto o un documento al cliente (SQL 96). Sube al bucket `whatsapp` y entra a la
+// misma cola que el texto; aparece en la conversación cuando Meta lo recibe.
+// ---------------------------------------------------------------------------
+function AdjuntarArchivo({ conv, onEnviado }) {
+  const [archivo, setArchivo] = useState(null)
+  const [vista, setVista] = useState('')
+  const [pie, setPie] = useState('')
+  const [ocupado, setOcupado] = useState(false)
+  const [resultado, setResultado] = useState(null)
+  const entrada = useRef(null)
+
+  // La vista previa ocupa memoria del navegador: se suelta al cambiarla o al salir.
+  useEffect(() => () => { if (vista) URL.revokeObjectURL(vista) }, [vista])
+
+  const revision = archivo ? revisarArchivoWa(archivo) : null
+
+  function elegir(f) {
+    setResultado(null)
+    setArchivo(f || null)
+    setVista(f && String(f.type).startsWith('image/') ? URL.createObjectURL(f) : '')
+  }
+  function limpiar() {
+    setArchivo(null); setVista(''); setPie('')
+    if (entrada.current) entrada.current.value = ''
+  }
+
+  async function enviar() {
+    setOcupado(true); setResultado(null)
+    const r = await enviarArchivoWa(conv.id, archivo, pie)
+    setOcupado(false)
+    if (!r.ok) return setResultado({ tipo: 'error', texto: r.texto })
+    limpiar()
+    if (r.data?.repetido) setResultado({ tipo: 'info', texto: 'Ese archivo ya estaba en la cola: no se repitió.' })
+    else setResultado({
+      tipo: 'ok',
+      texto: `${r.data?.tipo === 'imagen' ? 'La foto' : 'El documento'} está en la cola: sale en el siguiente minuto y aparece aquí cuando llegue.`,
+    })
+    onEnviado?.()
+  }
+
+  return (
+    <div>
+      <label className="campo">
+        <span>Foto o documento (PDF, Word, Excel)</span>
+        <input ref={entrada} type="file"
+          accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+          onChange={e => elegir(e.target.files?.[0])} />
+      </label>
+
+      {archivo && (
+        <>
+          {vista && (
+            <img src={vista} alt="Vista previa de la foto que vas a mandar"
+              style={{ display: 'block', maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 8 }}
+              onError={e => { e.currentTarget.style.display = 'none' }} />
+          )}
+          <p className="ayuda" style={{ overflowWrap: 'anywhere' }}>
+            {archivo.name} · {pesoLegible(archivo.size)}
+            {revision?.ok && revision.convertir && ' · se convierte a JPG antes de mandarla'}
+          </p>
+          {revision && !revision.ok ? (
+            <Alerta tipo="error" palabra="No se puede">{revision.texto}</Alerta>
+          ) : (
+            <>
+              <label className="campo">
+                <span>Texto que lo acompaña (opcional)</span>
+                <textarea rows={2} maxLength={1024} value={pie} onChange={e => setPie(e.target.value)} />
+              </label>
+              <div className="fila">
+                <button type="button" className="btn-primario" disabled={ocupado} onClick={enviar}>
+                  {ocupado ? 'Subiendo…' : revision?.tipo === 'imagen' ? 'Mandar la foto' : 'Mandar el documento'}
+                </button>
+                <button type="button" disabled={ocupado} onClick={() => { limpiar(); setResultado(null) }}>Quitar</button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+      {resultado && <Alerta tipo={resultado.tipo}>{resultado.texto}</Alerta>}
+    </div>
+  )
+}
+
 function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
   const [mensajes, setMensajes] = useState(null)
   const [texto, setTexto] = useState('')
@@ -442,6 +527,22 @@ function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
           {conv.estado === 'cerrada' ? 'Volver a abrir' : 'Marcar como cerrada'}
         </button>
       </div>
+
+      {/* Fotos y documentos (SQL 96): solo por la API y con la ventana abierta, como el texto. */}
+      {apiActiva && ventana.puede && (
+        <details className="tarjeta" style={{ marginTop: 12 }}>
+          <summary className="resumen">Mandar una foto o documento</summary>
+          <div style={{ marginTop: 8 }}>
+            <AdjuntarArchivo conv={conv} onEnviado={() => { cargar(); onCambio() }} />
+          </div>
+        </details>
+      )}
+      {!apiActiva && (
+        <p className="ayuda">
+          Para mandar fotos o documentos desde aquí hace falta encender el envío por la API
+          (WhatsApp → Por enviar). Mientras, adjúntalos en WhatsApp después de abrirlo.
+        </p>
+      )}
     </div>
   )
 }
