@@ -12,6 +12,7 @@ import {
 const ATRIBUTOS = {
   generador: [
     ['combustible', 'Combustible'],
+    ['enfriamiento', 'Enfriamiento'],
     ['capacidad_tanque_l', 'Capacidad del tanque (L)'],
     ['tipo_arranque', 'Tipo de arranque'],
     ['tipo_transferencia', 'Tipo de transferencia']
@@ -47,6 +48,11 @@ const OPCIONES = {
     ['gas_lp', 'Gas LP'],
     ['gas_natural', 'Gas natural'],
     ['diesel', 'Diésel']
+  ],
+  // Con un modelo de `modelos_generador` lo llena la base al guardar (SQL 94).
+  enfriamiento: [
+    ['air_cooled', 'Air Cooled'],
+    ['liquid_cooled', 'Liquid Cooled']
   ]
 }
 

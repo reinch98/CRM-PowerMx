@@ -252,6 +252,7 @@ function PaquetesMantenimiento({ productos }) {
             <strong>{nombrePaquete(p)}</strong>
             <button type="button" className="btn-peligro" onClick={() => borrar(p)}>Borrar</button>
           </span>
+          {p.kit && <span className="ayuda">{p.notas}</span>}
 
           {(p.paquete_lineas || []).map(l => (
             <span key={l.id} className="fila" style={{ justifyContent: 'space-between' }}>
