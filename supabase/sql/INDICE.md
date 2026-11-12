@@ -119,6 +119,7 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
 | 88 | `productos_en_meta` | E | ✔ | sí | `productos.en_meta`: qué productos van al catálogo de Meta; `catalogo_publico()` lo manda. |
 | 87 | `media_whatsapp` | E | ✔ | sí | Fotos, documentos y audios de WhatsApp: columnas `media_*`, bucket privado `whatsapp`, `media_pendientes`, `guardar_media_wa`. |
 | 89 | `margen_hibridos` | E | ✔ | sí | Margen propio de los paquetes híbridos (`parametros_costeo.margen_hibrido_pct`, 22 %); redefine `costear_paquete`. |
+| 97 | `polizas` | E | ✔ | sí | Pólizas de servicio: `polizas` (POL-n, nivel básica/estándar/integral, alcance aire/líquido), `poliza_visitas` (calendario por nivel), `generar_citas_poliza` (reloj `citas-de-poliza`, 13:00 UTC), disparador `visita_sigue_cita` en `citas`, `crear_poliza`, `omitir_visita_poliza`, `cancelar_poliza`, `polizas_lista`. |
 | 96 | `enviar_archivos_whatsapp` | E | ✔ | sí | Mandar fotos y documentos desde la conversación: `salida_wa` acepta `imagen`/`documento` con `media_ruta`, `responder_whatsapp_archivo`, el bot lee solo `whatsapp/enviados/`; `tomar_salida` y `marcar_salida` redefinidas. |
 | 95 | `kits_sin_bujias` | D | ✔ | sí | Generado por `scripts/generar_modelos_generac.py`: rehace los kits de la 94 sin bujías (16 kits de filtro de aceite y filtro de aire). |
 | 94 | `modelos_generador` | E | ✔ | sí | 1,100 modelos Generac con kW y enfriamiento, kits (`paquetes_mantenimiento.kit`), trigger que completa el equipo y `_paquete_de_equipo` que los usa. |
@@ -132,4 +133,5 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
   `leer-comprobante`, `leer-placa`, `media-whatsapp`, `solicitud-web`, `whatsapp`. Lo desplegado debe coincidir con
   esta lista (el 09/10/2026 se borró `leer-factura`, la versión vieja de `leer-comprobante`).
 - Cron (`cron.job`): `recordatorios-de-cita` (14:00 UTC), `enviar-whatsapp` (cada minuto) y
-  `foto-esquema` (día 1 de cada mes, 15:00 UTC).
+  `foto-esquema` (día 1 de cada mes, 15:00 UTC), `tipo-cambio-dof` (14:30 y 20:30 UTC) y
+  `citas-de-poliza` (13:00 UTC = 07:00 de Mérida, SQL 97).

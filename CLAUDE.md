@@ -2806,6 +2806,42 @@ precio que se olvidó capturar.
   anteriores. Ya tiene de dónde: `orden_surtido.cantidad_usada` guarda las piezas
   estructuradas desde la 18.
 
+## Pólizas de servicio (SQL 97, 10/11/2026) — aplicado y probado (11/11); pantalla solo en emulador
+
+Pedido de Caña tras revisar la póliza de Dutton (Generac 24 kW, $14,000) y armar la plantilla nueva
+("Póliza de servicio para generadores — PowerMx", doc de Claude): tres niveles, vigencia de 12 meses y
+visitas que se agendan solas. Antes solo existía la marca `equipos.en_poliza`, escrita a mano.
+- **`polizas`** (POL-n): una por equipo y vigencia; `nivel` basica | estandar | integral, `alcance` aire |
+  liquido (anexo técnico A o B; por omisión `_alcance_de_equipo`: `atributos.enfriamiento` de la 94, si no
+  diésel o 30 kW o más = líquido), precio con IVA, forma de pago, `renueva_a`. Estados vigente | cancelada;
+  "vencida" y "por vencer" (30 días) se calculan. Dos pólizas vigentes del mismo equipo no se empalman.
+- **`poliza_visitas`**: el calendario lo arma `_plan_poliza` al crear: básica = menor (mes 0) y mayor (6);
+  estándar e integral de aire = menor, inspección (3), mayor (6), inspección (9); integral de líquido = 12
+  visitas mensuales con banco de carga en la mayor. `planDeVisitas` de `src/lib/polizas.js` repite la
+  regla SOLO para mostrarla antes de guardar; la prueba en Node usa los mismos casos que la SQL.
+- **Las visitas se agendan solas:** `generar_citas_poliza(21)` abre una cita `por_programar` (preventivo,
+  origen `poliza`, notas "Póliza POL-n · visita 2 de 4 · Servicio menor · toca el …") con su orden para
+  cada visita que cae en los próximos 21 días. La llama el reloj **`citas-de-poliza`** (13:00 UTC = 07:00
+  de Mérida) y `crear_poliza`, así la primera aparece de inmediato en "Por programar" de la Agenda. El
+  admin la programa ahí como cualquier otra. Sin sesión (el reloj) pasa; con sesión, solo admin.
+- **La cita manda sobre la visita** (disparador `visita_sigue_cita` en `citas`): realizada → visita
+  realizada y `equipos.proximo_mantenimiento` pasa a la siguiente; cancelada → la visita vuelve a pendiente
+  y el reloj abre otra cita al día siguiente (la póliza la prometió). Para no hacerla:
+  `omitir_visita_poliza` con motivo. `cancelar_poliza` cancela las citas sin trabajo (las que ya tienen
+  trabajo se quedan y lo dice). `en_poliza` lo mantiene la base (`_sincronizar_equipo_poliza`).
+- Pantalla **Pólizas** (área Servicio, solo admin; `src/Polizas.jsx`, `src/lib/polizas.js`, 8 pruebas):
+  indicadores (vigentes, por vencer, visitas atrasadas, vencidas sin renovar), alta con buscador de
+  generadores, nivel en botones con lo que incluye, alcance propuesto, calendario y totales en vivo;
+  filtros Vigentes / Por atender / Todas; por póliza, visitas con estado en palabra (Hecha, Cita el …,
+  Por programar en la Agenda, ⚠ Atrasada), "Ir a la Agenda", "No hacer esta visita…", "Renovar…"
+  (resaltado si vence en 30 días o ya venció) y "Cancelar la póliza…". Medida en celular con un Supabase
+  falso: 0 textos < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde.
+- **Dos tropiezos de la prueba** (ninguno del script): un `select` que busca un perfil después de
+  `set local role authenticated` ya no ve `perfiles` (RLS) — se toman los ids antes; y una función volátil
+  dentro de un `where` se ejecuta una vez por fila (crear_poliza corría dos veces y chocaba consigo misma).
+- **Falta:** avisos en Inicio y globo en la pestaña (visitas atrasadas, pólizas por vencer); que el PDF de
+  la orden diga la póliza y el nivel; y precios de referencia por nivel y capacidad (hoy se escriben a mano).
+
 ## Modelos Generac y kits de mantenimiento (SQL 94–95, 30/10/2026) — aplicado y probado
 
 Pedido de Caña desde `REFACCIONAMIENTO GENERAC.xlsx`, hojas Air Cooled y Liquid Cooled. Los kits los

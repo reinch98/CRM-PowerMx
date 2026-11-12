@@ -32,6 +32,7 @@ const Finanzas = lazy(() => import('./Finanzas'))
 const Tablero = lazy(() => import('./Tablero'))
 const PagosTecnicos = lazy(() => import('./PagosTecnicos'))
 const Comisiones = lazy(() => import('./Comisiones'))
+const Polizas = lazy(() => import('./Polizas'))
 
 // Qué pantallas ve cada rol. El menú y el contenido salen de aquí, así que
 // agregar una pantalla es agregar un renglón, no tocar el resto.
@@ -39,6 +40,7 @@ const PANTALLAS = {
   inicio:       { titulo: 'Inicio',       componente: Inicio,       roles: ['admin'] },
   agenda:       { titulo: 'Agenda',       componente: Agenda,       roles: ['admin', 'tecnico'] },
   ordenes:      { titulo: 'Órdenes',      componente: Trabajos,     roles: ['admin', 'tecnico'] },
+  polizas:      { titulo: 'Pólizas',      componente: Polizas,      roles: ['admin'] },
   almacen:      { titulo: 'Almacén',      componente: Almacen,      roles: ['admin', 'almacenista'] },
   clientes:     { titulo: 'Clientes',     componente: Clientes,     roles: ['admin'] },
   contactos:    { titulo: 'Contactos',    componente: Contactos,    roles: ['admin'] },
@@ -77,7 +79,7 @@ const PANTALLAS = {
 // mes al final.
 // ---------------------------------------------------------------------------
 const GRUPOS = [
-  { clave: 'servicio', titulo: 'Servicio', pantallas: ['inicio', 'agenda', 'ordenes', 'comisiones'] },
+  { clave: 'servicio', titulo: 'Servicio', pantallas: ['inicio', 'agenda', 'ordenes', 'polizas', 'comisiones'] },
   { clave: 'clientes', titulo: 'Clientes', pantallas: ['solicitudes', 'whatsapp', 'clientes', 'contactos', 'equipos'] },
   { clave: 'ventas',   titulo: 'Ventas',   pantallas: ['cotizaciones', 'tarifas', 'paquetes'] },
   { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones', 'compras', 'proveedores', 'proveedor'] },
