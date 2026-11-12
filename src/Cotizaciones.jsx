@@ -187,6 +187,11 @@ function PreventivoDeEquipo({ equipoId, tarifas, cliente, onAgregar }) {
   )
 }
 
+const CLIENTE_VACIO = {
+  nombre: '', telefono: '', email: '', direccion: '', municipio: '',
+  tipo_cliente: 'residencial', distancia_km: '',
+}
+
 export default function Cotizaciones({ irA }) {
   const [vista, setVista] = useState('lista')
   const [cotizaciones, setCotizaciones] = useState([])
@@ -212,6 +217,10 @@ export default function Cotizaciones({ irA }) {
   const [generandoPdf, setGenerandoPdf] = useState(null)
   const [expedienteId, setExpedienteId] = useState(null)   // cotización cuyo expediente está abierto
   const [eliminando, setEliminando] = useState(null)   // { id, ocupado, bloqueos, resumen, listo }
+  const [clienteNuevoAbierto, setClienteNuevoAbierto] = useState(false)
+  const [nuevoCliente, setNuevoCliente] = useState(CLIENTE_VACIO)
+  const [creandoCliente, setCreandoCliente] = useState(false)
+  const [errorCliente, setErrorCliente] = useState('')
 
   useEffect(() => { cargar() }, [])
 
@@ -424,6 +433,33 @@ export default function Cotizaciones({ irA }) {
   const base = Math.max(0, subtotal - descuento)
   const iva = base * IVA
   const total = base + iva
+
+  // Alta rápida de cliente sin salir de la cotización: lo mínimo para cotizar; el resto
+  // (RFC, colonia, referencias…) se completa después en Clientes.
+  async function crearCliente() {
+    setErrorCliente('')
+    const nombre = nuevoCliente.nombre.trim()
+    if (!nombre) return setErrorCliente('El nombre es obligatorio')
+    if (!nuevoCliente.telefono.trim()) return setErrorCliente('El teléfono es obligatorio')
+    setCreandoCliente(true)
+    const payload = {
+      nombre,
+      telefono: nuevoCliente.telefono.trim(),
+      email: nuevoCliente.email.trim() || null,
+      direccion: nuevoCliente.direccion.trim() || null,
+      municipio: nuevoCliente.municipio.trim() || null,
+      tipo_cliente: nuevoCliente.tipo_cliente,
+      distancia_km: nuevoCliente.distancia_km === '' ? null : Number(nuevoCliente.distancia_km),
+    }
+    const { data, error } = await supabase
+      .from('clientes').insert([payload]).select('id, nombre, distancia_km').single()
+    setCreandoCliente(false)
+    if (error) return setErrorCliente(error.message)
+    setClientes(cs => [...cs, data].sort((a, b) => a.nombre.localeCompare(b.nombre)))
+    setForm(f => ({ ...f, cliente_id: data.id, equipo_id: '' }))
+    setNuevoCliente(CLIENTE_VACIO)
+    setClienteNuevoAbierto(false)
+  }
 
   // -------------------------------------------------------------------------
   async function guardar(e) {
@@ -786,6 +822,61 @@ export default function Cotizaciones({ irA }) {
               Cotización {cotizaciones.find(x => x.id === editandoId)?.folio}. Los cambios reemplazan
               lo guardado; las partidas conservan el precio con el que se cotizaron.
             </Alerta>
+          )}
+          {!editandoId && (
+            <details
+              className="tarjeta"
+              open={clienteNuevoAbierto}
+              onToggle={e => setClienteNuevoAbierto(e.currentTarget.open)}
+              style={{ marginBottom: 12 }}
+            >
+              <summary className="resumen">¿Cliente nuevo? Crearlo aquí</summary>
+              {errorCliente && <Alerta tipo="error">{errorCliente}</Alerta>}
+              <div className="rejilla-2">
+                <label className="campo">
+                  <span>Nombre *</span>
+                  <input value={nuevoCliente.nombre}
+                    onChange={e => setNuevoCliente({ ...nuevoCliente, nombre: e.target.value })} />
+                </label>
+                <label className="campo">
+                  <span>Teléfono *</span>
+                  <input type="tel" value={nuevoCliente.telefono}
+                    onChange={e => setNuevoCliente({ ...nuevoCliente, telefono: e.target.value })} />
+                </label>
+                <label className="campo">
+                  <span>Correo</span>
+                  <input type="email" value={nuevoCliente.email}
+                    onChange={e => setNuevoCliente({ ...nuevoCliente, email: e.target.value })} />
+                </label>
+                <label className="campo">
+                  <span>Tipo de cliente</span>
+                  <select value={nuevoCliente.tipo_cliente}
+                    onChange={e => setNuevoCliente({ ...nuevoCliente, tipo_cliente: e.target.value })}>
+                    <option value="residencial">Residencial</option>
+                    <option value="comercial">Comercial</option>
+                    <option value="industrial">Industrial</option>
+                  </select>
+                </label>
+                <label className="campo">
+                  <span>Dirección</span>
+                  <input value={nuevoCliente.direccion}
+                    onChange={e => setNuevoCliente({ ...nuevoCliente, direccion: e.target.value })} />
+                </label>
+                <label className="campo">
+                  <span>Municipio</span>
+                  <input value={nuevoCliente.municipio}
+                    onChange={e => setNuevoCliente({ ...nuevoCliente, municipio: e.target.value })} />
+                </label>
+                <label className="campo">
+                  <span>Distancia a la oficina (km, solo ida)</span>
+                  <input type="number" min="0" value={nuevoCliente.distancia_km}
+                    onChange={e => setNuevoCliente({ ...nuevoCliente, distancia_km: e.target.value })} />
+                </label>
+              </div>
+              <button type="button" className="btn-primario" onClick={crearCliente} disabled={creandoCliente}>
+                {creandoCliente ? 'Creando…' : 'Crear cliente y usarlo'}
+              </button>
+            </details>
           )}
           <div className="rejilla-2">
             <label className="campo">
