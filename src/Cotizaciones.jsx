@@ -192,6 +192,11 @@ const CLIENTE_VACIO = {
   tipo_cliente: 'residencial', distancia_km: '',
 }
 
+const EQUIPO_VACIO = {
+  tipo: 'generador', marca: '', modelo: '', capacidad_kw: '',
+  combustible: '', numero_serie: '', ubicacion_equipo: '',
+}
+
 export default function Cotizaciones({ irA }) {
   const [vista, setVista] = useState('lista')
   const [cotizaciones, setCotizaciones] = useState([])
@@ -221,6 +226,10 @@ export default function Cotizaciones({ irA }) {
   const [nuevoCliente, setNuevoCliente] = useState(CLIENTE_VACIO)
   const [creandoCliente, setCreandoCliente] = useState(false)
   const [errorCliente, setErrorCliente] = useState('')
+  const [equipoNuevoAbierto, setEquipoNuevoAbierto] = useState(false)
+  const [nuevoEquipo, setNuevoEquipo] = useState(EQUIPO_VACIO)
+  const [creandoEquipo, setCreandoEquipo] = useState(false)
+  const [errorEquipo, setErrorEquipo] = useState('')
 
   useEffect(() => { cargar() }, [])
 
@@ -459,6 +468,39 @@ export default function Cotizaciones({ irA }) {
     setForm(f => ({ ...f, cliente_id: data.id, equipo_id: '' }))
     setNuevoCliente(CLIENTE_VACIO)
     setClienteNuevoAbierto(false)
+  }
+
+  // Alta rápida de equipo para el cliente elegido. Misma regla que Equipos: la serie es
+  // opcional, pero algo tiene que identificar al equipo (serie, marca, modelo o ubicación).
+  async function crearEquipo() {
+    setErrorEquipo('')
+    if (!form.cliente_id) return setErrorEquipo('Elige primero el cliente')
+    const e = nuevoEquipo
+    const serie = e.numero_serie.trim()
+    if (!serie && !e.marca.trim() && !e.modelo.trim() && !e.ubicacion_equipo.trim()) {
+      return setErrorEquipo('Sin número de serie, escribe al menos la marca, el modelo o dónde está el equipo')
+    }
+    setCreandoEquipo(true)
+    const payload = {
+      cliente_id: form.cliente_id,
+      tipo: e.tipo,
+      numero_serie: serie || null,          // nunca '': chocaría en el índice único
+      marca: e.marca.trim() || null,
+      modelo: e.modelo.trim() || null,
+      ubicacion_equipo: e.ubicacion_equipo.trim() || null,
+      capacidad_kw: e.capacidad_kw === '' ? null : Number(e.capacidad_kw),
+      estado: 'activo',
+      atributos: e.tipo === 'generador' && e.combustible ? { combustible: e.combustible } : {},
+    }
+    const { data, error } = await supabase
+      .from('equipos').insert([payload])
+      .select('id, numero_serie, cliente_id, tipo, marca, capacidad_kw, atributos').single()
+    setCreandoEquipo(false)
+    if (error) return setErrorEquipo(error.message)
+    setEquipos(es => [...es, data])
+    setForm(f => ({ ...f, equipo_id: data.id }))
+    setNuevoEquipo(EQUIPO_VACIO)
+    setEquipoNuevoAbierto(false)
   }
 
   // -------------------------------------------------------------------------
@@ -896,11 +938,76 @@ export default function Cotizaciones({ irA }) {
                 <option value="">— Ninguno —</option>
                 {equiposDelCliente.map(e => (
                   <option key={e.id} value={e.id}>
-                    {e.numero_serie} — {e.tipo}{e.capacidad_kw ? ` ${e.capacidad_kw} kW` : ''}
+                    {e.numero_serie || e.marca || 'Sin serie'} — {e.tipo}{e.capacidad_kw ? ` ${e.capacidad_kw} kW` : ''}
                   </option>
                 ))}
               </select>
             </label>
+
+            {form.cliente_id && (
+              <details
+                className="tarjeta"
+                open={equipoNuevoAbierto}
+                onToggle={e => setEquipoNuevoAbierto(e.currentTarget.open)}
+                style={{ gridColumn: '1 / -1' }}
+              >
+                <summary className="resumen">¿Equipo nuevo para este cliente? Agregarlo aquí</summary>
+                {errorEquipo && <Alerta tipo="error">{errorEquipo}</Alerta>}
+                <div className="rejilla-2">
+                  <label className="campo">
+                    <span>Tipo de equipo</span>
+                    <select value={nuevoEquipo.tipo}
+                      onChange={e => setNuevoEquipo({ ...nuevoEquipo, tipo: e.target.value })}>
+                      <option value="generador">Generador</option>
+                      <option value="solar">Sistema solar</option>
+                      <option value="bateria">Batería</option>
+                      <option value="otro">Otro</option>
+                    </select>
+                  </label>
+                  <label className="campo">
+                    <span>Marca</span>
+                    <input value={nuevoEquipo.marca}
+                      onChange={e => setNuevoEquipo({ ...nuevoEquipo, marca: e.target.value })} />
+                  </label>
+                  <label className="campo">
+                    <span>Modelo</span>
+                    <input value={nuevoEquipo.modelo}
+                      onChange={e => setNuevoEquipo({ ...nuevoEquipo, modelo: e.target.value })} />
+                  </label>
+                  <label className="campo">
+                    <span>Capacidad (kW)</span>
+                    <input type="number" min="0" step="any" value={nuevoEquipo.capacidad_kw}
+                      onChange={e => setNuevoEquipo({ ...nuevoEquipo, capacidad_kw: e.target.value })} />
+                  </label>
+                  {nuevoEquipo.tipo === 'generador' && (
+                    <label className="campo">
+                      <span>Combustible</span>
+                      <select value={nuevoEquipo.combustible}
+                        onChange={e => setNuevoEquipo({ ...nuevoEquipo, combustible: e.target.value })}>
+                        <option value="">— No sé —</option>
+                        <option value="gasolina">Gasolina</option>
+                        <option value="gas_lp">Gas LP</option>
+                        <option value="gas_natural">Gas natural</option>
+                        <option value="diesel">Diésel</option>
+                      </select>
+                    </label>
+                  )}
+                  <label className="campo">
+                    <span>Número de serie (opcional)</span>
+                    <input value={nuevoEquipo.numero_serie}
+                      onChange={e => setNuevoEquipo({ ...nuevoEquipo, numero_serie: e.target.value })} />
+                  </label>
+                  <label className="campo">
+                    <span>Dónde está el equipo</span>
+                    <input value={nuevoEquipo.ubicacion_equipo}
+                      onChange={e => setNuevoEquipo({ ...nuevoEquipo, ubicacion_equipo: e.target.value })} />
+                  </label>
+                </div>
+                <button type="button" className="btn-primario" onClick={crearEquipo} disabled={creandoEquipo}>
+                  {creandoEquipo ? 'Agregando…' : 'Agregar equipo y usarlo'}
+                </button>
+              </details>
+            )}
 
             <label className="campo">
               <span>Tipo</span>
