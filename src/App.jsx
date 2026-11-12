@@ -79,9 +79,9 @@ const PANTALLAS = {
 // mes al final.
 // ---------------------------------------------------------------------------
 const GRUPOS = [
-  { clave: 'servicio', titulo: 'Servicio', pantallas: ['inicio', 'agenda', 'ordenes', 'polizas', 'comisiones'] },
+  { clave: 'servicio', titulo: 'Servicio', pantallas: ['inicio', 'agenda', 'ordenes', 'comisiones'] },
   { clave: 'clientes', titulo: 'Clientes', pantallas: ['solicitudes', 'whatsapp', 'clientes', 'contactos', 'equipos'] },
-  { clave: 'ventas',   titulo: 'Ventas',   pantallas: ['cotizaciones', 'tarifas', 'paquetes'] },
+  { clave: 'ventas',   titulo: 'Ventas',   pantallas: ['cotizaciones', 'polizas', 'tarifas', 'paquetes'] },
   { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones', 'compras', 'proveedores', 'proveedor'] },
   { clave: 'finanzas', titulo: 'Finanzas', pantallas: ['tablero', 'finanzas', 'pagos'] },
   { clave: 'ajustes',  titulo: 'Ajustes',  pantallas: ['usuarios', 'agente'] },
