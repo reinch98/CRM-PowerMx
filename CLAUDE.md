@@ -1324,7 +1324,7 @@ solicitudes llegan solo al CRM**; n8n ya no interviene. Primer puente real entre
      funciona igual que en los catálogos. La calculadora de ahorro solar (`calculadora.html`) no
      tenía ninguno de los dos problemas.
 
-## Calculadora solar → cotización real (16/11/2026) — fases 1 y 4 construidas, sin publicar
+## Calculadora solar → cotización real (16/11/2026) — fases 1, 4 y 5 construidas, sin publicar
 
 Plan acordado con Caña el 16/11/2026 tras analizar un recibo real: la calculadora de
 powermx.com.mx recomendaba 43 paneles, $175,000 y $3,000/mes de ahorro a una clienta de
@@ -1359,8 +1359,34 @@ WhatsApp, y el precio se presenta como "de lista con IVA, sujeto a visita técni
 - **Para ponerlo en marcha, en este orden:** (1) correr `98_solicitud_calculo_solar.sql` y su
   prueba (`npx supabase db query --linked -f …`); (2) `npx supabase functions deploy
   solicitud-web`; (3) desplegar el Worker del lector; (4) pasar la rama del sitio a `main`.
-- **Falta la fase 5:** tarjeta "Calculadora solar" en Solicitudes y "Crear cotización con este
-  paquete" (precio de HOY, avisar si cambió; cotización en borrador con `requiere_visita`).
+- **Fase 5 (SQL 99 + pantallas, 16/11/2026):** en **Solicitudes**, una solicitud con `calculo`
+  muestra la tarjeta **"Calculadora solar"**: avisos en palabra (2 hilos y DAC/comercial como
+  "Importante"), resumen (consumo, gasto, costo por kWh, hilos, últimos 4 del servicio, paquete y
+  ahorro que vio) e historial en barras (el dato va escrito; la barra, en `--serie-1`, solo acompaña).
+  **"Crear cotización con este paquete"** (interconectado o con respaldo) arma las partidas en
+  `src/lib/calculoSolar.js` (`partidasDePaqueteSolar`, 10 pruebas en `pruebas/calculoSolar.prueba.js`):
+  · UNA partida visible con el precio **publicado HOY** (`productos.precios.estandar|hibrido`, con
+    IVA → entra entre 1.16, como los generadores) y **sin `producto_id`**: el paquete PKG-… nunca debe
+    apartar inventario ni generar requisiciones (no existe en el estante). **Hoy nada impide agregar
+    un PKG desde el buscador de Cotizaciones como producto, y eso sí apartaría: anotado, sin arreglar.**
+  · Las piezas de la receta (`paquete_solar_lineas` con `producto_id`; respaldo = interconectado +
+    respaldo) a $0, `incluida` y CON `producto_id`, sumadas por pieza: al aceptar se apartan y se pide
+    lo que falte, igual que el preventivo. Cantidades con decimales tal cual (cable 0.3 de rollo).
+  · Si el precio de hoy no es el que vio el cliente (misma variante), "Cambió el precio" con los dos
+    números. Sin precio publicado de la variante, no cotiza (no inventa). Sin paquete (a la medida),
+    abre la cotización solo con cliente y notas.
+  Los datos pasan a Cotizaciones por un **encargo en memoria** (`src/lib/encargo.js`: `dejarEncargo` /
+  `tomarEncargo`, se entrega una vez; `irA` solo cambia de pantalla). Cotizaciones lo abre como nueva:
+  tipo `instalacion`, `requiere_visita`, nota interna con el resumen y los avisos, y si el cliente no
+  existe, el alta rápida abierta y llenada. **Nada se guarda hasta que el admin la revisa.** Al guardar,
+  `ligar_solicitud_a_cotizacion` (SQL 99) deja la solicitud atendida y ligada; si falla, la cotización
+  ya quedó y el mensaje lo dice. `cargarSolicitudes` pide `cotizaciones(folio, estado)` y, si la base
+  aún no tiene el 99, repite la consulta sin eso (la pantalla no se cae por el orden de despliegue).
+  Probado: SQL 99 en PGlite 7/7; en el emulador con un Supabase falso, de la tarjeta a la cotización
+  guardada y ligada (lo escrito en la base fue lo esperado). Medido en celular: tarjeta con 0 textos
+  < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde.
+- **Para ponerlo en marcha (fase 5):** después del 98, correr `99_solicitud_a_cotizacion.sql` y su prueba
+  (7 "ok") y publicar el CRM.
 
 ## Catálogo público del sitio desde el CRM (SQL 38–39, 27/09/2026) — SQL aplicado y probado; falta publicar el sitio
 

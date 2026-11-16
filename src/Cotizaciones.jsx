@@ -7,6 +7,8 @@ import {
   faltantes, partidasDePreventivo, avisosDePreventivo, esIncluida
 } from './lib/preventivo'
 import { Alerta } from './ui'
+import { tomarEncargo } from './lib/encargo'
+import { textoCambio, ligarSolicitudACotizacion } from './lib/calculoSolar'
 import { todasLasFilas } from './lib/paginar'
 import { precioParaCotizar, textoPrecioLista } from './lib/precioLista'
 import Expediente from './Expediente'
@@ -230,12 +232,32 @@ export default function Cotizaciones({ irA }) {
   const [nuevoEquipo, setNuevoEquipo] = useState(EQUIPO_VACIO)
   const [creandoEquipo, setCreandoEquipo] = useState(false)
   const [errorEquipo, setErrorEquipo] = useState('')
+  // Cotización que viene de una solicitud de la calculadora solar (fase 5): al guardarla, la
+  // solicitud queda atendida y ligada a ella (SQL 99).
+  const [desdeSolicitud, setDesdeSolicitud] = useState(null)
 
   useEffect(() => { cargar() }, [])
 
+  // Lo que dejó Solicitudes (lib/encargo.js): se abre como cotización nueva, sin guardar nada.
+  useEffect(() => {
+    const e = tomarEncargo('cotizaciones')
+    if (!e) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEditandoId(null)
+    setForm({ ...vacio(), cliente_id: e.clienteId || '', tipo: e.tipo || 'instalacion', requiere_visita: true, notas_internas: e.notas || '' })
+    setPartidas(e.partidas || [])
+    setAvisosDiag([])
+    setDesdeSolicitud({ id: e.solicitud?.id, nombre: e.solicitud?.nombre, avisos: e.avisos || [], cambio: e.cambio, aLaMedida: e.aLaMedida })
+    if (!e.clienteId && e.clienteNuevo) {
+      setNuevoCliente({ ...CLIENTE_VACIO, ...e.clienteNuevo })
+      setClienteNuevoAbierto(true)
+    }
+    setVista('nueva')
+  }, [])
+
   // Nueva en blanco: también sirve para salir de una edición sin guardar.
   function nueva() {
-    setEditandoId(null); setForm(vacio()); setPartidas([]); setAvisosDiag([])
+    setEditandoId(null); setForm(vacio()); setPartidas([]); setAvisosDiag([]); setDesdeSolicitud(null)
     setError(''); setMensaje(''); setVista('nueva')
   }
 
@@ -545,6 +567,7 @@ export default function Cotizaciones({ irA }) {
     }
 
     let error
+    let nuevaId = null
     if (editandoId) {
       // El estado y quién la creó no se tocan al editar. El filtro por estado es el candado
       // de verdad: si alguien la aceptó mientras se editaba, no se guarda nada.
@@ -560,15 +583,26 @@ export default function Cotizaciones({ irA }) {
         ...datos,
         estado: 'borrador',
         creada_por: (await supabase.auth.getUser()).data.user?.email || 'crm'
-      }])
+      }]).select('id').single()
       error = r.error
+      nuevaId = r.data?.id || null
+    }
+
+    // Si salió de una solicitud de la calculadora, la solicitud queda atendida y ligada.
+    // Si eso falla, la cotización ya quedó guardada: se dice y se liga a mano.
+    let textoSolicitud = ''
+    if (!error && nuevaId && desdeSolicitud?.id) {
+      const l = await ligarSolicitudACotizacion(desdeSolicitud.id, nuevaId)
+      textoSolicitud = l.ok
+        ? ` La solicitud de ${desdeSolicitud.nombre} quedó atendida y ligada a esta cotización.`
+        : ` Ojo: no se pudo ligar a la solicitud de ${desdeSolicitud.nombre} (${l.texto}). Márcala atendida en Solicitudes.`
     }
     setGuardando(false)
     if (error) return setError(error.message)
 
     const fueEdicion = !!editandoId
-    setEditandoId(null); setForm(vacio()); setPartidas([]); setAvisosDiag([]); setVista('lista')
-    setMensaje(fueEdicion ? 'Cambios guardados.' : 'Cotización guardada como borrador.')
+    setEditandoId(null); setForm(vacio()); setPartidas([]); setAvisosDiag([]); setDesdeSolicitud(null); setVista('lista')
+    setMensaje((fueEdicion ? 'Cambios guardados.' : 'Cotización guardada como borrador.') + textoSolicitud)
     cargar()
   }
 
@@ -865,6 +899,20 @@ export default function Cotizaciones({ irA }) {
               lo guardado; las partidas conservan el precio con el que se cotizaron.
             </Alerta>
           )}
+          {desdeSolicitud && !editandoId && (
+            <Alerta tipo="info" palabra="De la calculadora">
+              Cotización armada con la solicitud de <strong>{desdeSolicitud.nombre}</strong>
+              {desdeSolicitud.aLaMedida ? ' (sistema a la medida: agrega tú las partidas)' : ', con el precio de hoy del paquete y sus piezas incluidas'}.
+              Al guardarla, la solicitud queda atendida y ligada a ella.
+              {!form.cliente_id && ' Primero da de alta al cliente: sus datos ya están abajo.'}
+            </Alerta>
+          )}
+          {desdeSolicitud?.cambio && !editandoId && (
+            <Alerta tipo="aviso" palabra="Cambió el precio">{textoCambio(desdeSolicitud.cambio)}</Alerta>
+          )}
+          {!editandoId && (desdeSolicitud?.avisos || []).map(t => (
+            <Alerta key={t} tipo="aviso" palabra="Revisar">{t}</Alerta>
+          ))}
           {!editandoId && (
             <details
               className="tarjeta"

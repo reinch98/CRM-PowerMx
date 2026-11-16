@@ -57,10 +57,12 @@ function textoDeError(error) {
 
 export async function cargarSolicitudes() {
   try {
-    const { data, error } = await supabase.from('solicitudes_web')
-      .select('*, clientes(nombre)')
-      .order('created_at', { ascending: false })
-      .limit(200)
+    const consulta = sel => supabase.from('solicitudes_web').select(sel)
+      .order('created_at', { ascending: false }).limit(200)
+    // Con el SQL 99 trae también la cotización que salió de cada solicitud; sin él (base
+    // todavía sin aplicar) esa columna no existe y se pide lo de antes, para no tumbar la pantalla.
+    let { data, error } = await consulta('*, clientes(nombre), cotizaciones(folio, estado)')
+    if (error) ({ data, error } = await consulta('*, clientes(nombre)'))
     if (error) return { ok: false, texto: textoDeError(error) }
     return { ok: true, solicitudes: data || [] }
   } catch (e) {
