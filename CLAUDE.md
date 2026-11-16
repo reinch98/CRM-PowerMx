@@ -1369,9 +1369,14 @@ WhatsApp, y el precio se presenta como "de lista con IVA, sujeto a visita técni
   punta a punta: el `calculo` que el navegador manda de verdad, pasado por la función SQL,
   se guarda completo y sin cambios; cotizar sin pasar por la calculadora no manda cálculo.
   **Sin probar contra Supabase real** (este contenedor no tiene credenciales).
-- **Para ponerlo en marcha, en este orden:** (1) correr `98_solicitud_calculo_solar.sql` y su
-  prueba (`npx supabase db query --linked -f …`); (2) `npx supabase functions deploy
-  solicitud-web`; (3) desplegar el Worker del lector; (4) pasar la rama del sitio a `main`.
+- **SQL 98, 99 y 100 aplicados y probados en Supabase el 16/11/2026** (8/8, 7/7 y 6/6 "ok"; el
+  reporte del 100 salió en ceros: ninguna cotización aceptada ni pedido con paquetes que revisar).
+  Las pruebas consumieron los folios de cotización 81 a 83. Se corrieron por la Management API
+  (`POST /v1/projects/<ref>/database/query` con `curl`): `npx supabase db query --linked` falló
+  aquí con «IPv6 is not supported» y Node no pasa por el proxy del contenedor.
+- **Para ponerlo en marcha, lo que falta, en este orden:** (1) `npx supabase functions deploy
+  solicitud-web`; (2) fusionar el PR del CRM; (3) desplegar el Worker del lector; (4) fusionar el PR
+  del sitio.
 - **Fase 5 (SQL 99 + pantallas, 16/11/2026):** en **Solicitudes**, una solicitud con `calculo`
   muestra la tarjeta **"Calculadora solar"**: avisos en palabra (2 hilos y DAC/comercial como
   "Importante"), resumen (consumo, gasto, costo por kWh, hilos, últimos 4 del servicio, paquete y
