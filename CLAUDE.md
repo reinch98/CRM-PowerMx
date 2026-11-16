@@ -1367,8 +1367,9 @@ WhatsApp, y el precio se presenta como "de lista con IVA, sujeto a visita técni
   `src/lib/calculoSolar.js` (`partidasDePaqueteSolar`, 10 pruebas en `pruebas/calculoSolar.prueba.js`):
   · UNA partida visible con el precio **publicado HOY** (`productos.precios.estandar|hibrido`, con
     IVA → entra entre 1.16, como los generadores) y **sin `producto_id`**: el paquete PKG-… nunca debe
-    apartar inventario ni generar requisiciones (no existe en el estante). **Hoy nada impide agregar
-    un PKG desde el buscador de Cotizaciones como producto, y eso sí apartaría: anotado, sin arreglar.**
+    apartar inventario ni generar requisiciones (no existe en el estante). **Arreglado el 16/11/2026
+    (SQL 100, abajo):** el buscador de Cotizaciones también lo agrega con sus piezas, y la base le quita
+    el `producto_id` a cualquier paquete que llegue por otro lado.
   · Las piezas de la receta (`paquete_solar_lineas` con `producto_id`; respaldo = interconectado +
     respaldo) a $0, `incluida` y CON `producto_id`, sumadas por pieza: al aceptar se apartan y se pide
     lo que falte, igual que el preventivo. Cantidades con decimales tal cual (cable 0.3 de rollo).
@@ -1387,6 +1388,22 @@ WhatsApp, y el precio se presenta como "de lista con IVA, sujeto a visita técni
   < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde.
 - **Para ponerlo en marcha (fase 5):** después del 98, correr `99_solicitud_a_cotizacion.sql` y su prueba
   (7 "ok") y publicar el CRM.
+- **Un paquete solar nunca aparta inventario (SQL 100, 16/11/2026)** — escrito y probado en PGlite (6/6) con la
+  `cambiar_estado_cotizacion` REAL (la de la 14, la última; coincide con la foto del esquema). La regla vive donde
+  nace el dato y no en cada función que lee partidas: el disparador `paquete_solar_no_es_inventario` (BEFORE INSERT
+  / UPDATE OF partidas en `cotizaciones`) le quita el `producto_id` a toda partida que sea `paquete_solar` y le deja
+  `paquete_sku`. Así aceptar, liberar, requisiciones, surtido y costo del Expediente la ven LIBRE sin redefinir
+  ninguna función. **No toca una cotización ya aceptada**: si apartó un paquete antes del 100, al salir de aceptada
+  lo libera con sus mismas partidas (probado). Corrección única: limpia borradores/enviadas y cancela requisiciones
+  PENDIENTES de paquetes con nota; lo aceptado y lo ya pedido al proveedor lo **reporta** al final del script para
+  revisarlo a mano. En **Cotizaciones**, elegir un PKG del buscador ya no lo mete como producto: lo arma con
+  `partidasDePaqueteSolar` (pregunta interconectado o con respaldo si tiene los dos precios) y muestra sus avisos;
+  el resultado dice "Paquete solar · con IVA incluido · se agrega con sus piezas". `precioLista.js` trata el paquete
+  como IVA incluido (como el generador), por si algo lo llegara a pasar por ahí. Probado en el emulador: con
+  respaldo, total exacto $103,999, PKG sin `producto_id` y 5 piezas incluidas con el suyo.
+  **Una cotización vieja con un PKG que quede como partida libre no tiene piezas:** su costo de material en el
+  Expediente sale en 0 (antes contaba el costo del PKG). Si hay, conviene quitar esa partida y volver a agregar el
+  paquete desde el buscador.
 
 ## Catálogo público del sitio desde el CRM (SQL 38–39, 27/09/2026) — SQL aplicado y probado; falta publicar el sitio
 

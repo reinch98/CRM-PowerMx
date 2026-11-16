@@ -8,7 +8,9 @@ import {
 } from './lib/preventivo'
 import { Alerta } from './ui'
 import { tomarEncargo } from './lib/encargo'
-import { textoCambio, ligarSolicitudACotizacion } from './lib/calculoSolar'
+import {
+  textoCambio, ligarSolicitudACotizacion, partidasDePaqueteSolar, cargarPaqueteParaCotizar, precioDeVariante
+} from './lib/calculoSolar'
 import { todasLasFilas } from './lib/paginar'
 import { precioParaCotizar, textoPrecioLista } from './lib/precioLista'
 import Expediente from './Expediente'
@@ -235,6 +237,9 @@ export default function Cotizaciones({ irA }) {
   // Cotización que viene de una solicitud de la calculadora solar (fase 5): al guardarla, la
   // solicitud queda atendida y ligada a ella (SQL 99).
   const [desdeSolicitud, setDesdeSolicitud] = useState(null)
+  // Paquete solar elegido en el buscador que tiene dos precios: falta decir cuál variante.
+  const [paqueteElegir, setPaqueteElegir] = useState(null)
+  const [avisosPaquete, setAvisosPaquete] = useState([])
 
   useEffect(() => { cargar() }, [])
 
@@ -258,6 +263,7 @@ export default function Cotizaciones({ irA }) {
   // Nueva en blanco: también sirve para salir de una edición sin guardar.
   function nueva() {
     setEditandoId(null); setForm(vacio()); setPartidas([]); setAvisosDiag([]); setDesdeSolicitud(null)
+    setPaqueteElegir(null); setAvisosPaquete([])
     setError(''); setMensaje(''); setVista('nueva')
   }
 
@@ -415,7 +421,27 @@ export default function Cotizaciones({ irA }) {
   // producto_id: es una partida libre, igual que el diagnóstico y el traslado, así
   // que no mueve inventario ni genera requisiciones.
   // -------------------------------------------------------------------------
+  // Un paquete solar NO entra como producto: no existe en el estante (el SQL 100 se lo quitaría
+  // igual). Entra como en la calculadora: una partida con su precio publicado con IVA y, a $0 e
+  // incluidas, las piezas de su receta, que son las que se apartan al aceptar.
+  async function agregarPaquete(item) {
+    setError(''); setBuscar('')
+    const p = await cargarPaqueteParaCotizar(item.sku)
+    if (p.error) return setError(p.error)
+    if (precioDeVariante(p.producto, 'respaldo')) setPaqueteElegir(p)
+    else ponerPaquete(p, 'interconectado')
+  }
+
+  function ponerPaquete(p, variante) {
+    const r = partidasDePaqueteSolar({ producto: p.producto, lineas: p.lineas, variante })
+    setPaqueteElegir(null)
+    if (r.error) return setError(r.error)
+    setPartidas(ps => [...ps, ...r.partidas])
+    setAvisosPaquete(r.avisos)
+  }
+
   function agregarResultado(item) {
+    if (item.tipo === 'producto' && item.categoria === 'paquete_solar') return agregarPaquete(item)
     // Una cotización se arma en pesos y sin IVA. Un producto en dólares se convierte con el último tipo de
     // cambio guardado, y un generador (precio de lista con IVA incluido) entra dividido entre 1.16 para que
     // la cotización termine en su precio de lista. La partida dice de dónde salió el número (precioLista.js).
@@ -1169,6 +1195,8 @@ export default function Cotizaciones({ irA }) {
                     <span className="ayuda">
                       {p.tipo === 'servicio' ? (
                         <><span className="etiqueta">Servicio</span> {pesos(p.precio)}</>
+                      ) : p.categoria === 'paquete_solar' ? (
+                        <><span className="etiqueta">Paquete solar</span> {textoPrecioLista(p, tcUsd?.valor, pesos)} · se agrega con sus piezas</>
                       ) : (
                         <>{textoPrecioLista(p, tcUsd?.valor, pesos)}{' · disponible '}{dispoPorId[p.id] ?? 0}</>
                       )}
@@ -1178,6 +1206,22 @@ export default function Cotizaciones({ irA }) {
               </div>
             )}
           </div>
+
+          {paqueteElegir && (
+            <section className="tarjeta" aria-label="Elegir el sistema del paquete">
+              <h3 style={{ marginTop: 0 }}>Paquete {paqueteElegir.producto.nombre}: ¿qué sistema?</h3>
+              <div className="fila" style={{ flexWrap: 'wrap', gap: 8 }}>
+                <button type="button" className="btn-primario" onClick={() => ponerPaquete(paqueteElegir, 'interconectado')}>
+                  Interconectado · {pesos(precioDeVariante(paqueteElegir.producto, 'interconectado'))} con IVA
+                </button>
+                <button type="button" onClick={() => ponerPaquete(paqueteElegir, 'respaldo')}>
+                  Con respaldo en apagones · {pesos(precioDeVariante(paqueteElegir.producto, 'respaldo'))} con IVA
+                </button>
+                <button type="button" onClick={() => setPaqueteElegir(null)}>Cancelar</button>
+              </div>
+            </section>
+          )}
+          {avisosPaquete.map(a => <Alerta key={a} tipo="aviso" palabra="Revisar">{a}</Alerta>)}
 
           <PreventivoDeEquipo equipoId={form.equipo_id} tarifas={tarifas}
             cliente={clientes.find(c => c.id === form.cliente_id)} onAgregar={ps => {

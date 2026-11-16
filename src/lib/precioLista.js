@@ -10,6 +10,9 @@
 // qué el precio unitario no coincide con el del volante.
 
 export const IVA = 0.16
+// Se publican con el IVA incluido. (Un paquete solar no debería llegar a precioParaCotizar:
+// Cotizaciones lo agrega con sus piezas, ver lib/calculoSolar.js; si llega, al menos no sale 16 % caro.)
+const IVA_INCLUIDO = ['generador', 'paquete_solar']
 
 const redondeo = (n, d) => Math.round(n * 10 ** d) / 10 ** d
 
@@ -29,7 +32,7 @@ export function precioParaCotizar(producto, tcUsd) {
     notas.push(`USD ${lista.toLocaleString('es-MX')} × TC ${tc}`)
   }
 
-  const esGenerador = producto.categoria === 'generador'
+  const esGenerador = IVA_INCLUIDO.includes(producto.categoria)
   if (esGenerador) {
     pesos = pesos / (1 + IVA)
     notas.push('precio de lista con IVA incluido')
@@ -45,7 +48,7 @@ export function precioParaCotizar(producto, tcUsd) {
 // Cómo se ve el precio en la lista de resultados del buscador.
 export function textoPrecioLista(producto, tcUsd, formatoPesos) {
   if (producto.precio == null) return 'sin precio'
-  const iva = producto.categoria === 'generador' ? ' con IVA incluido' : ''
+  const iva = IVA_INCLUIDO.includes(producto.categoria) ? ' con IVA incluido' : ''
   if (producto.moneda === 'USD') {
     return `USD ${Number(producto.precio).toLocaleString('es-MX')}${iva} (en pesos al TC ${tcUsd ?? 'sin dato'})`
   }
