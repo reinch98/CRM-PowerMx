@@ -1324,7 +1324,7 @@ solicitudes llegan solo al CRM**; n8n ya no interviene. Primer puente real entre
      funciona igual que en los catálogos. La calculadora de ahorro solar (`calculadora.html`) no
      tenía ninguno de los dos problemas.
 
-## Calculadora solar → cotización real (16/11/2026) — fases 1, 4 y 5 construidas, sin publicar
+## Calculadora solar → cotización real (16/11/2026) — fases 1, 3, 4 y 5 construidas, sin publicar
 
 Plan acordado con Caña el 16/11/2026 tras analizar un recibo real: la calculadora de
 powermx.com.mx recomendaba 43 paneles, $175,000 y $3,000/mes de ahorro a una clienta de
@@ -1341,6 +1341,14 @@ WhatsApp, y el precio se presenta como "de lista con IVA, sujeto a visita técni
   1,530 kWh/kWp/año. Recibo de referencia: Essential, $53,999, ~$900/mes, ~4.5 años.
   El lector (`LECTOR-RECIBOS/worker.js`) ahora pide días, hilos, DAP e importe de cada periodo
   del historial: **falta volver a desplegarlo** (sin eso el gasto sale ~30 % alto).
+- **Fase 3 (sitio, 16/11/2026):** `calculadora.html` en tres pasos (recibo → "esto leímos" con
+  historial y "Corregir datos" → tu sistema, eligiendo entre recomendado, económico, más grande e
+  híbrido). La solicitud se manda **en la misma página** (nombre, WhatsApp, colonia, techo) con el
+  cálculo del paquete ELEGIDO: `aCalculoCrm(r, { paquete })`, así un híbrido llega con
+  `variante: 'respaldo'` y la tarjeta del CRM arma esa variante. El techo va en `notas`.
+  Reglas en `sitio-publicar/solicitud-solar.js` (5 pruebas). Probado en el emulador con el lector
+  y `solicitud-web` simulados (éxito, 400 y 500); medido a 375 px: 0 px de desborde, 0 textos
+  < 13 px, 0 objetivos < 44 px.
 - **Fase 4 (SQL 98 + `solicitud-web`):** `solicitudes_web.calculo` jsonb. Lo que manda el sitio
   pasa por la lista blanca `_calculo_solicitud` (campo por campo con tipo, patrón y rango); lo
   que no cuadra se descarta sin tumbar la solicitud, y sin `kwh_mes` no se guarda nada. Del
