@@ -1324,6 +1324,44 @@ solicitudes llegan solo al CRM**; n8n ya no interviene. Primer puente real entre
      funciona igual que en los catálogos. La calculadora de ahorro solar (`calculadora.html`) no
      tenía ninguno de los dos problemas.
 
+## Calculadora solar → cotización real (16/11/2026) — fases 1 y 4 construidas, sin publicar
+
+Plan acordado con Caña el 16/11/2026 tras analizar un recibo real: la calculadora de
+powermx.com.mx recomendaba 43 paneles, $175,000 y $3,000/mes de ahorro a una clienta de
+469 kWh/mes (tomaba el recibo bimestral como mensual, tarifa fija de $0.90, panel de 620 W a
+$20/W). Fases: 1 motor de cálculo · 2 lector de recibos · 3 pantalla · 4 puente al CRM ·
+5 de la solicitud a la cotización. Decisiones de Caña: el resultado se ve ANTES de pedir el
+WhatsApp, y el precio se presenta como "de lista con IVA, sujeto a visita técnica".
+- **Fase 1 (repo POWERMX-sitio, rama `claude/keen-allen-mj6iuy`):** motor puro
+  `sitio-publicar/solar-calculo.js` (16 pruebas: `node --test 'pruebas/*.prueba.js'`) que usan
+  la calculadora, el reporte y cotizar. Mensualiza con los días reales, 12 meses de historial,
+  recomienda el paquete PUBLICADO más chico que cubra el 90 % (precio de
+  `productos-paquetes-solares.json`), resta cargo mínimo (25 kWh/mes a $1.30) y DAP, avisa de
+  2 hilos, DAC/comercial, crecimiento > 15 % y "a la medida" (sin precio inventado). Producción:
+  1,530 kWh/kWp/año. Recibo de referencia: Essential, $53,999, ~$900/mes, ~4.5 años.
+  El lector (`LECTOR-RECIBOS/worker.js`) ahora pide días, hilos, DAP e importe de cada periodo
+  del historial: **falta volver a desplegarlo** (sin eso el gasto sale ~30 % alto).
+- **Fase 4 (SQL 98 + `solicitud-web`):** `solicitudes_web.calculo` jsonb. Lo que manda el sitio
+  pasa por la lista blanca `_calculo_solicitud` (campo por campo con tipo, patrón y rango); lo
+  que no cuadra se descarta sin tumbar la solicitud, y sin `kwh_mes` no se guarda nada. Del
+  número de servicio solo `servicio_ult4`. Con cálculo y sin tipos, `tipos = 'Solar'`. Un
+  reintento sin cálculo que luego llega con él lo completa. `registrar_solicitud_web` gana
+  `p_calculo` y se BORRA la firma de 13 argumentos; la llamada vieja sigue sirviendo.
+  La Edge Function manda `p_calculo` solo si viene y, si la base aún no tiene el 98
+  (`PGRST202`), **reintenta sin él**: el orden de despliegue ya no puede perder solicitudes.
+  En el sitio: `aCalculoCrm()` arma el objeto con los mismos nombres de la lista blanca; la
+  calculadora deja el historial en `sessionStorage` (`pmx_calculo_recibo`) y `cotizar.html` lo
+  manda como `calculo` (además de escribirlo en `notas`).
+- **Probado:** SQL 98 en PGlite, 8/8 (y la prueba falla sin el 98, como debe); contrato de
+  punta a punta: el `calculo` que el navegador manda de verdad, pasado por la función SQL,
+  se guarda completo y sin cambios; cotizar sin pasar por la calculadora no manda cálculo.
+  **Sin probar contra Supabase real** (este contenedor no tiene credenciales).
+- **Para ponerlo en marcha, en este orden:** (1) correr `98_solicitud_calculo_solar.sql` y su
+  prueba (`npx supabase db query --linked -f …`); (2) `npx supabase functions deploy
+  solicitud-web`; (3) desplegar el Worker del lector; (4) pasar la rama del sitio a `main`.
+- **Falta la fase 5:** tarjeta "Calculadora solar" en Solicitudes y "Crear cotización con este
+  paquete" (precio de HOY, avisar si cambió; cotización en borrador con `requiere_visita`).
+
 ## Catálogo público del sitio desde el CRM (SQL 38–39, 27/09/2026) — SQL aplicado y probado; falta publicar el sitio
 
 Paso 3 de "unir CRM y sitio". Antes de tocar código se comparó `productos` (CRM) contra el Excel
