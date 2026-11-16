@@ -1374,9 +1374,11 @@ WhatsApp, y el precio se presenta como "de lista con IVA, sujeto a visita técni
   Las pruebas consumieron los folios de cotización 81 a 83. Se corrieron por la Management API
   (`POST /v1/projects/<ref>/database/query` con `curl`): `npx supabase db query --linked` falló
   aquí con «IPv6 is not supported» y Node no pasa por el proxy del contenedor.
-- **Para ponerlo en marcha, lo que falta, en este orden:** (1) `npx supabase functions deploy
-  solicitud-web`; (2) fusionar el PR del CRM; (3) desplegar el Worker del lector; (4) fusionar el PR
-  del sitio.
+- **`solicitud-web` desplegada el 16/11/2026** (versión 20, `verify_jwt` apagado) con
+  `npx supabase functions deploy solicitud-web --project-ref <ref> --use-api` (empaqueta en el
+  servidor, sin Docker).
+- **Para ponerlo en marcha, lo que falta, en este orden:** (1) fusionar el PR del CRM; (2) desplegar
+  el Worker del lector; (3) fusionar el PR del sitio; (4) mandar una solicitud real desde la calculadora.
 - **Fase 5 (SQL 99 + pantallas, 16/11/2026):** en **Solicitudes**, una solicitud con `calculo`
   muestra la tarjeta **"Calculadora solar"**: avisos en palabra (2 hilos y DAC/comercial como
   "Importante"), resumen (consumo, gasto, costo por kWh, hilos, últimos 4 del servicio, paquete y
