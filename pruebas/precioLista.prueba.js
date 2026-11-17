@@ -50,3 +50,9 @@ test('el texto del buscador dice la moneda y el IVA', () => {
   assert.equal(textoPrecioLista({ precio: 350, moneda: 'MXN', categoria: 'refaccion' }, 18.5, pesos), '$350')
   assert.equal(textoPrecioLista({ precio: null, moneda: 'MXN', categoria: 'refaccion' }, 18.5, pesos), 'sin precio')
 })
+
+test('un paquete solar también se publica con IVA incluido', () => {
+  const r = precioParaCotizar({ sku: 'PKG-ESSENTIAL', precio: 53999, moneda: 'MXN', categoria: 'paquete_solar' })
+  assert.equal(Math.round(total(r.precio) * 100) / 100, 53999)
+  assert.match(textoPrecioLista({ precio: 53999, categoria: 'paquete_solar' }, null, n => '$' + n), /con IVA incluido/)
+})

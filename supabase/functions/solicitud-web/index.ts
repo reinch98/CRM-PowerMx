@@ -104,7 +104,7 @@ Deno.serve(async (req) => {
 
   try {
     const sb = await comoBot();
-    const { data, error } = await sb.rpc("registrar_solicitud_web", {
+    const datos: Record<string, unknown> = {
       p_nombre: texto(d.nombre, 120),
       p_telefono: texto(d.whatsapp, 30),
       p_email: texto(d.email, 160),
@@ -118,7 +118,17 @@ Deno.serve(async (req) => {
       p_fuente: texto(d.fuente, 100),
       p_notas: texto(d.notas, 2000),
       p_origen_url: texto(d.fuente_url, 300),
-    });
+    };
+    // El cálculo de la calculadora solar (SQL 98). La base lo limpia con una lista blanca;
+    // aquí solo se exige que sea un objeto. Si la base todavía no tiene el SQL 98
+    // (PGRST202: no existe la función con ese parámetro), se reintenta sin él: el cálculo
+    // también viaja escrito en `notas`, así que no se pierde ni la solicitud ni el dato.
+    const calculo = d.calculo && typeof d.calculo === "object" && !Array.isArray(d.calculo) ? d.calculo : null;
+    let { data, error } = await sb.rpc("registrar_solicitud_web", calculo ? { ...datos, p_calculo: calculo } : datos);
+    if (error && calculo && error.code === "PGRST202") {
+      console.warn("La base no tiene el SQL 98: la solicitud se guarda sin el cálculo.");
+      ({ data, error } = await sb.rpc("registrar_solicitud_web", datos));
+    }
 
     if (error) {
       // 22023 = dato inválido: el mensaje está escrito para el cliente.

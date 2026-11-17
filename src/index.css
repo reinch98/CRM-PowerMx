@@ -774,3 +774,13 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
 .grafica rect[tabindex] { cursor: pointer; outline: none; }
 .grafica rect[tabindex]:focus-visible { stroke: var(--noche); stroke-width: 3; }
 .detalle-grafica { margin: 0 0 8px; min-height: 3em; }
+
+/* Solicitudes: lo que calculó la calculadora solar del sitio (fase 5, 16/11/2026). */
+.calculo-solar {
+  display: grid; gap: 10px;
+  border: 2px solid var(--linea); border-radius: var(--radio); padding: 12px;
+}
+.historial-barras { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.historial-barras li { display: grid; gap: 4px; }
+/* La barra solo acompaña: el dato va escrito al lado. */
+.historial-barra { display: block; height: 10px; border-radius: 0 5px 5px 0; background: var(--serie-1); }

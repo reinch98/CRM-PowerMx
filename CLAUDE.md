@@ -1324,6 +1324,109 @@ solicitudes llegan solo al CRM**; n8n ya no interviene. Primer puente real entre
      funciona igual que en los catálogos. La calculadora de ahorro solar (`calculadora.html`) no
      tenía ninguno de los dos problemas.
 
+## Calculadora solar → cotización real (16/11/2026) — las cinco fases construidas, sin publicar
+
+Plan acordado con Caña el 16/11/2026 tras analizar un recibo real: la calculadora de
+powermx.com.mx recomendaba 43 paneles, $175,000 y $3,000/mes de ahorro a una clienta de
+469 kWh/mes (tomaba el recibo bimestral como mensual, tarifa fija de $0.90, panel de 620 W a
+$20/W). Fases: 1 motor de cálculo · 2 lector de recibos · 3 pantalla · 4 puente al CRM ·
+5 de la solicitud a la cotización. Decisiones de Caña: el resultado se ve ANTES de pedir el
+WhatsApp, y el precio se presenta como "de lista con IVA, sujeto a visita técnica".
+- **Fase 1 (repo POWERMX-sitio, rama `claude/keen-allen-mj6iuy`):** motor puro
+  `sitio-publicar/solar-calculo.js` (16 pruebas: `node --test 'pruebas/*.prueba.js'`) que usan
+  la calculadora, el reporte y cotizar. Mensualiza con los días reales, 12 meses de historial,
+  recomienda el paquete PUBLICADO más chico que cubra el 90 % (precio de
+  `productos-paquetes-solares.json`), resta cargo mínimo (25 kWh/mes a $1.30) y DAP, avisa de
+  2 hilos, DAC/comercial, crecimiento > 15 % y "a la medida" (sin precio inventado). Producción:
+  1,530 kWh/kWp/año. Recibo de referencia: Essential, $53,999, ~$900/mes, ~4.5 años.
+  El lector (`LECTOR-RECIBOS/worker.js`) ahora pide días, hilos, DAP e importe de cada periodo
+  del historial: **falta volver a desplegarlo** (sin eso el gasto sale ~30 % alto).
+- **Fase 2 (sitio, 16/11/2026):** el Worker del lector pide la respuesta con esquema JSON
+  (structured outputs) y la limpia antes de mandarla (`normalizarRecibo`: fechas reales, rangos, y
+  `revisar` con lo que no cuadra, que el paso 2 muestra). El número de servicio completo y la
+  dirección ya no salen del Worker: solo `servicio_ult4`. 6 pruebas con la API simulada.
+  **Desplegado el 17/11/2026** por la API de Cloudflare (`PUT /accounts/<id>/workers/scripts/
+  powermx-lector-recibos` con `keep_bindings`: el secreto `ANTHROPIC_API_KEY` se conservó). El token
+  necesita **Workers Scripts → Edit**; con solo lectura, la subida responde «No access to the specified resource».
+- **Fase 3 (sitio, 16/11/2026):** `calculadora.html` en tres pasos (recibo → "esto leímos" con
+  historial y "Corregir datos" → tu sistema, eligiendo entre recomendado, económico, más grande e
+  híbrido). La solicitud se manda **en la misma página** (nombre, WhatsApp, colonia, techo) con el
+  cálculo del paquete ELEGIDO: `aCalculoCrm(r, { paquete })`, así un híbrido llega con
+  `variante: 'respaldo'` y la tarjeta del CRM arma esa variante. El techo va en `notas`.
+  Reglas en `sitio-publicar/solicitud-solar.js` (5 pruebas). Probado en el emulador con el lector
+  y `solicitud-web` simulados (éxito, 400 y 500); medido a 375 px: 0 px de desborde, 0 textos
+  < 13 px, 0 objetivos < 44 px.
+- **Fase 4 (SQL 98 + `solicitud-web`):** `solicitudes_web.calculo` jsonb. Lo que manda el sitio
+  pasa por la lista blanca `_calculo_solicitud` (campo por campo con tipo, patrón y rango); lo
+  que no cuadra se descarta sin tumbar la solicitud, y sin `kwh_mes` no se guarda nada. Del
+  número de servicio solo `servicio_ult4`. Con cálculo y sin tipos, `tipos = 'Solar'`. Un
+  reintento sin cálculo que luego llega con él lo completa. `registrar_solicitud_web` gana
+  `p_calculo` y se BORRA la firma de 13 argumentos; la llamada vieja sigue sirviendo.
+  La Edge Function manda `p_calculo` solo si viene y, si la base aún no tiene el 98
+  (`PGRST202`), **reintenta sin él**: el orden de despliegue ya no puede perder solicitudes.
+  En el sitio: `aCalculoCrm()` arma el objeto con los mismos nombres de la lista blanca; la
+  calculadora deja el historial en `sessionStorage` (`pmx_calculo_recibo`) y `cotizar.html` lo
+  manda como `calculo` (además de escribirlo en `notas`).
+- **Probado:** SQL 98 en PGlite, 8/8 (y la prueba falla sin el 98, como debe); contrato de
+  punta a punta: el `calculo` que el navegador manda de verdad, pasado por la función SQL,
+  se guarda completo y sin cambios; cotizar sin pasar por la calculadora no manda cálculo.
+  **Sin probar contra Supabase real** (este contenedor no tiene credenciales).
+- **SQL 98, 99 y 100 aplicados y probados en Supabase el 16/11/2026** (8/8, 7/7 y 6/6 "ok"; el
+  reporte del 100 salió en ceros: ninguna cotización aceptada ni pedido con paquetes que revisar).
+  Las pruebas consumieron los folios de cotización 81 a 83. Se corrieron por la Management API
+  (`POST /v1/projects/<ref>/database/query` con `curl`): `npx supabase db query --linked` falló
+  aquí con «IPv6 is not supported» y Node no pasa por el proxy del contenedor.
+- **`solicitud-web` desplegada el 16/11/2026** (versión 20, `verify_jwt` apagado) con
+  `npx supabase functions deploy solicitud-web --project-ref <ref> --use-api` (empaqueta en el
+  servidor, sin Docker).
+- **Para ponerlo en marcha, lo que falta, en este orden:** (1) fusionar el PR del CRM; (2) fusionar el PR
+  del sitio; (3) subir un recibo real y mandar una solicitud desde la calculadora.
+- **Fase 5 (SQL 99 + pantallas, 16/11/2026):** en **Solicitudes**, una solicitud con `calculo`
+  muestra la tarjeta **"Calculadora solar"**: avisos en palabra (2 hilos y DAC/comercial como
+  "Importante"), resumen (consumo, gasto, costo por kWh, hilos, últimos 4 del servicio, paquete y
+  ahorro que vio) e historial en barras (el dato va escrito; la barra, en `--serie-1`, solo acompaña).
+  **"Crear cotización con este paquete"** (interconectado o con respaldo) arma las partidas en
+  `src/lib/calculoSolar.js` (`partidasDePaqueteSolar`, 10 pruebas en `pruebas/calculoSolar.prueba.js`):
+  · UNA partida visible con el precio **publicado HOY** (`productos.precios.estandar|hibrido`, con
+    IVA → entra entre 1.16, como los generadores) y **sin `producto_id`**: el paquete PKG-… nunca debe
+    apartar inventario ni generar requisiciones (no existe en el estante). **Arreglado el 16/11/2026
+    (SQL 100, abajo):** el buscador de Cotizaciones también lo agrega con sus piezas, y la base le quita
+    el `producto_id` a cualquier paquete que llegue por otro lado.
+  · Las piezas de la receta (`paquete_solar_lineas` con `producto_id`; respaldo = interconectado +
+    respaldo) a $0, `incluida` y CON `producto_id`, sumadas por pieza: al aceptar se apartan y se pide
+    lo que falte, igual que el preventivo. Cantidades con decimales tal cual (cable 0.3 de rollo).
+  · Si el precio de hoy no es el que vio el cliente (misma variante), "Cambió el precio" con los dos
+    números. Sin precio publicado de la variante, no cotiza (no inventa). Sin paquete (a la medida),
+    abre la cotización solo con cliente y notas.
+  Los datos pasan a Cotizaciones por un **encargo en memoria** (`src/lib/encargo.js`: `dejarEncargo` /
+  `tomarEncargo`, se entrega una vez; `irA` solo cambia de pantalla). Cotizaciones lo abre como nueva:
+  tipo `instalacion`, `requiere_visita`, nota interna con el resumen y los avisos, y si el cliente no
+  existe, el alta rápida abierta y llenada. **Nada se guarda hasta que el admin la revisa.** Al guardar,
+  `ligar_solicitud_a_cotizacion` (SQL 99) deja la solicitud atendida y ligada; si falla, la cotización
+  ya quedó y el mensaje lo dice. `cargarSolicitudes` pide `cotizaciones(folio, estado)` y, si la base
+  aún no tiene el 99, repite la consulta sin eso (la pantalla no se cae por el orden de despliegue).
+  Probado: SQL 99 en PGlite 7/7; en el emulador con un Supabase falso, de la tarjeta a la cotización
+  guardada y ligada (lo escrito en la base fue lo esperado). Medido en celular: tarjeta con 0 textos
+  < 17 px, 0 contrastes < 4.5, 0 objetivos < 48 px, 0 px de desborde.
+- **Para ponerlo en marcha (fase 5):** después del 98, correr `99_solicitud_a_cotizacion.sql` y su prueba
+  (7 "ok") y publicar el CRM.
+- **Un paquete solar nunca aparta inventario (SQL 100, 16/11/2026)** — escrito y probado en PGlite (6/6) con la
+  `cambiar_estado_cotizacion` REAL (la de la 14, la última; coincide con la foto del esquema). La regla vive donde
+  nace el dato y no en cada función que lee partidas: el disparador `paquete_solar_no_es_inventario` (BEFORE INSERT
+  / UPDATE OF partidas en `cotizaciones`) le quita el `producto_id` a toda partida que sea `paquete_solar` y le deja
+  `paquete_sku`. Así aceptar, liberar, requisiciones, surtido y costo del Expediente la ven LIBRE sin redefinir
+  ninguna función. **No toca una cotización ya aceptada**: si apartó un paquete antes del 100, al salir de aceptada
+  lo libera con sus mismas partidas (probado). Corrección única: limpia borradores/enviadas y cancela requisiciones
+  PENDIENTES de paquetes con nota; lo aceptado y lo ya pedido al proveedor lo **reporta** al final del script para
+  revisarlo a mano. En **Cotizaciones**, elegir un PKG del buscador ya no lo mete como producto: lo arma con
+  `partidasDePaqueteSolar` (pregunta interconectado o con respaldo si tiene los dos precios) y muestra sus avisos;
+  el resultado dice "Paquete solar · con IVA incluido · se agrega con sus piezas". `precioLista.js` trata el paquete
+  como IVA incluido (como el generador), por si algo lo llegara a pasar por ahí. Probado en el emulador: con
+  respaldo, total exacto $103,999, PKG sin `producto_id` y 5 piezas incluidas con el suyo.
+  **Una cotización vieja con un PKG que quede como partida libre no tiene piezas:** su costo de material en el
+  Expediente sale en 0 (antes contaba el costo del PKG). Si hay, conviene quitar esa partida y volver a agregar el
+  paquete desde el buscador.
+
 ## Catálogo público del sitio desde el CRM (SQL 38–39, 27/09/2026) — SQL aplicado y probado; falta publicar el sitio
 
 Paso 3 de "unir CRM y sitio". Antes de tocar código se comparó `productos` (CRM) contra el Excel
