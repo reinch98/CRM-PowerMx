@@ -22,6 +22,7 @@ const Inventario = lazy(() => import('./Inventario'))
 const Cotizaciones = lazy(() => import('./Cotizaciones'))
 const Requisiciones = lazy(() => import('./Requisiciones'))
 const Compras = lazy(() => import('./Compras'))
+const FlujoCompras = lazy(() => import('./FlujoCompras'))
 const Proveedor = lazy(() => import('./Proveedor'))
 const Proveedores = lazy(() => import('./Proveedores'))
 const Tarifas = lazy(() => import('./Tarifas'))
@@ -51,6 +52,8 @@ const PANTALLAS = {
   cotizaciones: { titulo: 'Cotizaciones', componente: Cotizaciones, roles: ['admin'] },
   requisiciones:{ titulo: 'Pedidos',      componente: Requisiciones,roles: ['admin'] },
   compras:      { titulo: 'Compras',      componente: Compras,      roles: ['admin'] },
+  // Pedido → nota → factura de cada compra, a la vista (solo lee).
+  flujo:        { titulo: 'Pedido → factura', componente: FlujoCompras, roles: ['admin'] },
   proveedores:  { titulo: 'Proveedores',  componente: Proveedores,  roles: ['admin'] },
   // La sincronización de precios de XLStore y Solarama (la clave se queda: ningún irA() cambia).
   proveedor:    { titulo: 'Listas de precios', componente: Proveedor, roles: ['admin'] },
@@ -82,7 +85,7 @@ const GRUPOS = [
   { clave: 'servicio', titulo: 'Servicio', pantallas: ['inicio', 'agenda', 'ordenes', 'comisiones'] },
   { clave: 'clientes', titulo: 'Clientes', pantallas: ['solicitudes', 'whatsapp', 'clientes', 'contactos', 'equipos'] },
   { clave: 'ventas',   titulo: 'Ventas',   pantallas: ['cotizaciones', 'polizas', 'tarifas', 'paquetes'] },
-  { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones', 'compras', 'proveedores', 'proveedor'] },
+  { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones', 'compras', 'flujo', 'proveedores', 'proveedor'] },
   { clave: 'finanzas', titulo: 'Finanzas', pantallas: ['tablero', 'finanzas', 'pagos'] },
   { clave: 'ajustes',  titulo: 'Ajustes',  pantallas: ['usuarios', 'agente'] },
 ]

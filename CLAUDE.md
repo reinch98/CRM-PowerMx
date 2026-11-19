@@ -1110,6 +1110,31 @@ Pedido de Caña: que la sugerencia "se retroalimente". No es un modelo entrenado
 - Panel Agente → "Lo que el agente imita": cada pareja con "No imitar este" / "Volver a imitarlo".
 - Cada ejemplo hace la respuesta un poco más cara (tope 12, hasta 500 caracteres por campo).
 
+## El agente pasa al cliente con una persona (SQL 98, 16/11/2026) — aplicado, probado (10/10) y desplegado
+
+Pedido de Caña: "le dice al cliente que lo redirige a un compañero; quiero que cree una tarjeta de contacto con su
+necesidad y se envíe a mi WhatsApp". Antes el agente solo LO DECÍA: no tenía herramienta y nadie se enteraba.
+- **Herramienta `pasar_a_persona`** (tercera de escritura de `agente-whatsapp`): necesidad (obligatoria), nombre,
+  empresa, urgente. Cuándo: pide una persona, se queja, falla urgente, algo que el agente no resuelve, o una
+  herramienta dijo que falta un dato. Pide el nombre en UN mensaje antes si no lo tiene. No existe en `solo_sugerir`.
+- `wa_pasar_a_persona` (bot) crea la tarjeta en **`wa_traspasos`** con el teléfono de la CONVERSACIÓN (nunca del texto)
+  y avisa a **`wa_agente.telefono_traspasos`** (se captura en el panel Agente; al aplicar quedó vacío porque el perfil
+  admin no tenía teléfono) por la cola: si ese número escribió al de PowerMx en las últimas 24 h, **texto + tarjeta
+  de contacto de WhatsApp** (`salida_wa.tipo = 'contacto'`, `cuerpoMensaje` → `type: contacts`, se toca para
+  escribirle); si no, la **plantilla `cliente_para_atender`** (variables cliente, telefono, necesidad), sembrada en
+  borrador con su texto en `notas`: **hay que darla de alta en Meta** y marcarla aprobada en Por enviar. Una segunda
+  llamada con la tarjeta pendiente solo actualiza la necesidad (no vuelve a escribir). Sin número: queda `sin_numero`.
+- **Pausa:** con una tarjeta pendiente de menos de 24 h, `wa_enviar_respuesta_agente` (redefinida con `p_traspaso`)
+  deja borrador; la respuesta del MISMO turno ("ya le pasé tus datos") sí sale. `atender_traspaso` ("Ya lo atendí")
+  la quita. Además, aviso push "Cliente para atender · …" a los celulares del admin.
+- Pantalla: tarjeta **"Clientes para atender (n)"** arriba de la bandeja (urgentes primero, cómo te llegó, "Abrir
+  conversación", "Ya lo atendí"), aviso en la conversación y campo "Tu WhatsApp para los clientes que el agente te
+  pasa". `cargarTraspasos`, `atenderTraspaso`, `comoSeAviso`, `telefonoAvisosValido`, `ordenarTraspasos` (3 pruebas en
+  `pruebas/traspasos.prueba.js`, 2 en `enviarWhatsapp.prueba.js`). Medido en celular con un Supabase falso: 0 textos
+  < 17 px, 0 objetivos < 48 px, 0 px de desborde. `MAX_VUELTAS` del agente subió a 4.
+- **Tropiezo de la prueba:** el bot no lee `salida_wa` (RLS); un id buscado DESPUÉS de `set local role` sale vacío.
+- **Sin probar con un mensaje real.** La conversación con tu propio número aparecerá en la bandeja (ahí quedan los avisos).
+
 ## Mandar fotos y documentos desde la conversación (SQL 96, 05/11/2026) — aplicado, probado (11/11) y desplegado
 
 Pedido de Caña: "quiero la opción de enviar documentos e imágenes en el chat". Va por la MISMA cola que el texto.
@@ -3416,3 +3441,30 @@ debe y deja elegir a qué se aplica. Los cobros de clientes siguen por el Expedi
   **Sin probar con una factura real.**
 - **Falta:** que el lector de cotizaciones reconozca al proveedor por su ficha, un aviso en Inicio de cotizaciones por vencer, y
   probar el ciclo completo con documentos reales (cotización → anticipo → factura XML → entrada al almacén).
+
+**Pedido → nota → factura (19/11/2026), pantalla `flujo` en el área Almacén** (`src/FlujoCompras.jsx`,
+`src/lib/flujoCompras.js`, 6 pruebas). Pedido de Caña: ver el flujo requisición → nota → factura. **Sin SQL nuevo**: junta lo que
+la base ya liga (`compra_lineas.requisicion_id` y `cfdi.compra_id`). Una tarjeta por compra viva (la nota) con sus pedidos, y una por
+pedido `pendiente`/`pedida` que ninguna compra ha recibido; etapa "Falta la nota" / "Falta la factura" / "Completo", con palabra e
+ícono. Solo lee: la nota se registra en Compras y el XML en Finanzas. Consultas probadas contra la base real; el diseño, en el
+emulador con datos simulados (0 textos < 17 px, 0 objetivos < 48 px, 0 px de desborde).
+
+**Tickets de noviembre cargados (19/11/2026)** con un script de datos de una sola vez (no es migración, no está en `supabase/sql`):
+- **Genéricos de originales Generac**, mismo precio al cliente que el original y `publicar = false`: grupo `FILTRO-ACEITE-070185`
+  (GON-GP58, GON-GP156, STP-SL4967XL), grupo nuevo `FILTRO-AIRE-0D9723S` (STP-ST11426, STP-ST11215, GON-GAD116, NIK-16546ED000) y
+  grupo nuevo `BUJIA-0E7079` (NGK-BKR5E11, NGK-6953); más STP-5W30-946 (aceite, sin precio). Los grupos nuevos también se pusieron
+  en 0D9723S y 0E7079. Proveedores nuevos: "RAG Refaccionaria" (RAG100629R11) y "AutoZone" (AME970109GW0).
+- **COMPRA-51 a 54** (RAG K109125 y K109122 del 11/11; AutoZone $893 con **fecha estimada** 11/11 porque no se lee; AutoZone $480 del
+  13/11), con la foto como `archivo_pdf` (`<id>/nota.jpg`). Lo que no es almacén (herramienta, toallas, limpiador, refresco) quedó fuera.
+- **Cotizaciones 74 y 80** (aceptadas, servicio ya cerrado): las piezas Generac pasaron a genéricos con el mismo precio; se liberó el
+  apartado del original, se cancelaron los pedidos 35–42 pendientes, se crearon REQ-50 a 55 por los genéricos (recibidos por su compra)
+  y lo usado salió como `apartado` + `salida_venta` (referencia COT-n). **No se usó `cambiar_estado_cotizacion`** para pasar a borrador
+  y volver a aceptar: al re-aceptar busca una cita `por_programar`/`programada`, no encuentra la `realizada` y **abriría otra cita y
+  otra orden**. La 73 (borrador) cambió bujía y filtro de aire.
+- **Finanzas → Por revisar:** los 5 tickets como documentos `propuesto` con su propuesta y el aviso "Falta el XML" (el de Ferreteros es
+  una sola imagen con las dos fotos unidas). **No se aprobó ninguno**: falta subir los XML (RAG K109125, K109122 y Ferreteros J-492164);
+  el de K109122 no cuadrará con la COMPRA-52 (que no lleva los consumibles) y habrá que ligarlo a mano.
+- **Cómo se subieron los archivos sin la pantalla:** `npx supabase storage cp <archivo> ss:///<bucket>/<ruta> --linked --experimental
+  --content-type image/jpeg`, y luego SQL como el admin (`set local role authenticated` + `request.jwt.claims` con su id) para
+  `registrar_documento`, `anotar_archivo` y `compras.archivo_pdf`. El navegador integrado bloquea (`ERR_BLOCKED_BY_CLIENT`) que una
+  página pública lea `localhost`, así que la sesión del CRM publicado no sirve para subir archivos de la compu.

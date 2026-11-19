@@ -784,3 +784,48 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
 .historial-barras li { display: grid; gap: 4px; }
 /* La barra solo acompaña: el dato va escrito al lado. */
 .historial-barra { display: block; height: 10px; border-radius: 0 5px 5px 0; background: var(--serie-1); }
+
+/* ---------------------------------------------------------------------------
+   Pedido → nota → factura (FlujoCompras). Tres pasos en fila que pasan a columna en el
+   celular; cada uno dice "listo" o "pendiente" con palabra e ícono, no solo con color.
+   --------------------------------------------------------------------------- */
+.flujo-pasos {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+.flujo-paso {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 2px solid var(--linea);
+  border-radius: var(--radio);
+}
+.flujo-hecho { border-color: var(--ok); background: var(--ok-fondo); }
+.flujo-falta { border-color: var(--aviso); background: var(--aviso-fondo); border-style: dashed; }
+.flujo-icono { flex: none; font-weight: 800; font-size: 1.2em; line-height: 1.3; }
+.flujo-hecho .flujo-icono { color: var(--ok); }
+.flujo-falta .flujo-icono { color: var(--aviso); }
+.flujo-texto { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.flujo-texto small { font-size: 1em; font-weight: 600; color: var(--texto-2); }
+.flujo-texto span { color: var(--texto); }
+.flujo-flecha {
+  position: absolute;
+  right: -10px;
+  top: 50%;
+  transform: translate(50%, -50%);
+  font-weight: 800;
+  color: var(--texto-2);
+  z-index: 1;
+}
+.flujo-lista { margin: 4px 0 8px; padding-left: 20px; }
+@media (max-width: 700px) {
+  .flujo-pasos { grid-template-columns: 1fr; gap: 18px; }
+  .flujo-flecha { right: auto; left: 50%; top: auto; bottom: -18px; transform: translate(-50%, 0) rotate(90deg); }
+}
