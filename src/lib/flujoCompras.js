@@ -13,10 +13,12 @@
 import { supabase } from './supabase'
 import { explicarError } from './errores'
 
+// `sin_factura` (SQL 101): un ticket que nunca tendrá factura y se cerró así, con su motivo.
 export const ETAPAS = {
   nota: 'Falta la nota',
   factura: 'Falta la factura',
   completo: 'Completo',
+  sin_factura: 'Cerrado sin factura',
 }
 
 const num = v => {
@@ -56,7 +58,8 @@ export function armarFlujo({ requisiciones = [], compras = [], lineas = [], fact
       pedidos,
       compra: { ...c, lineas: suyas },
       factura,
-      etapa: factura ? 'completo' : 'factura',
+      // La factura manda: si el XML llegó después de cerrarla sin factura, queda Completo.
+      etapa: factura ? 'completo' : c.sin_factura_en ? 'sin_factura' : 'factura',
     })
   }
 
@@ -79,7 +82,7 @@ export function armarFlujo({ requisiciones = [], compras = [], lineas = [], fact
 
 // Cuántos hay en cada etapa, para los botones de filtro.
 export function contarEtapas(flujos) {
-  const n = { todos: flujos.length, nota: 0, factura: 0, completo: 0 }
+  const n = { todos: flujos.length, nota: 0, factura: 0, completo: 0, sin_factura: 0 }
   for (const f of flujos) n[f.etapa] += 1
   return n
 }
@@ -96,6 +99,8 @@ export function pasosDe(flujo) {
   let fac
   if (factura) {
     fac = { hecho: true, titulo: `Factura ${[factura.serie, factura.folio].filter(Boolean).join('') || 'ligada'}` }
+  } else if (compra?.sin_factura_en) {
+    fac = { hecho: true, titulo: 'Cerrado sin factura', nota: compra.sin_factura_motivo || '' }
   } else if (compra) {
     fac = { hecho: false, titulo: 'Falta la factura',
       nota: compra.factura
@@ -123,7 +128,7 @@ export async function cargarFlujo(dias = 90) {
   try {
     const [cs, rs] = await Promise.all([
       supabase.from('compras')
-        .select('id, folio, fecha, proveedor, factura, total, estado, archivo_pdf, archivo_xml, notas')
+        .select('id, folio, fecha, proveedor, factura, total, estado, archivo_pdf, archivo_xml, notas, sin_factura_motivo, sin_factura_en')
         .gte('fecha', haceDias(dias)).order('fecha', { ascending: false }),
       supabase.from('requisiciones')
         .select('id, folio, estado, cantidad, fecha_pedido, created_at, productos(sku, nombre), cotizaciones(folio, clientes(nombre))')
@@ -157,3 +162,23 @@ export async function cargarFlujo(dias = 90) {
     return { ok: false, texto: explicarError(e).texto }
   }
 }
+
+// Cerrar un ticket que nunca tendrá factura (SQL 101). La base exige el motivo y que no tenga XML ligado.
+async function llamar(nombre, args) {
+  try {
+    const { data, error } = await supabase.rpc(nombre, args)
+    if (error) {
+      const propio = ['22023', 'P0002', '42501'].includes(String(error.code)) && error.message
+      return { ok: false, texto: propio || explicarError(error).texto }
+    }
+    return { ok: true, datos: data }
+  } catch (e) {
+    return { ok: false, texto: explicarError(e).texto }
+  }
+}
+
+export const cerrarSinFactura = (compraId, motivo) =>
+  llamar('cerrar_compra_sin_factura', { p_compra: compraId, p_motivo: motivo })
+
+export const reabrirSinFactura = compraId =>
+  llamar('reabrir_compra_sin_factura', { p_compra: compraId })

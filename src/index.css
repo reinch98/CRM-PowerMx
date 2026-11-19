@@ -829,3 +829,4 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
   .flujo-pasos { grid-template-columns: 1fr; gap: 18px; }
   .flujo-flecha { right: auto; left: 50%; top: auto; bottom: -18px; transform: translate(-50%, 0) rotate(90deg); }
 }
+.flujo-cerrar { margin-top: 12px; padding-top: 12px; border-top: 2px solid var(--linea); }

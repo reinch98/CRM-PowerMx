@@ -42,7 +42,7 @@ test('los pedidos recibidos van dentro de su compra y no se repiten sueltos', ()
 test('la etapa sale de lo que falta', () => {
   const porClave = Object.fromEntries(armarFlujo(base()).map(x => [x.clave, x.etapa]))
   assert.deepEqual(porClave, { 'compra-c1': 'completo', 'compra-c2': 'factura', 'req-r3': 'nota' })
-  assert.deepEqual(contarEtapas(armarFlujo(base())), { todos: 3, nota: 1, factura: 1, completo: 1 })
+  assert.deepEqual(contarEtapas(armarFlujo(base())), { todos: 3, nota: 1, factura: 1, completo: 1, sin_factura: 0 })
 })
 
 test('los pasos lo dicen con palabra', () => {
@@ -73,5 +73,23 @@ test('una compra con folio de factura pero sin XML dice cuál subir', () => {
 
 test('sin datos no truena', () => {
   assert.deepEqual(armarFlujo(), [])
-  assert.deepEqual(contarEtapas([]), { todos: 0, nota: 0, factura: 0, completo: 0 })
+  assert.deepEqual(contarEtapas([]), { todos: 0, nota: 0, factura: 0, completo: 0, sin_factura: 0 })
+})
+
+test('un ticket cerrado sin factura sale aparte y dice su motivo (SQL 101)', () => {
+  const datos = base()
+  datos.compras[1] = { ...datos.compras[1], sin_factura_en: '2026-11-19T20:00:00Z', sin_factura_motivo: 'Ticket de mostrador' }
+  const c2 = armarFlujo(datos).find(x => x.clave === 'compra-c2')
+  assert.equal(c2.etapa, 'sin_factura')
+  const f = pasosDe(c2)[2]
+  assert.equal(f.titulo, 'Cerrado sin factura')
+  assert.equal(f.nota, 'Ticket de mostrador')
+  assert.ok(f.hecho)
+  assert.equal(contarEtapas(armarFlujo(datos)).sin_factura, 1)
+})
+
+test('si el XML llega después de cerrarla sin factura, la factura manda', () => {
+  const datos = base()
+  datos.compras[0] = { ...datos.compras[0], sin_factura_en: '2026-11-19T20:00:00Z', sin_factura_motivo: 'x' }
+  assert.equal(armarFlujo(datos).find(x => x.clave === 'compra-c1').etapa, 'completo')
 })

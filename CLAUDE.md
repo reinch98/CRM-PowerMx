@@ -3449,6 +3449,14 @@ pedido `pendiente`/`pedida` que ninguna compra ha recibido; etapa "Falta la nota
 ícono. Solo lee: la nota se registra en Compras y el XML en Finanzas. Consultas probadas contra la base real; el diseño, en el
 emulador con datos simulados (0 textos < 17 px, 0 objetivos < 48 px, 0 px de desborde).
 
+**Cerrar un ticket sin factura (SQL 101, 19/11/2026) — aplicado y probado (6/6) con la CLI.** Pedido de Caña. En
+"Pedido → factura", una compra en "Falta la factura" tiene **"Cerrar sin factura…"**: pide el motivo (obligatorio) y llama a
+`cerrar_compra_sin_factura` (solo admin; rechaza compras canceladas o que ya tienen su XML ligado; repetir = `sin_cambio`). Guarda
+`compras.sin_factura_motivo`, `sin_factura_por` y `sin_factura_en`, y deja rastro en `auditoria`. La tarjeta pasa a la etapa
+**"Cerrado sin factura"** (filtro propio) con el motivo a la vista y **"Reabrir: sí tendrá factura"** (`reabrir_compra_sin_factura`).
+No mueve inventario ni dinero; el documento de Finanzas sigue por aprobarse aparte (como gasto sin CFDI). Si el XML llega después
+y se liga, la factura manda y queda "Completo". 8 pruebas en Node; probado en el emulador con datos simulados.
+
 **Tickets de noviembre cargados (19/11/2026)** con un script de datos de una sola vez (no es migración, no está en `supabase/sql`):
 - **Genéricos de originales Generac**, mismo precio al cliente que el original y `publicar = false`: grupo `FILTRO-ACEITE-070185`
   (GON-GP58, GON-GP156, STP-SL4967XL), grupo nuevo `FILTRO-AIRE-0D9723S` (STP-ST11426, STP-ST11215, GON-GAD116, NIK-16546ED000) y

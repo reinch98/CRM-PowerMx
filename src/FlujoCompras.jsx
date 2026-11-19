@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Alerta } from './ui'
-import { cargarFlujo, contarEtapas, pasosDe, ETAPAS } from './lib/flujoCompras'
+import { cargarFlujo, contarEtapas, pasosDe, ETAPAS, cerrarSinFactura, reabrirSinFactura } from './lib/flujoCompras'
 import { urlDeArchivo } from './lib/compras'
 import { fechaLegible } from './lib/finanzas'
 
@@ -15,7 +15,46 @@ const FILTROS = [
   ['nota', ETAPAS.nota],
   ['factura', ETAPAS.factura],
   ['completo', ETAPAS.completo],
+  ['sin_factura', ETAPAS.sin_factura],
 ]
+
+// Un ticket que no va a tener factura (mostrador, compra chica) se cierra con un motivo escrito
+// (SQL 101). No mueve inventario ni dinero; si el XML llega después, la factura manda.
+function CerrarSinFactura({ compra, onHecho }) {
+  const [abierto, setAbierto] = useState(false)
+  const [motivo, setMotivo] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState('')
+
+  if (!abierto) {
+    return <button onClick={() => setAbierto(true)}>Cerrar sin factura…</button>
+  }
+  async function cerrar(e) {
+    e.preventDefault()
+    if (!motivo.trim()) { setError('Escribe por qué se cierra sin factura.'); return }
+    setGuardando(true)
+    const r = await cerrarSinFactura(compra.id, motivo.trim())
+    setGuardando(false)
+    if (!r.ok) { setError(r.texto); return }
+    onHecho(`COMPRA-${compra.folio} cerrada sin factura.`)
+  }
+  return (
+    <form onSubmit={cerrar} className="flujo-cerrar">
+      <label className="campo">
+        <span>¿Por qué se cierra sin factura?</span>
+        <input value={motivo} autoFocus onChange={e => { setMotivo(e.target.value); setError('') }}
+          placeholder="Ticket de mostrador, no se pidió factura" />
+      </label>
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      <div className="fila">
+        <button type="submit" className="btn-primario" disabled={guardando}>
+          {guardando ? 'Cerrando…' : 'Cerrar sin factura'}
+        </button>
+        <button type="button" onClick={() => { setAbierto(false); setMotivo(''); setError('') }}>Cancelar</button>
+      </div>
+    </form>
+  )
+}
 
 const pesos = n => Number(n || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
 
@@ -33,14 +72,14 @@ function Paso({ paso, ultimo }) {
   )
 }
 
-function Tarjeta({ flujo, irA, abrir }) {
+function Tarjeta({ flujo, irA, abrir, onCambio, onError }) {
   const pasos = pasosDe(flujo)
   const { compra, pedidos } = flujo
   return (
     <article className="tarjeta flujo">
       <div className="fila" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
         <strong>{fechaLegible(flujo.fecha)}</strong>
-        <span className={`estado estado-${flujo.etapa === 'completo' ? 'recibida' : 'pendiente'}`}>
+        <span className={`estado estado-${flujo.etapa === 'completo' ? 'recibida' : flujo.etapa === 'sin_factura' ? 'cancelada' : 'pendiente'}`}>
           {ETAPAS[flujo.etapa]}
         </span>
       </div>
@@ -74,7 +113,15 @@ function Tarjeta({ flujo, irA, abrir }) {
         {compra?.archivo_pdf && <button onClick={() => abrir(compra.archivo_pdf)}>Ver la nota</button>}
         {flujo.etapa === 'factura' && <button onClick={() => irA?.('finanzas')}>Subir la factura en Finanzas</button>}
         {flujo.etapa === 'nota' && <button onClick={() => irA?.('compras')}>Registrar la nota en Compras</button>}
+        {flujo.etapa === 'sin_factura' && (
+          <button onClick={async () => {
+            const r = await reabrirSinFactura(compra.id)
+            if (r.ok) onCambio(`COMPRA-${compra.folio} vuelve a esperar su factura.`)
+            else onError(r.texto)
+          }}>Reabrir: sí tendrá factura</button>
+        )}
       </div>
+      {flujo.etapa === 'factura' && <CerrarSinFactura compra={compra} onHecho={onCambio} />}
     </article>
   )
 }
@@ -83,6 +130,8 @@ export default function FlujoCompras({ irA }) {
   const [flujos, setFlujos] = useState(null)
   const [error, setError] = useState('')
   const [filtro, setFiltro] = useState('todos')
+  const [mensaje, setMensaje] = useState('')
+  const [vuelta, setVuelta] = useState(0)
 
   useEffect(() => {
     let vivo = true
@@ -92,7 +141,9 @@ export default function FlujoCompras({ irA }) {
       else setError(r.texto)
     })
     return () => { vivo = false }
-  }, [])
+  }, [vuelta])
+
+  const alCambiar = texto => { setError(''); setMensaje(texto); setVuelta(v => v + 1) }
 
   async function abrir(ruta) {
     const url = await urlDeArchivo(ruta)
@@ -112,6 +163,7 @@ export default function FlujoCompras({ irA }) {
       </p>
 
       {error && <Alerta tipo="error">{error}</Alerta>}
+      {mensaje && <Alerta tipo="ok">{mensaje}</Alerta>}
       {!flujos && !error && <p>Cargando…</p>}
 
       {n && (
@@ -125,7 +177,10 @@ export default function FlujoCompras({ irA }) {
       )}
 
       {flujos && visibles.length === 0 && <Alerta tipo="info">No hay nada en esta etapa.</Alerta>}
-      {visibles.map(f => <Tarjeta key={f.clave} flujo={f} irA={irA} abrir={abrir} />)}
+      {visibles.map(f => (
+        <Tarjeta key={f.clave} flujo={f} irA={irA} abrir={abrir}
+          onCambio={alCambiar} onError={t => { setMensaje(''); setError(t) }} />
+      ))}
     </div>
   )
 }
