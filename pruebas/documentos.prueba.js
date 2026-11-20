@@ -8,8 +8,30 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   paraPdf, nombreArchivo, rutaExpediente, rutaEnvio, fechaLarga, nombreTipoServicio,
-  descripcionEquipo,
+  descripcionEquipo, fotosParaPdf,
 } from '../src/lib/documentos.js'
+
+// Antes solo entraban las fotos de la revisión: una orden cerrada sin revisión salía sin fotos.
+test('fotosParaPdf: sin revisión entran las fotos generales de la orden', () => {
+  const r = fotosParaPdf({ fotos: ['o/oficina/placa.jpg', 'o/oficina/despues.jpg'] })
+  assert.deepEqual(r.map(f => f.ruta), ['o/oficina/placa.jpg', 'o/oficina/despues.jpg'])
+  assert.equal(r[0].punto, 'Fotografía del servicio')
+})
+
+test('fotosParaPdf: primero las de la revisión con su punto, luego las generales, sin repetir', () => {
+  const secciones = [{ puntos: [{ clave: '2.1', titulo: 'Batería' }] }]
+  const rev = { datos: { puntos: { '2.1': { fotos: [{ ruta: 'o/t/bat.jpg' }, { ruta: null }] } } } }
+  const r = fotosParaPdf({ fotos: ['o/t/bat.jpg', 'o/t/otra.jpg', '', null] }, secciones, rev)
+  assert.deepEqual(r, [
+    { punto: '2.1 Batería', ruta: 'o/t/bat.jpg' },
+    { punto: 'Fotografía del servicio', ruta: 'o/t/otra.jpg' },
+  ])
+})
+
+test('fotosParaPdf: sin fotos no truena', () => {
+  assert.deepEqual(fotosParaPdf({}), [])
+  assert.deepEqual(fotosParaPdf(null), [])
+})
 
 test('paraPdf traduce la Ω, que es la que rompió el primer PDF real', () => {
   assert.equal(paraPdf('Aislamiento (MΩ)'), 'Aislamiento (Mohm)')

@@ -184,6 +184,27 @@ async function firmaDataUrl(ruta) {
 // las piezas de estilo viven en pdfEstilo.js.
 // jsPDF se carga aparte (arrastra html2canvas y dompurify, que aquí no se usan): solo el admin
 // lo necesita, y solo al generar un documento, así que no debe pesar en la carga del técnico.
+// Las fotos del anexo: primero las de la revisión, cada una con su punto; después las generales de
+// la orden (`orden.fotos`: las partes de los técnicos al cerrar, o las que subió la oficina), que no
+// cuelgan de ningún punto. Antes solo entraban las de la revisión, y una orden cerrada sin revisión
+// salía sin ninguna foto aunque las tuviera. Una ruta repetida entra una sola vez.
+export function fotosParaPdf(orden, secciones = [], rev = null) {
+  const lista = []
+  const vistas = new Set()
+  const agregar = (ruta, punto) => {
+    if (typeof ruta !== 'string' || !ruta || vistas.has(ruta)) return
+    vistas.add(ruta)
+    lista.push({ punto, ruta })
+  }
+  for (const s of secciones) {
+    for (const p of s.puntos || []) {
+      for (const f of rev?.datos?.puntos?.[p.clave]?.fotos || []) agregar(f?.ruta, `${p.clave} ${p.titulo}`)
+    }
+  }
+  for (const ruta of Array.isArray(orden?.fotos) ? orden.fotos : []) agregar(ruta, 'Fotografía del servicio')
+  return lista
+}
+
 export async function construirPdfOrden(orden, nombreTecnico, nombreTecnico2, tipo) {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
@@ -360,15 +381,8 @@ export async function construirPdfOrden(orden, nombreTecnico, nombreTecnico2, ti
   // todas (4:3): la foto se ajusta dentro sin deformarse, y una que no se pueda abrir deja su
   // marco con el aviso en vez de tumbar la orden. Se limita el número para que el PDF siga
   // pesando lo que se puede mandar por WhatsApp.
-  if (rev) {
-    const conFoto = []
-    for (const s of seccionesVisibles(formato, ctxRev)) {
-      for (const p of s.puntos) {
-        for (const f of rev.datos.puntos?.[p.clave]?.fotos || []) {
-          if (f.ruta) conFoto.push({ punto: `${p.clave} ${p.titulo}`, ruta: f.ruta })
-        }
-      }
-    }
+  {
+    const conFoto = fotosParaPdf(orden, rev ? seccionesVisibles(formato, ctxRev) : [], rev)
     if (conFoto.length > 0) {
       doc.addPage(); L.y = 16
       L.barra('EVIDENCIA FOTOGRÁFICA')
