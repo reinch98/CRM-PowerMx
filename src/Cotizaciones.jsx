@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
-import { hoyLocal, sumarDias } from './lib/fechas'
+import { hoyLocal } from './lib/fechas'
+import { fechaVence, semaforoVigencia, cotizacionesVisibles, resumenVigencia } from './lib/vigencia'
 import { partidasDeDiagnostico, tarifasDeCatalogo } from './lib/tarifas'
 import {
   TIPOS_PREVENTIVO, cargarPaquete, opcionSugerida,
@@ -222,6 +223,7 @@ export default function Cotizaciones({ irA }) {
   const [mensaje, setMensaje] = useState('')
   const [aviso, setAviso] = useState(null)   // requisiciones generadas o canceladas por el último cambio
   const [detalle, setDetalle] = useState(null)
+  const [verArchivadas, setVerArchivadas] = useState(false)   // vencidas y rechazadas
   const [editandoId, setEditandoId] = useState(null)   // cotización que se está editando (null = nueva)
   const [generandoPdf, setGenerandoPdf] = useState(null)
   const [expedienteId, setExpedienteId] = useState(null)   // cotización cuyo expediente está abierto
@@ -662,8 +664,21 @@ export default function Cotizaciones({ irA }) {
       return setError('La base tiene una versión vieja de cambiar_estado_cotizacion y no se cambió nada. Corre supabase/sql/08_requisiciones.sql.')
     }
 
+    // Reactivar una archivada: vuelve con la fecha de hoy, o el reloj la vencería
+    // otra vez mañana temprano. Solo si sigue en borrador (nadie la movió entretanto).
+    let reactivada = null
+    if (!data.sin_cambio && nuevo === 'borrador' && (c.estado === 'vencida' || c.estado === 'rechazada')) {
+      const hoy = hoyLocal()
+      const { error: errFecha } = await supabase.from('cotizaciones')
+        .update({ fecha: hoy }).eq('id', c.id).eq('estado', 'borrador')
+      if (errFecha) setError(`Se pasó a Borrador, pero no se pudo poner la fecha de hoy: ${errFecha.message}`)
+      else reactivada = fechaVence({ ...c, fecha: hoy })
+    }
+
     if (data.sin_cambio) {
       setMensaje('La cotización ya estaba en ese estado.')
+    } else if (reactivada) {
+      setMensaje(`COT-${c.folio} reactivada con fecha de hoy: vale hasta el ${reactivada.split('-').reverse().join('/')}.`)
     } else if (data.movimientos > 0) {
       setMensaje(`${data.movimiento === 'apartado' ? 'Apartadas' : 'Liberadas'} ${data.movimientos} partida(s) en almacén.`)
     } else {
@@ -693,7 +708,11 @@ export default function Cotizaciones({ irA }) {
   const faltaDePartida = p =>
     p.producto_id ? Math.max(0, num(p.cantidad) - Math.max(dispoPorId[p.producto_id] ?? 0, 0)) : 0
 
-  const vence = c => sumarDias(c.fecha, c.vigencia_dias || 15)
+  // Semáforo de vigencia (lib/vigencia.js). La lista oculta las archivadas salvo que se pidan.
+  const hoy = hoyLocal()
+  const visibles = cotizacionesVisibles(cotizaciones, verArchivadas)
+  const resumen = resumenVigencia(cotizaciones, hoy)
+  const ICONO_VIGENCIA = { vigente: '✓', por_vencer: '⏳', vencida: '⚠', archivada: '▣' }
 
   return (
     <div className="pagina">
@@ -776,6 +795,23 @@ export default function Cotizaciones({ irA }) {
 
       {vista === 'lista' && (
         <>
+          {(resumen.vencida > 0 || resumen.por_vencer > 0) && (
+            <Alerta tipo={resumen.vencida > 0 ? 'error' : 'aviso'} palabra="Vigencia">
+              {[
+                resumen.vencida === 1 && '1 ya pasó su vigencia y se archiva sola a las 7 de la mañana.',
+                resumen.vencida > 1 && `${resumen.vencida} ya pasaron su vigencia y se archivan solas a las 7 de la mañana.`,
+                resumen.por_vencer === 1 && '1 vence en 3 días o menos.',
+                resumen.por_vencer > 1 && `${resumen.por_vencer} vencen en 3 días o menos.`,
+                'Ninguna se borra: una archivada se reactiva cambiándola a Borrador, y toma la fecha de hoy.'
+              ].filter(Boolean).join(' ')}
+            </Alerta>
+          )}
+          <div className="fila" style={{ marginBottom: 8 }}>
+            <button aria-pressed={verArchivadas} onClick={() => setVerArchivadas(v => !v)}>
+              {verArchivadas ? 'Ocultar archivadas' : `Ver archivadas (${resumen.archivada})`}
+            </button>
+            <span className="ayuda">Archivadas = vencidas y rechazadas. No se borra ninguna.</span>
+          </div>
           <div className="tabla-scroll">
             <table>
               <thead>
@@ -785,12 +821,20 @@ export default function Cotizaciones({ irA }) {
                 </tr>
               </thead>
               <tbody>
-                {cotizaciones.map(c => (
-                  <tr key={c.id}>
+                {visibles.map(c => {
+                  const sem = semaforoVigencia(c, hoy)
+                  return (
+                  <tr key={c.id} className={sem.nivel ? `fila-${sem.nivel}` : undefined}>
                     <td>{c.folio}</td>
                     <td>{c.clientes?.nombre}</td>
                     <td>{c.fecha}</td>
-                    <td>{vence(c)}</td>
+                    <td>
+                      {sem.nivel
+                        ? <span className={`vigencia vigencia-${sem.nivel}`}>
+                            <span aria-hidden="true">{ICONO_VIGENCIA[sem.nivel]} </span>{sem.palabra}
+                          </span>
+                        : <span aria-label="No vence">—</span>}
+                    </td>
                     <td>{c.tipo}{c.requiere_visita && ' · visita'}</td>
                     <td align="right">{pesos(c.total)}</td>
                     <td>
@@ -825,9 +869,12 @@ export default function Cotizaciones({ irA }) {
                       {detalle === c.id ? 'Cerrar' : 'Ver'}
                     </button></td>
                   </tr>
-                ))}
-                {cotizaciones.length === 0 && (
-                  <tr><td colSpan={10} className="ayuda">Todavía no hay cotizaciones.</td></tr>
+                  )
+                })}
+                {visibles.length === 0 && (
+                  <tr><td colSpan={10} className="ayuda">
+                    {cotizaciones.length === 0 ? 'Todavía no hay cotizaciones.' : 'No hay cotizaciones vivas: todas están archivadas.'}
+                  </td></tr>
                 )}
               </tbody>
             </table>

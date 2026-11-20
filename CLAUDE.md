@@ -3476,3 +3476,23 @@ y se liga, la factura manda y queda "Completo". 8 pruebas en Node; probado en el
   --content-type image/jpeg`, y luego SQL como el admin (`set local role authenticated` + `request.jwt.claims` con su id) para
   `registrar_documento`, `anotar_archivo` y `compras.archivo_pdf`. El navegador integrado bloquea (`ERR_BLOCKED_BY_CLIENT`) que una
   página pública lea `localhost`, así que la sesión del CRM publicado no sirve para subir archivos de la compu.
+
+## Semáforo de vigencia de cotizaciones (SQL 102, 19/11/2026) — aplicado y probado (11/11); pantalla en emulador
+
+Pedido de Caña: "una normativa de color, en la que vayamos descartando y guardando las que van expirando".
+- **Regla** (`src/lib/vigencia.js`, 7 pruebas): una cotización en borrador o enviada vence `fecha + vigencia_dias`
+  (15 si no hay); el día de vencer todavía vale. Verde "Vigente · vence el dd/mm" · ámbar "Vence en N días / mañana /
+  hoy" (3 días o menos) · rojo "Vencida hace N días" · gris "Archivada · vencida|rechazada". Las aceptadas no vencen
+  (columna "—"). Siempre ícono + palabra; el ámbar solo como fondo.
+- **`vencer_cotizaciones(p_hoy)`** (102): pasa a `vencida` las borrador/enviada pasadas de vigencia, cancela su cita y
+  orden **sin trabajo** (copia del bloque de `cambiar_estado_cotizacion` de la 14: si cambia allá, cambiarlo aquí) y
+  deja rastro en `auditoria` (`vencida_sola`, origen `agente`). Sin sesión pasa (reloj); con sesión, solo admin.
+  Reloj **`vencer-cotizaciones`** a las 13:10 UTC = 07:10 de Mérida. Nada se borra.
+- **Pantalla:** la lista oculta las archivadas ("Ver archivadas (n)"), aviso arriba con cuántas vencen o ya vencieron, y
+  **reactivar** = cambiar una archivada a Borrador: además de `cambiar_estado_cotizacion` le pone la fecha de hoy
+  (solo si sigue en borrador), o el reloj la volvería a vencer al día siguiente.
+- Al aplicarlo, el reloj iba a archivar 12 en su primera corrida (20/11): folios 14, 17, 30, 54, 64, 65, 66, 67, 68,
+  69, 86 y 89.
+- **Choque de números:** otra sesión registró `101_compra_sin_factura.sql` dos minutos antes; esta se renombró a 102
+  (también en `_migraciones`). Con varias sesiones abiertas, revisar `select max(numero) from _migraciones` justo antes
+  de nombrar el archivo, no al empezar.

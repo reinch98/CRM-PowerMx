@@ -830,3 +830,25 @@ th, td { border: 1px solid var(--linea); padding: 8px 10px; }
   .flujo-flecha { right: auto; left: 50%; top: auto; bottom: -18px; transform: translate(-50%, 0) rotate(90deg); }
 }
 .flujo-cerrar { margin-top: 12px; padding-top: 12px; border-top: 2px solid var(--linea); }
+
+/* ---------------------------------------------------------------------------
+   Semáforo de vigencia de cotizaciones (SQL 102). Texto noche sobre fondo
+   tenue y borde del color: el ámbar solo como fondo, nunca como texto. Cada
+   nivel lleva ícono y palabra (lib/vigencia.js), no solo color.
+   --------------------------------------------------------------------------- */
+.vigencia {
+  display: inline-block;
+  padding: 2px 10px;
+  font-weight: 700;
+  color: var(--noche);
+  border: 2px solid;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.vigencia-vigente   { background: var(--ok-fondo);    border-color: var(--ok); }
+.vigencia-por_vencer { background: var(--aviso-fondo); border-color: var(--aviso); }
+.vigencia-vencida   { background: var(--error-fondo); border-color: var(--error); }
+.vigencia-archivada { background: transparent; border-color: var(--texto-2); color: var(--texto-2); }
+tr.fila-vencida td:first-child { box-shadow: inset 6px 0 0 var(--error); }
+tr.fila-por_vencer td:first-child { box-shadow: inset 6px 0 0 var(--ambar); }
+tr.fila-archivada td { color: var(--texto-2); }
