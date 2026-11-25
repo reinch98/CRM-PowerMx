@@ -3477,6 +3477,28 @@ y se liga, la factura manda y queda "Completo". 8 pruebas en Node; probado en el
   `registrar_documento`, `anotar_archivo` y `compras.archivo_pdf`. El navegador integrado bloquea (`ERR_BLOCKED_BY_CLIENT`) que una
   página pública lea `localhost`, así que la sesión del CRM publicado no sirve para subir archivos de la compu.
 
+## Cotizador de instalaciones (SQL 104, 24/11/2026) — aplicado y probado (6/6); pantalla en emulador
+
+Pedido de Caña: "un cotizador para instalaciones" — solo materiales y mano de obra (el equipo lo elige él), con
+los precios de `ESTRUCTURA.xlsx` (OneDrive\Escritorio\2026; hojas INSTALACIÓN ELECTRICA, INSTALACIÓN GAS y las
+cotizaciones viejas de INSTALACIONES), y que abra una cotización nueva.
+- **`materiales_instalacion`** (solo admin): bloque `electrica` | `gas` | `base` | `otro`, tipo `material` |
+  `mano_obra`, precio sin IVA, costo interno opcional, y la regla de cantidad
+  `fija + por_metro × max(0, metros − metros_incluidos)`, hacia arriba (redondeando antes a centésimos: un tubo de
+  3 m es `por_metro` 0.3333 y 15 m dan 5, no 6). `grupo` = opciones que se excluyen (cable de fuerza cal. 2/4/5,
+  tubería) con una `predeterminado`. Sembrada con 41 renglones; **las cantidades por metro son supuestas** (el Excel
+  solo traía las de 15 m) y se corrigen en la pantalla. Comprobado: el gas a 15 m da los $13,300 del Excel.
+- Pantalla **Instalaciones** (área Ventas; `src/Instalaciones.jsx`, `src/lib/instalaciones.js`, 8 pruebas): por
+  bloque, "Incluir", distancia, opción de cada grupo y tabla con la cantidad sugerida en gris (escribir otra la
+  reemplaza; borrarla regresa a la sugerida). "Así saldrá en la cotización" muestra las partidas; por omisión, como
+  en el Excel, los materiales de cada instalación en UNA partida ("se consideran hasta N m… Incluye: …") y la mano de
+  obra en otra; "Desglosar" saca una por material. Base y extras van uno por uno. Pestaña "Materiales y mano de
+  obra" para editar y agregar (apagar en vez de borrar).
+- "Crear cotización" deja un encargo (`origen: 'instalaciones'`) y Cotizaciones la abre como nueva, tipo
+  instalación, con nota interna (total por bloque y costo conocido). **Partidas libres**: no apartan inventario.
+- Medido en celular con un Supabase falso y la lista real: 0 textos < 17 px, 0 px de desborde; casillas de 26 px
+  dentro de etiquetas de 48 o más. **Sin probar contra la base real desde la pantalla.**
+
 ## Semáforo de vigencia de cotizaciones (SQL 102, 19/11/2026) — aplicado y probado (11/11); pantalla en emulador
 
 Pedido de Caña: "una normativa de color, en la que vayamos descartando y guardando las que van expirando".

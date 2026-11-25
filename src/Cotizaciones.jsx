@@ -254,7 +254,7 @@ export default function Cotizaciones({ irA }) {
     setForm({ ...vacio(), cliente_id: e.clienteId || '', tipo: e.tipo || 'instalacion', requiere_visita: true, notas_internas: e.notas || '' })
     setPartidas(e.partidas || [])
     setAvisosDiag([])
-    setDesdeSolicitud({ id: e.solicitud?.id, nombre: e.solicitud?.nombre, avisos: e.avisos || [], cambio: e.cambio, aLaMedida: e.aLaMedida })
+    setDesdeSolicitud({ id: e.solicitud?.id, nombre: e.solicitud?.nombre, origen: e.origen, avisos: e.avisos || [], cambio: e.cambio, aLaMedida: e.aLaMedida })
     if (!e.clienteId && e.clienteNuevo) {
       setNuevoCliente({ ...CLIENTE_VACIO, ...e.clienteNuevo })
       setClienteNuevoAbierto(true)
@@ -972,7 +972,13 @@ export default function Cotizaciones({ irA }) {
               lo guardado; las partidas conservan el precio con el que se cotizaron.
             </Alerta>
           )}
-          {desdeSolicitud && !editandoId && (
+          {desdeSolicitud?.origen === 'instalaciones' && !editandoId && (
+            <Alerta tipo="info" palabra="Del cotizador de instalaciones">
+              Las partidas son libres: no apartan inventario ni generan pedidos. Elige el cliente
+              (y el equipo, si ya existe) y revisa antes de guardar.
+            </Alerta>
+          )}
+          {desdeSolicitud && desdeSolicitud.origen !== 'instalaciones' && !editandoId && (
             <Alerta tipo="info" palabra="De la calculadora">
               Cotización armada con la solicitud de <strong>{desdeSolicitud.nombre}</strong>
               {desdeSolicitud.aLaMedida ? ' (sistema a la medida: agrega tú las partidas)' : ', con el precio de hoy del paquete y sus piezas incluidas'}.

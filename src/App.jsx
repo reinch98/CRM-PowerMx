@@ -34,6 +34,7 @@ const Tablero = lazy(() => import('./Tablero'))
 const PagosTecnicos = lazy(() => import('./PagosTecnicos'))
 const Comisiones = lazy(() => import('./Comisiones'))
 const Polizas = lazy(() => import('./Polizas'))
+const Instalaciones = lazy(() => import('./Instalaciones'))
 
 // Qué pantallas ve cada rol. El menú y el contenido salen de aquí, así que
 // agregar una pantalla es agregar un renglón, no tocar el resto.
@@ -50,6 +51,8 @@ const PANTALLAS = {
   equipos:      { titulo: 'Equipos',      componente: Equipos,      roles: ['admin'] },
   inventario:   { titulo: 'Inventario',   componente: Inventario,   roles: ['admin'] },
   cotizaciones: { titulo: 'Cotizaciones', componente: Cotizaciones, roles: ['admin'] },
+  // Materiales y mano de obra de una instalación → partidas libres de una cotización nueva (SQL 104).
+  instalaciones:{ titulo: 'Instalaciones', componente: Instalaciones, roles: ['admin'] },
   requisiciones:{ titulo: 'Pedidos',      componente: Requisiciones,roles: ['admin'] },
   compras:      { titulo: 'Compras',      componente: Compras,      roles: ['admin'] },
   // Pedido → nota → factura de cada compra, a la vista (solo lee).
@@ -84,7 +87,7 @@ const PANTALLAS = {
 const GRUPOS = [
   { clave: 'servicio', titulo: 'Servicio', pantallas: ['inicio', 'agenda', 'ordenes', 'comisiones'] },
   { clave: 'clientes', titulo: 'Clientes', pantallas: ['solicitudes', 'whatsapp', 'clientes', 'contactos', 'equipos'] },
-  { clave: 'ventas',   titulo: 'Ventas',   pantallas: ['cotizaciones', 'polizas', 'tarifas', 'paquetes'] },
+  { clave: 'ventas',   titulo: 'Ventas',   pantallas: ['cotizaciones', 'instalaciones', 'polizas', 'tarifas', 'paquetes'] },
   { clave: 'almacen',  titulo: 'Almacén',  pantallas: ['almacen', 'inventario', 'requisiciones', 'compras', 'flujo', 'proveedores', 'proveedor'] },
   { clave: 'finanzas', titulo: 'Finanzas', pantallas: ['tablero', 'finanzas', 'pagos'] },
   { clave: 'ajustes',  titulo: 'Ajustes',  pantallas: ['usuarios', 'agente'] },
