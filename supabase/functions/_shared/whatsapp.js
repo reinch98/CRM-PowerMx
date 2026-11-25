@@ -21,6 +21,23 @@ export function cuerpoMensaje(m, enlaceDocumento = null) {
           document: { link: enlaceDocumento, filename: m.media_nombre || 'documento', ...pie },
         }
   }
+  // Tarjeta de contacto de WhatsApp (SQL 98): el cliente que el agente pasó a una persona. Al
+  // tocarla, la oficina le escribe o lo guarda. Solo sale con la ventana de 24 h abierta.
+  if (m.tipo === 'contacto') {
+    const c = m.contacto || {}
+    if (!c.telefono) throw new Error('La tarjeta de contacto no trae teléfono.')
+    const nombre = String(c.nombre || c.telefono).slice(0, 100)
+    return {
+      messaging_product: 'whatsapp',
+      to: m.to,
+      type: 'contacts',
+      contacts: [{
+        name: { formatted_name: nombre, first_name: nombre },
+        phones: [{ phone: c.telefono, type: 'CELL', ...(c.wa_id ? { wa_id: c.wa_id } : {}) }],
+        ...(c.empresa ? { org: { company: String(c.empresa).slice(0, 100) } } : {}),
+      }],
+    }
+  }
   if (m.tipo === 'texto') {
     return {
       messaging_product: 'whatsapp',

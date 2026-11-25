@@ -7,7 +7,8 @@ import {
   cargarAgente, guardarAgente, marcarBorradorEnviado, estadoSugerencia, pedirSugerencia,
   guardarEjemplo, cargarEjemplos, imitarEjemplo,
   claseMedia, estadoArchivo, enlacesArchivos, traerArchivos, resumenTraidos,
-  revisarArchivoWa, enviarArchivoWa, pesoLegible
+  revisarArchivoWa, enviarArchivoWa, pesoLegible,
+  cargarTraspasos, atenderTraspaso, comoSeAviso, telefonoAvisosValido
 } from './lib/whatsapp'
 import { cargarConfig, cargarCola, agruparCola, responderPorApi } from './lib/salidaWa'
 import { ColaSalida, Campanas } from './SalidaWhatsApp'
@@ -193,6 +194,51 @@ function TraerPendientes() {
 // superior (no dentro de otro) para que la caja de texto no pierda el foco al escribir.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
+// Clientes que el agente pasó a una persona (SQL 98): su tarjeta, con lo que necesitan. Mientras no
+// se marquen atendidos, el agente no les contesta solo (24 h como máximo).
+// ---------------------------------------------------------------------------
+function ClientesPorAtender({ traspasos, onAbrir, onCambio }) {
+  const [ocupado, setOcupado] = useState(null)
+  const [error, setError] = useState('')
+  if (!traspasos?.length) return null
+
+  async function atender(id) {
+    setOcupado(id); setError('')
+    const r = await atenderTraspaso(id)
+    setOcupado(null)
+    if (!r.ok) return setError(r.texto)
+    onCambio()
+  }
+
+  return (
+    <section className="tarjeta">
+      <h3 style={{ marginTop: 0 }}>Clientes para atender ({traspasos.length})</h3>
+      <p className="ayuda">
+        El agente te los pasó. Mientras no marques "Ya lo atendí", no les contesta solo (24 horas como máximo).
+      </p>
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      {traspasos.map(t => (
+        <div key={t.id} style={{ borderTop: '1px solid var(--linea)', padding: '10px 0' }}>
+          <div className="fila" style={{ justifyContent: 'space-between' }}>
+            <strong>{t.nombre || 'Sin nombre'}{t.empresa ? ` · ${t.empresa}` : ''}</strong>
+            {t.urgente && <span className="etiqueta etiqueta-aviso">Urgente</span>}
+          </div>
+          <p style={{ margin: '4px 0', whiteSpace: 'pre-wrap' }}>{t.necesidad}</p>
+          <p className="ayuda" style={{ margin: '4px 0' }}>{t.telefono} · {haceCuanto(t.created_at)}</p>
+          {comoSeAviso(t.avisado) && <p className="ayuda" style={{ margin: '4px 0' }}>{comoSeAviso(t.avisado)}</p>}
+          <div className="fila">
+            <button type="button" className="btn-primario" onClick={() => onAbrir(t.conversacion_id)}>Abrir conversación</button>
+            <button type="button" disabled={ocupado === t.id} onClick={() => atender(t.id)}>
+              {ocupado === t.id ? 'Guardando…' : 'Ya lo atendí'}
+            </button>
+          </div>
+        </div>
+      ))}
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Mandar una foto o un documento al cliente (SQL 96). Sube al bucket `whatsapp` y entra a la
 // misma cola que el texto; aparece en la conversación cuando Meta lo recibe.
 // ---------------------------------------------------------------------------
@@ -276,7 +322,7 @@ function AdjuntarArchivo({ conv, onEnviado }) {
   )
 }
 
-function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
+function Conversacion({ conv, contactos, apiActiva, traspaso, onVolver, onCambio }) {
   const [mensajes, setMensajes] = useState(null)
   const [texto, setTexto] = useState('')
   const [contacto, setContacto] = useState('')
@@ -423,6 +469,19 @@ function Conversacion({ conv, contactos, apiActiva, onVolver, onCambio }) {
         {ventana.texto}
       </Alerta>
 
+      {/* El agente lo pasó a una persona (SQL 98): qué necesita, y el agente no le contesta solo. */}
+      {traspaso && (
+        <Alerta tipo="aviso" palabra={traspaso.urgente ? 'Urgente · te lo pasó el agente' : 'Te lo pasó el agente'}>
+          {traspaso.necesidad} Mientras no marques que ya lo atendiste, el agente no le contesta solo.
+          <div style={{ marginTop: 8 }}>
+            <button type="button" onClick={async () => {
+              const r = await atenderTraspaso(traspaso.id)
+              if (!r.ok) setError(r.texto); else onCambio()
+            }}>Ya lo atendí</button>
+          </div>
+        </Alerta>
+      )}
+
       {error && <Alerta tipo="error">{error}</Alerta>}
       {mensaje && <Alerta tipo="ok" palabra="Listo">{mensaje}</Alerta>}
 
@@ -561,6 +620,7 @@ export default function WhatsApp() {
   const [pestana, setPestana] = useState('bandeja')
   const [config, setConfig] = useState(null)
   const [porAtender, setPorAtender] = useState(0)
+  const [traspasos, setTraspasos] = useState([])
 
   // Lo que espera a la oficina en la cola (por aprobar + con problema): el número de la pestaña.
   async function contarCola() {
@@ -569,7 +629,9 @@ export default function WhatsApp() {
   }
 
   async function recargar(cerradas = incluirCerradas) {
-    const [b, c, a, k] = await Promise.all([cargarBandeja(cerradas), cargarContactos(), cargarAgente(), cargarConfig()])
+    const [b, c, a, k, t] = await Promise.all([
+      cargarBandeja(cerradas), cargarContactos(), cargarAgente(), cargarConfig(), cargarTraspasos()])
+    if (t.ok) setTraspasos(t.traspasos)
     if (b.ok) { setConversaciones(b.conversaciones); setError('') }
     else setError(b.texto)
     if (c.ok) setContactos(c.contactos)
@@ -609,6 +671,7 @@ export default function WhatsApp() {
     return (
       <Conversacion
         key={abierta.id} conv={abierta} contactos={contactos} apiActiva={!!config?.envio_activo}
+        traspaso={traspasos.find(t => t.conversacion_id === abierta.id) || null}
         onVolver={() => setSeleccion(null)} onCambio={() => recargar()}
       />
     )
@@ -641,6 +704,8 @@ export default function WhatsApp() {
       {pestana === 'campanas' && enLinea && <Campanas />}
       {pestana === 'bandeja' && <>
       {error && <Alerta tipo="error">{error}</Alerta>}
+
+      {enLinea && <ClientesPorAtender traspasos={traspasos} onAbrir={setSeleccion} onCambio={() => recargar()} />}
 
       {enLinea && (
         <details className="tarjeta">
@@ -693,6 +758,16 @@ export default function WhatsApp() {
             <textarea rows={2} value={agente.instrucciones || ''}
               onChange={e => cambiarAgente({ instrucciones: e.target.value })} />
           </label>
+          <label className="campo">
+            <span>Tu WhatsApp para los clientes que el agente te pasa</span>
+            <input type="tel" inputMode="tel" value={agente.telefono_traspasos || ''}
+              onChange={e => cambiarAgente({ telefono_traspasos: e.target.value })} />
+          </label>
+          <p className="ayuda">
+            {telefonoAvisosValido(agente.telefono_traspasos)
+              ? 'Si le escribiste al número de PowerMx en las últimas 24 horas, te llega con su tarjeta de contacto; si no, con la plantilla cliente_para_atender, que hay que aprobar en Meta.'
+              : 'Sin un número de 10 dígitos, la tarjeta del cliente solo queda aquí en el CRM.'}
+          </p>
           <EjemplosAgente />
         </details>
       )}

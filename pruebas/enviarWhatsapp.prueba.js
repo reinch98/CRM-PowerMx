@@ -98,3 +98,20 @@ test('documento sin pie: lleva su nombre y no manda caption vacío', () => {
 test('archivo sin enlace: no sale a medias', () => {
   assert.throws(() => cuerpoMensaje({ tipo: 'imagen', to: '52', media_ruta: 'enviados/x/a.jpg' }))
 })
+
+test('tarjeta de contacto del cliente pasado a una persona (SQL 98)', () => {
+  const c = cuerpoMensaje({ tipo: 'contacto', to: '529990009899',
+    contacto: { nombre: 'Ana', empresa: 'Hotel Sol', telefono: '+529990009801', wa_id: '529990009801' } })
+  assert.deepEqual(c, {
+    messaging_product: 'whatsapp', to: '529990009899', type: 'contacts',
+    contacts: [{ name: { formatted_name: 'Ana', first_name: 'Ana' },
+      phones: [{ phone: '+529990009801', type: 'CELL', wa_id: '529990009801' }],
+      org: { company: 'Hotel Sol' } }],
+  })
+})
+
+test('tarjeta sin empresa no manda org; sin teléfono no sale', () => {
+  const c = cuerpoMensaje({ tipo: 'contacto', to: '52', contacto: { nombre: 'Luis', telefono: '+529990009802' } })
+  assert.equal(c.contacts[0].org, undefined)
+  assert.throws(() => cuerpoMensaje({ tipo: 'contacto', to: '52', contacto: { nombre: 'X' } }))
+})

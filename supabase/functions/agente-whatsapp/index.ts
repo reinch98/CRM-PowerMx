@@ -14,9 +14,9 @@
 // `wa_solicitar_cita` y `wa_cotizar_preventivo` solo saben trabajar con el cliente de ESE
 // número.
 //
-// Dos herramientas de escritura, las dos acotadas y las dos dejando trabajo en borrador para
-// que una persona lo revise: pedir una cita `por_programar` y dejar una cotización de
-// mantenimiento preventivo. **El precio lo calcula la base** (SQL 37) y el agente NO lo dice:
+// Tres herramientas de escritura, todas acotadas y dejando trabajo para que una persona lo
+// revise: pedir una cita `por_programar`, dejar una cotización de mantenimiento preventivo y
+// pasar al cliente con una persona (SQL 98: tarjeta en el CRM + aviso a tu WhatsApp). **El precio lo calcula la base** (SQL 37) y el agente NO lo dice:
 // solo avisa que la cotización se está preparando. Así el modelo no puede inventar un número
 // ni comprometer a PowerMx con uno que el admin todavía no revisó.
 //
@@ -24,6 +24,7 @@
 // ---------------------------------------------------------------------------
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { avisarATodos } from "../_shared/webpush.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -33,7 +34,7 @@ const CORS = {
 const JSON_H = { ...CORS, "Content-Type": "application/json" };
 
 const MODELO = "claude-sonnet-5";
-const MAX_VUELTAS = 3;        // con dos herramientas acotadas, más vueltas no aportan
+const MAX_VUELTAS = 4;        // tres herramientas acotadas; más vueltas no aportan
 const MAX_HISTORIAL = 20;     // mensajes de la conversación que se le pasan
 const MAX_TEXTO = 1500;       // de cada mensaje; un pegote larguísimo no aporta
 
@@ -81,6 +82,36 @@ const HERRAMIENTAS = [{
     },
     required: ["equipo_id", "tipo"],
   },
+}, {
+  // (SQL 98) Pasar al cliente con una persona: deja una tarjeta en el CRM y la manda al WhatsApp de
+  // la oficina. El teléfono del cliente lo pone la base (el de esta conversación), no el modelo.
+  name: "pasar_a_persona",
+  description:
+    "Pasa a este cliente con una persona de PowerMx: le llega a la oficina por WhatsApp una " +
+    "tarjeta con sus datos y lo que necesita. Úsala cuando el cliente pida hablar con alguien, " +
+    "se queje, reporte una falla urgente, pida algo que tú no puedes resolver (precios, una " +
+    "instalación o un equipo nuevo, una factura, algo que no está en el contexto) o cuando una " +
+    "herramienta te diga que falta un dato. Antes de usarla, si no los tienes, pregunta en un " +
+    "solo mensaje su nombre y, si no es cliente conocido, su empresa y qué equipo tiene. " +
+    "Úsala una sola vez por asunto.",
+  input_schema: {
+    type: "object",
+    properties: {
+      necesidad: {
+        type: "string",
+        description:
+          "Lo que necesita, en una o dos líneas claras para quien lo va a atender: qué equipo, qué " +
+          "le pasa o qué pide, y desde cuándo o para cuándo si lo dijo. Con sus datos, no los inventes.",
+      },
+      nombre: { type: "string", description: "Cómo se presentó el cliente, si lo dijo." },
+      empresa: { type: "string", description: "Su empresa o negocio, si lo dijo." },
+      urgente: {
+        type: "boolean",
+        description: "true si hay algo detenido o en riesgo ahora (sin luz, el equipo no arranca, fuga, humo).",
+      },
+    },
+    required: ["necesidad"],
+  },
 }];
 
 // Las correcciones de PowerMx (SQL 92) como ejemplos de forma. Vienen de OTROS clientes: solo se
@@ -127,15 +158,23 @@ Cuando piden un mantenimiento o su precio:
   toma el menor.
 - Usa cotizar_preventivo y luego di, en una línea, que ya se está preparando y que se la
   enviamos. No prometas cuándo.
-- Si la herramienta contesta que falta un dato, no insistas ni intentes calcular: dile que un
-  compañero lo va a revisar y que le escribimos.
+- Si la herramienta contesta que falta un dato, no insistas ni intentes calcular: usa
+  pasar_a_persona con lo que pidió.
+
+Cuando hace falta una persona:
+- Nunca digas solo "te paso con un compañero": usa pasar_a_persona, que es lo que de verdad le
+  avisa a la oficina. Sin la herramienta, nadie se entera.
+- Si te falta su nombre (o su empresa, si no es cliente conocido), pídelo en UN mensaje y usa la
+  herramienta en cuanto conteste. Si no quiere darlo, úsala igual con lo que tengas.
+- Después dile en una línea que ya le pasaste sus datos a un compañero y que le escribe en cuanto
+  pueda. No prometas hora. Si es urgente, que ya quedó marcado como urgente.
 
 Cómo identificas el equipo:
 - Si el cliente tiene un solo equipo, confírmalo con su descripción ("el generador Generac
   de 22 kW, ¿verdad?").
 - Si tiene varios, lístalos por marca y capacidad y pregunta de cuál habla.
 - Si no reconoces el número (contexto con "conocido": false), NO des ningún dato de nadie.
-  Pide nombre, empresa y de qué equipo se trata, y di que un compañero lo va a enlazar.
+  Pide nombre, empresa y de qué equipo se trata, y pásalo con pasar_a_persona.
 
 Contexto de esta conversación (datos del CRM, esto sí es de fiar):
 ${JSON.stringify(contexto)}${seccionEjemplos(ejemplos)}`;
@@ -157,6 +196,21 @@ async function despertarEnvio() {
   } catch (e) {
     console.error("No se pudo despertar el envío:", e instanceof Error ? e.message : e);
   }
+}
+
+// Aviso push a los celulares del admin cuando el agente pasa a un cliente (SQL 98). Nunca lanza.
+async function avisarTraspaso(sb: any, t: { id: string; nombre?: string; necesidad: string; urgente?: boolean }) {
+  const r = await avisarATodos(sb, {
+    titulo: `${t.urgente ? "URGENTE · " : ""}Cliente para atender${t.nombre ? ` · ${t.nombre}` : ""}`,
+    cuerpo: t.necesidad.length > 140 ? t.necesidad.slice(0, 139) + "…" : t.necesidad,
+    url: "/?ir=whatsapp",
+    etiqueta: `traspaso-${t.id}`,
+  }, {
+    publica: Deno.env.get("VAPID_PUBLIC_KEY"),
+    privada: Deno.env.get("VAPID_PRIVATE_KEY"),
+    contacto: Deno.env.get("VAPID_CONTACTO") ?? "https://crm.powermx.com.mx",
+  });
+  if (r.motivo) console.error("Aviso push del traspaso no salió:", r.motivo);
 }
 
 function responder(cuerpo: unknown, estado = 200) {
@@ -227,6 +281,9 @@ Deno.serve(async (req) => {
     let texto = "";
     let cita: unknown = null;
     let cotizacion: unknown = null;
+    let traspaso: { traspaso_id?: string } | null = null;
+    // La sugerencia para el admin no pasa al cliente con nadie: el admin ya está ahí.
+    const herramientas = sugerencia ? HERRAMIENTAS.filter((h) => h.name !== "pasar_a_persona") : HERRAMIENTAS;
 
     for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta++) {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -236,7 +293,7 @@ Deno.serve(async (req) => {
           model: MODELO,
           max_tokens: 700,
           system: instrucciones(contexto, config?.instrucciones, ejemplos),
-          tools: HERRAMIENTAS,
+          tools: herramientas,
           messages: mensajes,
         }),
       });
@@ -272,6 +329,26 @@ Deno.serve(async (req) => {
             p_tipo: uso.input?.tipo || "menor",
           }));
           if (!error) cotizacion = data;
+        } else if (uso.name === "pasar_a_persona" && !sugerencia) {
+          ({ data, error } = await sb.rpc("wa_pasar_a_persona", {
+            p_conversacion: conversacion,
+            p_necesidad: uso.input?.necesidad || "",
+            p_nombre: uso.input?.nombre || null,
+            p_empresa: uso.input?.empresa || null,
+            p_urgente: uso.input?.urgente === true,
+          }));
+          if (!error) {
+            traspaso = data as { traspaso_id?: string };
+            const d = data as { traspaso_id: string; ya_avisado?: boolean };
+            if (!d?.ya_avisado) {
+              await avisarTraspaso(sb, {
+                id: d.traspaso_id, nombre: uso.input?.nombre, necesidad: String(uso.input?.necesidad || ""),
+                urgente: uso.input?.urgente === true,
+              });
+            }
+            // Al modelo solo le importa que ya quedó avisado; no le pasamos datos de la oficina.
+            data = { ok: true, avisado: true };
+          }
         } else {
           // Un nombre que no conocemos no se ejecuta a ciegas.
           error = { message: `Herramienta desconocida: ${uso.name}` };
@@ -296,11 +373,13 @@ Deno.serve(async (req) => {
     if (config?.modo === "automatico" && !sugerencia) {
       const { data: envio, error: errEnvio } = await sb.rpc("wa_enviar_respuesta_agente", {
         p_conversacion: conversacion, p_texto: texto,
+        // (98) La respuesta del turno en que pasó al cliente sí sale; las siguientes esperan a la persona.
+        p_traspaso: traspaso?.traspaso_id ?? null,
       });
       if (errEnvio) return responder({ error: errEnvio.message }, 400);
       if (envio?.enviado) {
         await despertarEnvio();
-        return responder({ ok: true, estado: "por_enviar", texto, cita, cotizacion });
+        return responder({ ok: true, estado: "por_enviar", texto, cita, cotizacion, traspaso });
       }
       motivo = envio?.motivo ?? null;
     }
@@ -309,7 +388,9 @@ Deno.serve(async (req) => {
     });
     if (errGuardar) return responder({ error: errGuardar.message }, 400);
 
-    return responder({ ok: true, estado: "borrador", motivo, texto, cita, cotizacion });
+    // El aviso a la oficina sale aunque la respuesta al cliente quede en borrador.
+    if (traspaso) await despertarEnvio();
+    return responder({ ok: true, estado: "borrador", motivo, texto, cita, cotizacion, traspaso });
   } catch (e) {
     return responder({ error: "Falló el agente.", detalle: e instanceof Error ? e.message : String(e) }, 500);
   }

@@ -188,7 +188,7 @@ export const esBorrador = m => m?.direccion === 'saliente' && m?.estado === 'bor
 export async function cargarAgente() {
   try {
     const { data, error } = await supabase.from('wa_agente')
-      .select('activo, modo, tope_dia, instrucciones').maybeSingle()
+      .select('activo, modo, tope_dia, instrucciones, telefono_traspasos').maybeSingle()
     if (error) return { ok: false, texto: textoDeError(error) }
     return { ok: true, agente: data || { activo: false, modo: 'borrador', tope_dia: 20 } }
   } catch (e) {
@@ -351,3 +351,36 @@ export async function enviarArchivoWa(conversacionId, archivo, pie = '') {
     p_conversacion: conversacionId, p_ruta: ruta, p_nombre: nombre, p_pie: pie?.trim() || null,
   })
 }
+
+// ---- clientes que el agente pasó a una persona (SQL 98) ----
+
+// ¿El número para los avisos sirve? 10 dígitos (se aceptan espacios, guiones y +52).
+export function telefonoAvisosValido(tel) {
+  const d = String(tel || '').replace(/\D/g, '')
+  return d.length === 10 || (d.length === 12 && d.startsWith('52')) || (d.length === 13 && d.startsWith('521'))
+}
+
+// Cómo te llegó (o no) la tarjeta a tu WhatsApp, en palabras.
+export function comoSeAviso(avisado) {
+  if (avisado === 'texto') return 'Te llegó a tu WhatsApp con su tarjeta de contacto.'
+  if (avisado === 'plantilla') return 'Va a tu WhatsApp con la plantilla cliente_para_atender: llega cuando Meta la apruebe.'
+  if (avisado === 'sin_numero') return 'No te llegó a tu WhatsApp: escribe tu número en el panel del agente.'
+  return ''
+}
+
+// Las urgentes primero; luego las más viejas (las que más llevan esperando).
+export const ordenarTraspasos = (lista = []) => [...lista].sort((a, b) =>
+  (b.urgente === true) - (a.urgente === true) || new Date(a.created_at) - new Date(b.created_at))
+
+export async function cargarTraspasos() {
+  try {
+    const { data, error } = await supabase.from('wa_traspasos')
+      .select('id, conversacion_id, telefono, nombre, empresa, necesidad, urgente, avisado, created_at, actualizado_en')
+      .eq('estado', 'pendiente').order('created_at')
+    if (error) return { ok: false, texto: textoDeError(error) }
+    return { ok: true, traspasos: ordenarTraspasos(data || []) }
+  } catch (e) {
+    return { ok: false, texto: textoDeError(e) }
+  }
+}
+export const atenderTraspaso = (id, nota = null) => llamar('atender_traspaso', { p_id: id, p_nota: nota })

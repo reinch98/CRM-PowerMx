@@ -17,7 +17,10 @@ const ESTADOS = {
 }
 export const etiquetaEstado = e => ESTADOS[e] || e || '—'
 
-const ORIGENES = { aviso: 'Aviso de cita', orden: 'Orden de servicio', respuesta: 'Respuesta', campana: 'Campaña' }
+const ORIGENES = {
+  aviso: 'Aviso de cita', orden: 'Orden de servicio', respuesta: 'Respuesta', campana: 'Campaña',
+  manual: 'Mensaje a un cliente', traspaso: 'Cliente para atender (a tu WhatsApp)',
+}
 export const etiquetaOrigen = o => ORIGENES[o] || o || '—'
 
 // Reparte lo que devuelve cola_whatsapp() en lo que la oficina tiene que hacer.
