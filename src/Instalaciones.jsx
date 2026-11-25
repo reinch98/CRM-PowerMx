@@ -27,13 +27,14 @@ function reglaTexto(m) {
   return partes.length ? partes.join(' + ') : 'opcional (0: se pone a mano)'
 }
 
-function LineaBloque({ l, onCantidad }) {
+function LineaBloque({ l, onCantidad, onPrecio }) {
   const m = l.material
+  const servicio = m.tipo === 'mano_obra'
   return (
     <tr>
       <td>
         <div className="renglon-titulo">{m.nombre}</div>
-        {m.tipo === 'mano_obra' && <div className="ayuda">Mano de obra</div>}
+        {servicio && <div className="ayuda">Servicio · precio ajustable</div>}
       </td>
       <td>
         <input
@@ -45,7 +46,20 @@ function LineaBloque({ l, onCantidad }) {
         />
         <div className="ayuda">{m.unidad}{l.manual ? ' · a mano' : ''}</div>
       </td>
-      <td style={{ textAlign: 'right' }}>{pesos(m.precio)}</td>
+      <td style={{ textAlign: 'right' }}>
+        {servicio ? (
+          <>
+            <input
+              type="number" min="0" step="any" inputMode="decimal" style={{ width: 120 }}
+              aria-label={`Precio de ${m.nombre}`}
+              value={l.precioManual ? l.precio : ''}
+              placeholder={String(Number(m.precio))}
+              onChange={e => onPrecio(m.id, e.target.value)}
+            />
+            <div className="ayuda">{l.precioManual ? 'a mano' : 'de lista'}</div>
+          </>
+        ) : pesos(m.precio)}
+      </td>
       <td style={{ textAlign: 'right', fontWeight: 700 }}>{pesos(l.importe)}</td>
     </tr>
   )
@@ -94,7 +108,8 @@ function BloqueInstalacion({ def, materiales, eb, onCambio }) {
           </div>
 
           <p className="ayuda" style={{ margin: '8px 0' }}>
-            La cantidad gris es la sugerida por los metros. Escribe otra para cambiarla; bórrala para volver a la sugerida.
+            Lo gris es lo sugerido (la cantidad por los metros, el precio de lista de la mano de obra). Escribe
+            otro valor para cambiarlo; bórralo para volver al sugerido.
           </p>
           <div className="tabla-scroll">
             <table>
@@ -106,6 +121,7 @@ function BloqueInstalacion({ def, materiales, eb, onCambio }) {
                   <LineaBloque
                     key={l.material.id} l={l}
                     onCantidad={(id, v) => fijar({ cantidades: { ...eb.cantidades, [id]: v } })}
+                    onPrecio={(id, v) => fijar({ precios: { ...eb.precios, [id]: v } })}
                   />
                 ))}
               </tbody>

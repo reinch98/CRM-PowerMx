@@ -86,9 +86,9 @@ values
   ('ele_cable_cal4', 'electrica', 'material', 'Cable cal. 4 AWG', null, 'm', null, 111.633, 6, 3, 0, 'cable_fuerza', false, 11),
   ('ele_cable_cal5', 'electrica', 'material', 'Cable cal. 5', null, 'm', null, 78, 6, 3, 0, 'cable_fuerza', false, 12),
   ('ele_cable_cal14', 'electrica', 'material', 'Cable de señal cal. 14', null, 'm', null, 13.44, 8, 4, 0, null, false, 20),
-  ('ele_tubo_ced40', 'electrica', 'material', 'Tubo pared gruesa 2" cédula 40 gris (3 m)', null, 'pza', 125, 175, 0, 0.3333, 0, 'tuberia', true, 30),
-  ('ele_tubo_pd112', 'electrica', 'material', 'Tubo pared delgada 1 1/2" (3 m)', null, 'pza', 313, 488.28, 0, 0.3333, 0, 'tuberia', false, 31),
-  ('ele_conduit_114', 'electrica', 'material', 'Conduit ligero verde 1 1/4" (3 m)', null, 'pza', null, 65.7, 0, 0.3333, 0, 'tuberia', false, 32),
+  ('ele_tubo_ced40', 'electrica', 'material', 'Tubo pared gruesa 2" cédula 40 gris', null, 'pza', 125, 175, 0, 0.3333, 0, 'tuberia', true, 30),
+  ('ele_tubo_pd112', 'electrica', 'material', 'Tubo pared delgada 1 1/2"', null, 'pza', 313, 488.28, 0, 0.3333, 0, 'tuberia', false, 31),
+  ('ele_conduit_114', 'electrica', 'material', 'Conduit ligero verde 1 1/4"', null, 'pza', null, 65.7, 0, 0.3333, 0, 'tuberia', false, 32),
   ('ele_cople_2', 'electrica', 'material', 'Cople 2"', null, 'pza', null, 25, 0, 0.3333, 0, null, false, 40),
   ('ele_codo_2', 'electrica', 'material', 'Codo 90° 2"', null, 'pza', 110, 171.6, 4, 0, 0, null, false, 41),
   ('ele_conector_pvc_2', 'electrica', 'material', 'Conector recto PVC gris 2"', null, 'pza', null, 15, 2, 0, 0, null, false, 42),
@@ -133,7 +133,9 @@ values
    'Materiales y mano de obra para base de concreto de generador y tanque.',
    'servicio', null, 3200, 1, 0, 0, null, false, 10),
   ('otro_ats_100', 'otro', 'material', 'Transferencia automática 100 A', null, 'pza', null, 16500, 1, 0, 0, null, false, 10),
-  ('otro_tanque_300', 'otro', 'material', 'Tanque estacionario 300 L, incluye maniobra a techo', null, 'pza', null, 12500, 1, 0, 0, null, false, 20)
+  ('otro_tanque_300', 'otro', 'material', 'Tanque estacionario 300 L, incluye maniobra a techo', null, 'pza', null, 12500, 1, 0, 0, null, false, 20),
+  -- Agregado el 25/11/2026 (pedido de Caña): precio nominal, se ajusta en cada cotización.
+  ('otro_grua', 'otro', 'mano_obra', 'Servicio de grúa', 'Servicio de grúa para maniobra de equipo.', 'servicio', null, 8000, 1, 0, 0, null, false, 30)
 on conflict (clave) do nothing;
 
 insert into _migraciones (archivo, tipo) values ('104_materiales_instalacion.sql', 'esquema')

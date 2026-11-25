@@ -62,7 +62,7 @@ export function estadoInicial(materiales) {
     for (const [g, ops] of Object.entries(gruposDe(materiales, b.clave))) {
       elecciones[g] = (ops.find(o => o.predeterminado) || ops[0]).id
     }
-    estado[b.clave] = { activo: false, metros: b.metros ? METROS_INICIALES : 0, elecciones, cantidades: {} }
+    estado[b.clave] = { activo: false, metros: b.metros ? METROS_INICIALES : 0, elecciones, cantidades: {}, precios: {} }
   }
   return estado
 }
@@ -77,9 +77,14 @@ export function lineasDeBloque(materiales, bloque, eb) {
       const manual = eb?.cantidades?.[m.id]
       const hayManual = manual !== undefined && manual !== ''
       const cantidad = hayManual ? Math.max(0, num(manual)) : sugerida
+      // La mano de obra se puede cobrar distinto en cada cotización (el trabajo nunca es igual);
+      // los materiales siempre con su precio de lista.
+      const precioManual = m.tipo === 'mano_obra' ? eb?.precios?.[m.id] : undefined
+      const hayPrecio = precioManual !== undefined && precioManual !== ''
+      const precio = hayPrecio ? Math.max(0, num(precioManual)) : num(m.precio)
       return {
-        material: m, sugerida, cantidad, manual: hayManual,
-        importe: redondear2(cantidad * num(m.precio)),
+        material: m, sugerida, cantidad, manual: hayManual, precio, precioManual: hayPrecio,
+        importe: redondear2(cantidad * precio),
         costo: m.costo == null ? null : redondear2(cantidad * num(m.costo)),
       }
     })
@@ -109,14 +114,17 @@ const partidaLibre = (bloque, descripcion, cantidad, precio, unidad) => ({
   descripcion, cantidad, precio_unitario: redondear2(precio),
 })
 
-function cantidadTexto(l) {
-  const u = l.material.unidad
-  if (u === 'pza') return `${l.cantidad} ${l.cantidad === 1 ? 'pza' : 'pzas'}`
-  return `${l.cantidad} ${u}`
+// En el texto que ve el cliente solo se dicen los metros (cable, tubería por metro); el número de
+// piezas no se menciona: es detalle de armado, no algo que el cliente necesite revisar.
+// La tubería se compra en tramos (piezas) pero se dice en metros de recorrido.
+function conMetros(l, metros) {
+  if (l.material.unidad === 'm') return `${l.material.nombre} (${l.cantidad} m)`
+  if (l.material.grupo === 'tuberia' && num(metros) > 0) return `${l.material.nombre} (${num(metros)} m)`
+  return l.material.nombre
 }
 
 export function textoMateriales(bloque, metros, lineas) {
-  const lista = lineas.map(l => `${l.material.nombre} (${cantidadTexto(l)})`).join(', ')
+  const lista = lineas.map(l => conMetros(l, metros)).join(', ')
   if (bloque === 'electrica') {
     return `Materiales p/ instalación eléctrica: se consideran hasta ${num(metros)} m del generador al interruptor principal. Incluye: ${lista}.`
   }
@@ -140,7 +148,7 @@ export function partidasDeInstalacion({ materiales, estado, desglosar = false })
     if (desglosar || !b.metros) {
       for (const l of lineas) {
         partidas.push(partidaLibre(b.clave, l.material.descripcion || l.material.nombre,
-          l.cantidad, l.material.precio, l.material.unidad))
+          l.cantidad, l.precio, l.material.unidad))
       }
       continue
     }

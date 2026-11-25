@@ -84,11 +84,31 @@ test('las partidas salen libres: materiales en un lote y mano de obra aparte', (
   assert.match(p[0].descripcion, /hasta 20 m/)
   assert.match(p[0].descripcion, /Cable cal\. 2 AWG \(66 m\)/)
   assert.doesNotMatch(p[0].descripcion, /Gabinete/) // cantidad 0: no se menciona
+  // Solo se dicen los metros (la tubería, en metros de recorrido); las piezas van sin número.
+  assert.match(p[0].descripcion, /Tubo 2" cédula 40 \(20 m\), Codo 90° 2"\./)
+  assert.doesNotMatch(p[0].descripcion, /pza/)
   // 66 × 188.76 + 7 tubos × 175 + 4 codos × 171.6 = 12,458.16 + 1,225 + 686.40 = 14,369.56
   assert.equal(p[0].precio_unitario, 14369.56)
   // 9,000 + 10 m × 370
   assert.equal(p[1].precio_unitario, 12700)
   assert.match(p[1].descripcion, /hasta 20 m/)
+})
+
+test('el precio de la mano de obra se cambia por cotización; el de un material no', () => {
+  const estado = estadoInicial(MATERIALES)
+  estado.electrica.activo = true
+  estado.electrica.precios = { mo: '11000', codo: '1' }
+  const lineas = lineasDeBloque(MATERIALES, 'electrica', estado.electrica)
+  const mo = lineas.find(l => l.material.id === 'mo')
+  assert.equal(mo.precio, 11000)
+  assert.equal(mo.precioManual, true)
+  assert.equal(lineas.find(l => l.material.id === 'codo').importe, 686.4)
+  // 11,000 + 5 m × 370 (15 m, 10 incluidos)
+  const p = partidasDeInstalacion({ materiales: MATERIALES, estado })
+  assert.equal(p[1].precio_unitario, 12850)
+  // Vacío regresa al de lista.
+  estado.electrica.precios.mo = ''
+  assert.equal(lineasDeBloque(MATERIALES, 'electrica', estado.electrica).find(l => l.material.id === 'mo').precio, 9000)
 })
 
 test('desglosado sale una partida por material; los extras van uno por uno; lo inactivo no sale', () => {

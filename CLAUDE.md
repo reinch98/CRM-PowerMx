@@ -3494,6 +3494,10 @@ cotizaciones viejas de INSTALACIONES), y que abra una cotización nueva.
   en el Excel, los materiales de cada instalación en UNA partida ("se consideran hasta N m… Incluye: …") y la mano de
   obra en otra; "Desglosar" saca una por material. Base y extras van uno por uno. Pestaña "Materiales y mano de
   obra" para editar y agregar (apagar en vez de borrar).
+- **25/11/2026 (pedido de Caña):** el precio de la mano de obra (todo renglón `tipo = 'mano_obra'`) se cambia en
+  cada cotización (`precios` del estado; vacío = el de lista); los materiales no. El texto de materiales solo dice
+  metros: cable y flexible en sus metros, la tubería en los metros del recorrido; el resto sin número de piezas.
+  Extra nuevo: **Servicio de grúa**, $8,000 sin IVA, nominal y ajustable (`otro_grua`, agregado a la siembra del 104).
 - "Crear cotización" deja un encargo (`origen: 'instalaciones'`) y Cotizaciones la abre como nueva, tipo
   instalación, con nota interna (total por bloque y costo conocido). **Partidas libres**: no apartan inventario.
 - Medido en celular con un Supabase falso y la lista real: 0 textos < 17 px, 0 px de desborde; casillas de 26 px
