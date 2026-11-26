@@ -54,6 +54,9 @@ export { fechaCorta }
 
 export const tituloDeCotizacion = tipo => `COTIZACIÓN — ${NOMBRE_TIPO[tipo] || 'SERVICIOS'}`
 
+// El nombre de la propuesta (SQL 107): va en un recuadro arriba de los conceptos. Vacío = no sale.
+export const tituloDePropuesta = c => String(c?.titulo || '').replace(/\s+/g, ' ').trim()
+
 // Lo que se imprime de cada partida.
 export function filasDePartidas(partidas) {
   return (partidas || []).map((p, i) => {
@@ -210,6 +213,19 @@ export async function construirPdfCotizacion(c, cliente, equipo) {
   const eq = datosDelEquipo(equipo)
   if (eq.length) { barra('DATOS DEL EQUIPO'); rejilla(eq) }
 
+  // ---- la propuesta, arriba de los conceptos: es lo que el cliente compara entre opciones ----
+  const propuesta = tituloDePropuesta(c)
+  if (propuesta) {
+    doc.setFont('helvetica', 'bold').setFontSize(12)
+    const lineas = doc.splitTextToSize(paraPdf(propuesta), util - 10)
+    const alto_caja = lineas.length * 5.6 + 5
+    salto(alto_caja + 4)
+    doc.setFillColor(...CLARO).rect(m, y - 3, util, alto_caja, 'F')
+    doc.setFillColor(...AZUL).rect(m, y - 3, 1.6, alto_caja, 'F')
+    doc.setTextColor(...AZUL).text(lineas, m + 5, y + 3.2)
+    y += alto_caja + 4
+  }
+
   // ---- tabla de conceptos ----
   barra('CONCEPTOS COTIZADOS')
   const ancho_col = { no: 10, desc: 84, cant: 18, uni: 22, precio: 26, sub: 26 }
@@ -235,8 +251,12 @@ export async function construirPdfCotizacion(c, cliente, equipo) {
 
   filasDePartidas(c.partidas).forEach((f, i) => {
     const texto = f.sku ? `${f.sku} — ${f.descripcion}` : f.descripcion
+    // Cortar con la MISMA letra con que se dibuja (antes heredaba la negrita del encabezado), y
+    // reservar lo que de verdad ocupa un renglón de 9 pt (~3.7 mm): con 4.6 mm cada fila dejaba
+    // un renglón en blanco y una cotización de 6 conceptos se pasaba a la segunda hoja.
+    doc.setFont('helvetica', 'normal').setFontSize(9)
     const lineas = doc.splitTextToSize(paraPdf(texto), ancho_col.desc - 4)
-    const h = lineas.length * 4.6 + 3
+    const h = lineas.length * 3.75 + 2.8
     if (salto(h + 2)) encabezadoTabla()
     if (i % 2 === 0) doc.setFillColor(...ZEBRA).rect(m, y - 3.9, util, h, 'F')
     doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...TEXTO)
@@ -280,15 +300,19 @@ export async function construirPdfCotizacion(c, cliente, equipo) {
     ...lineasDeCondiciones(c.condiciones).map(t => ['', t])
   ]
   for (const [etiqueta, texto] of condiciones) {
+    // Cortar con la letra con que se dibuja (si no, heredaba la negrita de 11 pt del total) y
+    // avanzar lo que ocupan los renglones de 9.5 pt (~3.9 mm), más el respiro entre puntos.
+    doc.setFont('helvetica', 'normal').setFontSize(9.5)
     const lineas = doc.splitTextToSize(paraPdf(etiqueta ? texto : `•  ${texto}`), util - 34)
-    salto(lineas.length * 4.8 + 1)
+    const alto_punto = lineas.length * 3.9 + 2.1
+    salto(alto_punto)
     if (etiqueta) {
       doc.setFont('helvetica', 'bold').setFontSize(9.5).setTextColor(...AZUL)
       doc.text(`${etiqueta}:`, m + 1, y)
     }
     doc.setFont('helvetica', 'normal').setFontSize(9.5).setTextColor(...TEXTO)
     doc.text(lineas, etiqueta ? m + 28 : m + 3, y)
-    y += lineas.length * 4.8 + 1.2
+    y += alto_punto
   }
 
   // ---- pie en cada hoja ----

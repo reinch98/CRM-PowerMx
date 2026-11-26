@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { sePuedeEditar, filasDePartidas, nombreArchivoCotizacion, vigenteHasta } from '../src/lib/cotizacionPdf.js'
+import { sePuedeEditar, filasDePartidas, nombreArchivoCotizacion, vigenteHasta, tituloDePropuesta } from '../src/lib/cotizacionPdf.js'
 
 test('solo se edita lo que el cliente no ha aceptado', () => {
   assert.equal(sePuedeEditar('borrador'), true)
@@ -83,4 +83,11 @@ test('forma de pago y garantía salen solo si se capturaron', () => {
   assert.deepEqual(filasDePago({}), [])
   assert.deepEqual(filasDePago({ forma_pago: ' 50% ', garantia: '' }), [['Forma de pago', '50%']])
   assert.deepEqual(filasDePago({ forma_pago: 'a', garantia: 'b' }).map(([e]) => e), ['Forma de pago', 'Garantía'])
+})
+
+test('la propuesta (SQL 107): se imprime limpia y vacía no sale', () => {
+  assert.equal(tituloDePropuesta({ titulo: '  Propuesta 1 ·\n respaldo  ' }), 'Propuesta 1 · respaldo')
+  assert.equal(tituloDePropuesta({ titulo: null }), '')
+  assert.equal(tituloDePropuesta({}), '')
+  assert.equal(tituloDePropuesta(null), '')
 })

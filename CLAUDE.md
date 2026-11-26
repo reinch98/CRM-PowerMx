@@ -3503,6 +3503,21 @@ sin póliza entran al recordatorio, consultando si ha llegado al horómetro". De
   0/1, mismo kit), serie 3015081984, gas LP supuesto, Smart Switch RXSC100A3 serie 3014480806 en `componentes`. Ninguno
   tiene horas del último servicio: salen como "toca por tiempo".
 
+## Propuestas en la cotización (SQL 107, 26/11/2026) — aplicado; PDF revisado
+
+Pedido de Caña al mandarle a Luis Pérez Orozco dos opciones de respaldo con baterías (COT-93 sin aires $71,999 y
+COT-94 con 3 aires $119,999): que la "Propuesta" se lea en el PDF y que cada artículo lleve su precio.
+- `cotizaciones.titulo` (texto opcional, ≤160): campo "Propuesta" en el formulario de Cotizaciones; en el PDF sale
+  en un recuadro claro con filete azul **arriba de los conceptos** (`tituloDePropuesta`, 1 prueba). Vacío = como siempre.
+- **El PDF de la cotización dejaba renglones en blanco:** cada fila reservaba 4.6 mm por renglón y cada condición
+  4.8 mm, pero el texto de 9–9.5 pt ocupa ~3.7–3.9 mm; además cortaba el texto con la letra que se quedaba puesta
+  (la negrita del encabezado o del total). Ahora fija la letra antes de cortar y avanza lo real: una cotización de 6
+  conceptos ya cabe en una hoja. Aplica a todas las cotizaciones.
+- Para mostrar el desglose, el precio de cada artículo = costo × 1.03 × 1.22 (la fórmula de los paquetes híbridos) y la
+  instalación absorbe el redondeo del paquete. Los productos llevan `producto_id` y precio (apartan al aceptar).
+- Generar el PDF fuera del navegador: `node --import ./pruebas/registra.js <script>` con `fetch('/icono-192.png')`
+  servido desde `public/` y un `FileReader` falso; los datos se bajan con `npx supabase db query --linked`.
+
 ## Programación mensual de visitas (SQL 105, 26/11/2026) — aplicado y probado (7/7); tarjeta en emulador
 
 Pedido de Caña: "recordatorios a inicios del mes que aparezcan en el CRM y que permitan la programación mensual"

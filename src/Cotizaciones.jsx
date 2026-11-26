@@ -63,6 +63,7 @@ const vacio = () => ({
   fecha: hoyLocal(),
   vigencia_dias: 15,
   tipo: 'venta',
+  titulo: '',
   descuento: '',
   requiere_visita: false,
   condiciones: CONDICIONES,
@@ -283,6 +284,7 @@ export default function Cotizaciones({ irA }) {
       fecha: c.fecha || hoyLocal(),
       vigencia_dias: c.vigencia_dias ?? 15,
       tipo: c.tipo || 'venta',
+      titulo: c.titulo || '',
       descuento: Number(c.descuento) > 0 ? c.descuento : '',
       requiere_visita: !!c.requiere_visita,
       condiciones: c.condiciones ?? CONDICIONES,
@@ -574,6 +576,7 @@ export default function Cotizaciones({ irA }) {
       fecha: form.fecha,
       vigencia_dias: num(form.vigencia_dias) || 15,
       tipo: form.tipo,
+      titulo: form.titulo.trim() || null,
       partidas: partidas.map(p => ({
         ...p,
         cantidad: num(p.cantidad),
@@ -921,6 +924,7 @@ export default function Cotizaciones({ irA }) {
                   )
                 )}
                 {eliminando?.id === c.id && eliminando.ocupado && <p className="ayuda">Revisando qué se borraría…</p>}
+                {c.titulo && <p style={{ fontWeight: 700, margin: '8px 0' }}>{c.titulo}</p>}
                 <div className="tabla-scroll">
                   <table style={{ width: '100%' }}>
                     <thead>
@@ -1141,6 +1145,13 @@ export default function Cotizaciones({ irA }) {
               <select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>
                 {TIPOS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
               </select>
+            </label>
+
+            <label className="campo">
+              <span>Propuesta (opcional, sale en el PDF arriba de los conceptos)</span>
+              <input value={form.titulo} maxLength={160}
+                placeholder="Ej. Propuesta 1 · Respaldo para cargas prioritarias"
+                onChange={e => setForm({ ...form, titulo: e.target.value })} />
             </label>
 
             <label className="campo">
