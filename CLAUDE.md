@@ -3515,6 +3515,12 @@ COT-94 con 3 aires $119,999): que la "Propuesta" se lea en el PDF y que cada art
   conceptos ya cabe en una hoja. Aplica a todas las cotizaciones.
 - Para mostrar el desglose, el precio de cada artículo = costo × 1.03 × 1.22 (la fórmula de los paquetes híbridos) y la
   instalación absorbe el redondeo del paquete. Los productos llevan `producto_id` y precio (apartan al aceptar).
+- **Ubicación del equipo (26/11/2026):** si la cotización tiene equipo con `ubicacion_equipo` distinta de la dirección
+  del cliente, el PDF la imprime como "Ubicación" en un renglón de ancho completo (una casa de playa, una sucursal). Un
+  equipo con solo uno o dos datos va como "Equipo: Solis · 3.5 kW" junto a los datos del cliente
+  (`equipoEnUnRenglon`); con más datos conserva su sección. La rejilla de datos tenía el mismo defecto que la tabla
+  (cortaba con la negrita del título y reservaba 4.8 mm por renglón): ya no. Así quedó el sistema solar de San Benito
+  de Luis Pérez Orozco (equipo `solar`, servicio CFE 775981203439), ligado a COT-93 y COT-94.
 - Generar el PDF fuera del navegador: `node --import ./pruebas/registra.js <script>` con `fetch('/icono-192.png')`
   servido desde `public/` y un `FileReader` falso; los datos se bajan con `npx supabase db query --linked`.
 

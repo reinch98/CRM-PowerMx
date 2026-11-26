@@ -39,7 +39,7 @@ test('la vigencia por omisión es de 15 días', () => {
   assert.equal(vigenteHasta({ fecha: '2026-10-01', vigencia_dias: 30 }), '2026-10-31')
 })
 
-import { folioCotizacion, fechaCorta, tituloDeCotizacion, datosDelCliente, datosDelEquipo, lineasDeCondiciones } from '../src/lib/cotizacionPdf.js'
+import { folioCotizacion, fechaCorta, tituloDeCotizacion, datosDelCliente, datosDelEquipo, lineasDeCondiciones, equipoEnUnRenglon } from '../src/lib/cotizacionPdf.js'
 
 test('el folio se arma como PMX-COT-AAAAMMDD-0001', () => {
   assert.equal(folioCotizacion({ fecha: '2026-10-05', folio: 1 }), 'PMX-COT-20261005-0001')
@@ -90,4 +90,19 @@ test('la propuesta (SQL 107): se imprime limpia y vacía no sale', () => {
   assert.equal(tituloDePropuesta({ titulo: null }), '')
   assert.equal(tituloDePropuesta({}), '')
   assert.equal(tituloDePropuesta(null), '')
+})
+
+test('la ubicación del equipo sale junto a la dirección del cliente, y solo si es distinta', () => {
+  const c = { folio: 93, fecha: '2026-11-26' }
+  const cliente = { nombre: 'Cliente', direccion: 'Notaría 13', municipio: 'Mérida' }
+  const filas = datosDelCliente(c, cliente, { ubicacion_equipo: 'San Benito, Chicxulub Puerto' })
+  assert.deepEqual(filas.slice(-2), [['Dirección', 'Notaría 13, Mérida'], ['Ubicación', 'San Benito, Chicxulub Puerto', true]])
+  assert.equal(datosDelCliente(c, cliente, null).some(([e]) => e === 'Ubicación'), false)
+  assert.equal(datosDelCliente(c, cliente, { ubicacion_equipo: 'Notaría 13, Mérida' }).some(([e]) => e === 'Ubicación'), false)
+})
+
+test('un equipo con uno o dos datos va en un renglón; con más, conserva su sección', () => {
+  assert.equal(equipoEnUnRenglon(datosDelEquipo({ marca: 'Solis', capacidad_kw: 3.5 })), 'Solis · 3.5 kW')
+  assert.equal(equipoEnUnRenglon(datosDelEquipo({ marca: 'Generac', modelo: 'G0070430', capacidad_kw: 22 })), '')
+  assert.equal(equipoEnUnRenglon([]), '')
 })

@@ -78,8 +78,11 @@ export const vigenteHasta = c => sumarDias(c.fecha, c.vigencia_dias || 15)
 
 // Pares etiqueta/valor del cliente. Los vacíos se omiten: un "[ ]" en un documento que se
 // manda al cliente se ve como algo que se olvidó llenar.
-export function datosDelCliente(c, cliente) {
+export function datosDelCliente(c, cliente, equipo) {
   const dir = [cliente?.direccion, cliente?.colonia, cliente?.municipio].filter(Boolean).join(', ')
+  // Dónde está el equipo (puede no ser la dirección del cliente: una casa de playa, una sucursal).
+  // Va junto a la dirección, en la misma fila de la rejilla, así no agrega alto.
+  const ubicacion = String(equipo?.ubicacion_equipo || '').trim()
   return [
     ['Folio', folioCotizacion(c)],
     ['Fecha', fechaCorta(c.fecha)],
@@ -89,7 +92,9 @@ export function datosDelCliente(c, cliente) {
     ['Teléfono', cliente?.telefono || ''],
     ['Correo', cliente?.email || ''],
     ['RFC', cliente?.rfc || ''],
-    ['Dirección', dir]
+    ['Dirección', dir],
+    // Tercer elemento: ocupa el renglón completo (una dirección larga en media columna salía en 3).
+    ['Ubicación', ubicacion !== dir ? ubicacion : '', true]
   ].filter(([, v]) => v)
 }
 
@@ -105,6 +110,10 @@ export function datosDelEquipo(eq) {
     ['Horas de uso', eq.horas_uso != null && eq.horas_uso !== '' ? String(eq.horas_uso) : '']
   ].filter(([, v]) => v)
 }
+
+// Con uno o dos datos ("Solis · 3.5 kW") el equipo no amerita una sección propia en el PDF.
+export const equipoEnUnRenglon = pares =>
+  pares.length > 0 && pares.length <= 2 ? pares.map(([, v]) => v).join(' · ') : ''
 
 // Forma de pago y garantía: filas con etiqueta, solo si se capturaron.
 export function filasDePago(c) {
@@ -125,7 +134,7 @@ export async function cargarClienteParaPdf(clienteId) {
 export async function cargarEquipoParaPdf(equipoId) {
   if (!equipoId) return null
   const { data } = await supabase.from('equipos')
-    .select('marca, modelo, capacidad_kw, numero_serie, horas_uso, atributos')
+    .select('marca, modelo, capacidad_kw, numero_serie, horas_uso, atributos, ubicacion_equipo')
     .eq('id', equipoId).maybeSingle()
   return data || null
 }
@@ -189,13 +198,21 @@ export async function construirPdfCotizacion(c, cliente, equipo) {
   const rejilla = pares => {
     const colAncho = util / 2
     const etiquetaAncho = 28
-    for (let i = 0; i < pares.length; i += 2) {
-      const celdas = pares.slice(i, i + 2).map(([e, v], k) => {
+    for (let i = 0; i < pares.length;) {
+      // Cortar con la letra con que se dibuja (si no, heredaba la negrita de 13 pt del título y un
+      // valor largo salía en más renglones), y avanzar lo que ocupa un renglón de 9.5 pt (~3.9 mm).
+      // Un valor de un renglón sigue midiendo 6.4 mm, como antes.
+      doc.setFont('helvetica', 'normal').setFontSize(9.5)
+      // Un par con tercer elemento `true` ocupa el renglón completo; si no, van de dos en dos.
+      const completo = !!pares[i][2]
+      const enFila = completo ? [pares[i]] : pares.slice(i, i + 2).filter((p, k) => k === 0 || !p[2])
+      const ancho = completo ? util : colAncho
+      const celdas = enFila.map(([e, v], k) => {
         const x = m + k * colAncho
-        const lineas = doc.splitTextToSize(paraPdf(v), colAncho - etiquetaAncho - 3)
+        const lineas = doc.splitTextToSize(paraPdf(v), ancho - etiquetaAncho - 3)
         return { e, x, lineas }
       })
-      const alturaFila = Math.max(...celdas.map(cl => cl.lineas.length)) * 4.8 + 1.6
+      const alturaFila = Math.max(...celdas.map(cl => cl.lineas.length)) * 3.9 + 2.5
       salto(alturaFila)
       for (const cl of celdas) {
         doc.setFont('helvetica', 'bold').setFontSize(9.5).setTextColor(...AZUL)
@@ -205,13 +222,22 @@ export async function construirPdfCotizacion(c, cliente, equipo) {
       }
       doc.setDrawColor(...LINEA).setLineWidth(0.2).line(m, y + alturaFila - 3.6, der, y + alturaFila - 3.6)
       y += alturaFila
+      i += enFila.length
     }
     y += 2
   }
 
-  rejilla(datosDelCliente(c, cliente))
+  // Un equipo con uno o dos datos va como un renglón más de los del cliente; con más, su sección.
   const eq = datosDelEquipo(equipo)
-  if (eq.length) { barra('DATOS DEL EQUIPO'); rejilla(eq) }
+  const corto = equipoEnUnRenglon(eq)
+  // Los de renglón completo (la ubicación) van al final, para que los demás sigan de dos en dos.
+  const delCliente = datosDelCliente(c, cliente, equipo)
+  rejilla([
+    ...delCliente.filter(p => !p[2]),
+    ...(corto ? [['Equipo', corto]] : []),
+    ...delCliente.filter(p => p[2])
+  ])
+  if (eq.length && !corto) { barra('DATOS DEL EQUIPO'); rejilla(eq) }
 
   // ---- la propuesta, arriba de los conceptos: es lo que el cliente compara entre opciones ----
   const propuesta = tituloDePropuesta(c)
