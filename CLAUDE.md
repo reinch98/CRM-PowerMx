@@ -3477,6 +3477,30 @@ y se liga, la factura manda y queda "Completo". 8 pruebas en Node; probado en el
   `registrar_documento`, `anotar_archivo` y `compras.archivo_pdf`. El navegador integrado bloquea (`ERR_BLOCKED_BY_CLIENT`) que una
   página pública lea `localhost`, así que la sesión del CRM publicado no sirve para subir archivos de la compu.
 
+## Programación mensual de visitas (SQL 105, 26/11/2026) — aplicado y probado (7/7); tarjeta en emulador
+
+Pedido de Caña: "recordatorios a inicios del mes que aparezcan en el CRM y que permitan la programación mensual"
+y "mejora el prompt de recordatorios".
+- **Reloj `programacion-mensual`** (día 1, 13:00 UTC = 07:00 de Mérida) → `abrir_programacion_mensual()`: abre la
+  cita `por_programar` (con su orden) de TODAS las visitas de póliza del mes (llama a `generar_citas_poliza` hasta
+  el fin del mes) y deja la fila del mes en `programaciones_mensuales`. El admin también puede abrir el mes
+  siguiente por adelantado (solo este mes o el siguiente). El reloj diario `citas-de-poliza` (21 días) sigue.
+- `programacion_mensual(mes)` (admin): todas las citas por programar, las programadas del mes, visitas de póliza
+  sin cita y **equipos sin póliza** con `proximo_mantenimiento` en el mes y sin cita abierta (a esos no se les abre
+  cita sola: no tienen contrato; se les escribe). `marcar_programacion_revisada(mes, bool)`.
+- **Tarjeta "Programación de <mes>"** arriba del **Inicio** (`src/ProgramacionMensual.jsx`, `src/lib/programacion.js`,
+  6 pruebas): del día 20 en adelante abre el mes siguiente; cuántas faltan con palabra; agrupadas por zona;
+  "Escribirle por WhatsApp" con un mensaje ya escrito para coordinar (`mensajeCoordinar`: qué visita de la póliza
+  le toca, o mantenimiento + cotización si no tiene póliza); "Programar" ahí mismo (fecha propuesta = la de la
+  póliza, nunca antes de mañana; hora, duración, técnico y ayudante; el mismo aviso de empalmes de la Agenda);
+  "Ya quedó programado <mes>". Medida en celular con un Supabase falso: 0 textos < 17 px, 0 objetivos < 48 px,
+  0 px de desborde.
+- **El recordatorio del día anterior al cliente** (`texto_aviso`, rama `recordatorio`, redefinida desde la viva):
+  dice qué visita de la póliza es ("servicio menor (visita 1 de 4 de su póliza POL-4)"), qué tener listo (acceso y
+  alguien que firme, combustible, posible corte de luz) y pide "Responda SÍ para confirmar". Es el texto del envío
+  manual por wa.me; el envío por la API usa la plantilla `recordatorio_cita` de Meta, que no cambió.
+- `perfiles.hace_campo` del admin se encendió el 26/11/2026 (Caña hace la visita de Gary Chafin).
+
 ## Cotizador de instalaciones (SQL 104, 24/11/2026) — aplicado y probado (6/6); pantalla en emulador
 
 Pedido de Caña: "un cotizador para instalaciones" — solo materiales y mano de obra (el equipo lo elige él), con

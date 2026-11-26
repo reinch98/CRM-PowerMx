@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Alerta } from './ui'
+import ProgramacionMensual from './ProgramacionMensual'
 import { cargarInicio, porNivel, cuantasEsperan, textoCita, hayDia } from './lib/inicio'
 
 // ---------------------------------------------------------------------------
@@ -61,6 +62,9 @@ export default function Inicio({ irA }) {
   return (
     <div className="pagina">
       <h2>{fechaLarga(datos.fecha)}</h2>
+
+      {/* ---- la programación del mes (SQL 105) ---- */}
+      <ProgramacionMensual irA={irA} />
 
       {/* ---- lo que está esperando ---- */}
       {total === 0 ? (

@@ -120,6 +120,7 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
 | 87 | `media_whatsapp` | E | ✔ | sí | Fotos, documentos y audios de WhatsApp: columnas `media_*`, bucket privado `whatsapp`, `media_pendientes`, `guardar_media_wa`. |
 | 89 | `margen_hibridos` | E | ✔ | sí | Margen propio de los paquetes híbridos (`parametros_costeo.margen_hibrido_pct`, 22 %); redefine `costear_paquete`. |
 | 104 | `materiales_instalacion` | E | ✔ | sí | Lista de materiales y mano de obra para el cotizador de instalaciones (eléctrica, gas, base, extras), sembrada de ESTRUCTURA.xlsx; cantidad = fija + por metro × (metros − incluidos). Solo admin. Probado con la CLI (6/6). |
+| 105 | `programacion_mensual` | E | ✔ | sí | Programación mensual: el día 1 (reloj `programacion-mensual`) abre las citas de todas las visitas de póliza del mes; `programacion_mensual(mes)` da por programar, programadas, sin cita y equipos sin póliza a los que les toca; `marcar_programacion_revisada`. Redefine `texto_aviso` (recordatorio del día anterior más claro). Probado con la CLI (7/7). |
 | 101 | `compra_sin_factura` | E | ✔ | sí | Cerrar una compra (ticket) sin factura con motivo: `compras.sin_factura_motivo/por/en`, `cerrar_compra_sin_factura` y `reabrir_compra_sin_factura` (solo admin, `auditoria`). Probado con la CLI (6/6). |
 | 100 | `paquete_solar_no_es_inventario` | E | ⏳ por aplicar | sí | Un paquete solar nunca aparta inventario: disparador que quita el `producto_id` de las partidas `paquete_solar` (no toca las cotizaciones ya aceptadas), limpieza de borradores/enviadas, cancela requisiciones pendientes de paquetes y reporta lo aceptado. Probado en PGlite con la `cambiar_estado_cotizacion` real (6/6). |
 | 99 | `solicitud_a_cotizacion` | E | ⏳ por aplicar | sí | De la solicitud de la calculadora a la cotización: `solicitudes_web.cotizacion_id` (on delete set null) y `ligar_solicitud_a_cotizacion` (solo admin: liga, marca atendida con autor, pasa el cliente de la cotización, agrega una línea a la nota, `cotizaciones.origen = sitio`, `auditoria`). Probado en PGlite (7/7). |
@@ -140,4 +141,4 @@ Estado: ✔ aplicado y registrado (todos al 09/10/2026).
   esta lista (el 09/10/2026 se borró `leer-factura`, la versión vieja de `leer-comprobante`).
 - Cron (`cron.job`): `recordatorios-de-cita` (14:00 UTC), `enviar-whatsapp` (cada minuto) y
   `foto-esquema` (día 1 de cada mes, 15:00 UTC), `tipo-cambio-dof` (14:30 y 20:30 UTC) y
-  `citas-de-poliza` (13:00 UTC = 07:00 de Mérida, SQL 97).
+  `citas-de-poliza` (13:00 UTC = 07:00 de Mérida, SQL 97) y `programacion-mensual` (día 1, 13:00 UTC, SQL 105).
