@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   nombreMes, mesSiguiente, primeroDeMes, fechaLarga, queVisita, resumenMes, pendientesDelMes,
-  porZona, fechaPropuesta, mensajeCoordinar, mesInicial
+  porZona, fechaPropuesta, mensajeCoordinar, mesInicial, queMotivo, tocaYa
 } from '../src/lib/programacion.js'
 
 test('meses: nombre, primero y siguiente (con cambio de año)', () => {
@@ -55,4 +55,27 @@ test('mensaje para coordinar: póliza y sin póliza', () => {
   assert.match(s, /^Hola,/)
   assert.match(s, /En enero le toca el mantenimiento preventivo de su generador Kohler 14 kW\./)
   assert.match(s, /cotización/)
+})
+
+test('sin póliza (106): a los 6 meses pregunta el horómetro; ya llegó o un año, agenda', () => {
+  const base = { contacto: 'Lic. Luis Pérez', equipo: 'Generac G0070430 22 kW', equipo_tipo: 'generador',
+    ultimo: '2026-05-30', ultimo_horas: 120, intervalo_horas: 100 }
+  const pregunta = mensajeCoordinar({ ...base, motivo: 'revisar_horometro' }, '2026-12-01')
+  assert.match(pregunta, /Ya pasaron 6 meses desde el último mantenimiento de su generador Generac G0070430 22 kW \(mayo de 2026\)/)
+  assert.match(pregunta, /foto del horómetro/)
+  assert.match(pregunta, /cada 100 horas/)
+  assert.doesNotMatch(pregunta, /cotización/)
+  assert.equal(tocaYa({ motivo: 'revisar_horometro' }), false)
+
+  const llego = mensajeCoordinar({ ...base, motivo: 'horas', horas_desde: 104 }, '2026-12-01')
+  assert.match(llego, /ya llegó a las horas de uso/)
+  assert.match(llego, /cotización/)
+  assert.equal(tocaYa({ motivo: 'horas' }), true)
+  assert.match(queMotivo({ ...base, motivo: 'horas', horas_desde: 104 }), /Ya llegó: 104 h de 100 h/)
+
+  assert.match(mensajeCoordinar({ ...base, motivo: 'tiempo_maximo' }, '2026-12-01'), /Ya se cumplió un año/)
+  const sin = mensajeCoordinar({ ...base, ultimo_horas: null, motivo: 'sin_horometro' }, '2026-11-01')
+  assert.match(sin, /En noviembre le toca el mantenimiento preventivo/)
+  assert.match(sin, /foto del horómetro/)
+  assert.match(queMotivo({ motivo: 'sin_horometro', ultimo: '2026-05-30' }), /no se sabe cuántas horas.*mayo de 2026/)
 })

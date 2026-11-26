@@ -114,14 +114,56 @@ export function mensajeCoordinar(v, mes) {
       '', 'PowerMx · 999 475 5275'
     ].join('\n')
   }
+  // Sin póliza (SQL 106): a los 6 meses se pregunta el horómetro; si ya llegó a las horas, se agenda.
+  const desde = v?.ultimo ? ` (${mesYAnio(v.ultimo)})` : ''
+  if (v?.motivo === 'revisar_horometro') {
+    return [
+      hola, '',
+      `Le escribimos de PowerMx. Ya pasaron 6 meses desde el último mantenimiento${equipo}${desde}.`,
+      '¿Nos podría mandar una foto del horómetro (el contador de horas del tablero del generador)?',
+      `Con eso le decimos si ya le toca el servicio: se hace cada ${v.intervalo_horas || 100} horas de uso o cada año, lo que llegue primero.`,
+      '', 'PowerMx · 999 475 5275'
+    ].join('\n')
+  }
+  const porque = v?.motivo === 'horas'
+    ? `Su ${clase}${v?.equipo ? ` ${v.equipo}` : ''} ya llegó a las horas de uso de su mantenimiento preventivo.`
+    : v?.motivo === 'tiempo_maximo'
+      ? `Ya se cumplió un año desde el último mantenimiento${equipo}${desde}: le toca el preventivo.`
+      : `En ${nm} le toca el mantenimiento preventivo${equipo}.`
   return [
     hola, '',
-    `Le escribimos de PowerMx. En ${nm} le toca el mantenimiento preventivo${equipo}.`,
+    `Le escribimos de PowerMx. ${porque}`,
     'Con gusto le enviamos la cotización y le agendamos la visita.',
+    v?.motivo === 'sin_horometro' && v?.equipo_tipo === 'generador'
+      ? 'Si puede, mándenos también una foto del horómetro (el contador de horas del tablero).' : null,
     '', `¿Qué día le acomoda? ${horario}`,
     '', 'PowerMx · 999 475 5275'
-  ].join('\n')
+  ].filter(l => l !== null).join('\n')
 }
+
+const mesYAnio = f => {
+  const [a, m] = partes(f)
+  return `${MESES[m - 1]} de ${a}`
+}
+
+// Por qué le toca a un equipo sin póliza, en palabras (SQL 106).
+export function queMotivo(v) {
+  const h = n => `${Number(n).toLocaleString('es-MX', { maximumFractionDigits: 1 })} h`
+  const ult = v?.ultimo
+    ? `Último servicio: ${mesYAnio(v.ultimo)}${v.ultimo_horas != null ? ` a ${h(v.ultimo_horas)}` : ''}.`
+    : 'Sin último servicio registrado.'
+  switch (v?.motivo) {
+    case 'horas':
+      return `Ya llegó: ${h(v.horas_desde)} de ${h(v.intervalo_horas)} desde el último servicio. ${ult}`
+    case 'tiempo_maximo':
+      return `Un año sin mantenimiento: toca aunque no llegue a las horas. ${ult}`
+    case 'revisar_horometro':
+      return `Pregúntale cuánto marca el horómetro (toca cada ${h(v.intervalo_horas)}). ${ult}`
+    default:
+      return `Toca por tiempo: no se sabe cuántas horas tenía en el último servicio. ${ult}`
+  }
+}
+export const tocaYa = v => v?.motivo !== 'revisar_horometro'
 export const enlaceCoordinar = (v, mes) => enlaceWhatsApp(v?.telefono, mensajeCoordinar(v, mes))
 
 // ---- base ----
@@ -142,6 +184,8 @@ export const abrirMes = mes => rpc('abrir_programacion_mensual', { p_mes: mes })
 export const marcarRevisada = (mes, revisada = true) =>
   rpc('marcar_programacion_revisada', { p_mes: mes, p_revisada: revisada })
 export const cargarTecnicos = () => rpc('lista_tecnicos', {})
+export const registrarHorometro = (equipo, horas, fecha) =>
+  rpc('registrar_horometro', { p_equipo: equipo, p_horas: Number(horas), p_fecha: fecha || null })
 export const programarCita = (cita, f, confirmar = false) => rpc('programar_cita', {
   p_cita: cita, p_fecha: f.fecha, p_hora: f.hora || null, p_duracion: Number(f.duracion) || null,
   p_t1: f.t1 || null, p_t2: f.t2 || null, p_confirmar: confirmar

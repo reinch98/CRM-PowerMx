@@ -3477,6 +3477,32 @@ y se liga, la factura manda y queda "Completo". 8 pruebas en Node; probado en el
   `registrar_documento`, `anotar_archivo` y `compras.archivo_pdf`. El navegador integrado bloquea (`ERR_BLOCKED_BY_CLIENT`) que una
   página pública lea `localhost`, así que la sesión del CRM publicado no sirve para subir archivos de la compu.
 
+## Mantenimiento sin póliza: 6 meses u horómetro (SQL 106, 26/11/2026) — aplicado y probado (7/7); tarjeta en emulador
+
+Pedido de Caña: "una vez realizado el servicio y cargada la orden, se registran las horas, y cada 6 meses los equipos
+sin póliza entran al recordatorio, consultando si ha llegado al horómetro". Decisión: **air cooled cada 100 h**
+(liquid cooled 250 h por omisión, sin confirmar), lo que llegue primero con el tiempo.
+- `equipos` gana `ultimo_mantenimiento`, `ultimo_mantenimiento_horas` e `intervalo_horas` (null = por enfriamiento).
+  `config_mantenimiento` (una fila, solo admin): `meses_revision` 6, `meses_reintento` 3, `meses_maximo` 12,
+  `horas_air` 100, `horas_liquid` 250. Se cambian con SQL (aún sin pantalla).
+- Disparador **`mantenimiento_al_cerrar`** en `ordenes_servicio`: una orden PREVENTIVA con equipo, al cerrarse, guarda
+  fecha y horómetro como último mantenimiento y, sin póliza, `proximo_mantenimiento` = fecha + `frecuencia_meses` (6).
+  Antes nada movía esa fecha en un equipo sin póliza. Al aplicarlo se llenó con la última preventiva cerrada de cada equipo.
+- `_mantenimiento_equipo(e, hoy)` da el motivo: `horas` (ya pasó las horas desde el último servicio) ·
+  `tiempo_maximo` (12 meses) · `sin_horometro` (no se sabe cuántas horas tenía en el último servicio: toca por tiempo) ·
+  `revisar_horometro` (6 meses: preguntarle al cliente).
+- **`registrar_horometro(equipo, horas, fecha)`** (admin): lo que reporta el cliente. Si llegó, el próximo pasa a hoy; si
+  no, se vuelve a preguntar en 3 meses (nunca después de los 12). Queda en `auditoria` con `retrocede`.
+- `programacion_mensual` (redefinida): los sugeridos ya incluyen a los **atrasados** (antes solo los que vencían dentro
+  del mes) y a los que llegaron por horas, con su motivo. En la tarjeta del Inicio: el motivo en palabras, "Anotar el
+  horómetro" y "Agendar en la Agenda" (solo si ya toca); el mensaje de WhatsApp pide una foto del horómetro a los 6 meses.
+  Una prueba nueva en `pruebas/programacion.prueba.js`; medido en celular con un Supabase falso.
+- **Cliente cargado ese día:** Luis Pérez Orozco (Notaría Pública 13; en contactos de Google como "Luis Notario Pérez"),
+  dos generadores air cooled sin póliza, último servicio 30/05/2026, próximo 30/11/2026: 20 kW en la notaría (sin marca,
+  modelo ni serie) y Generac 22 kW de la residencia, modelo `G0070430` (la factura dice "MOD. 7043": confirmar sufijo
+  0/1, mismo kit), serie 3015081984, gas LP supuesto, Smart Switch RXSC100A3 serie 3014480806 en `componentes`. Ninguno
+  tiene horas del último servicio: salen como "toca por tiempo".
+
 ## Programación mensual de visitas (SQL 105, 26/11/2026) — aplicado y probado (7/7); tarjeta en emulador
 
 Pedido de Caña: "recordatorios a inicios del mes que aparezcan en el CRM y que permitan la programación mensual"

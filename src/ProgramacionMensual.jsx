@@ -3,7 +3,7 @@ import { Alerta } from './ui'
 import {
   cargarProgramacion, abrirMes, marcarRevisada, cargarTecnicos, programarCita,
   nombreMes, mesSiguiente, primeroDeMes, fechaLarga, queVisita, resumenMes, pendientesDelMes,
-  porZona, fechaPropuesta, enlaceCoordinar, mesInicial
+  porZona, fechaPropuesta, enlaceCoordinar, mesInicial, queMotivo, tocaYa, registrarHorometro
 } from './lib/programacion'
 import { hoyLocal } from './lib/fechas'
 
@@ -153,11 +153,18 @@ export default function ProgramacionMensual({ irA }) {
 
           {r.sugeridos > 0 && (
             <div style={{ marginBottom: 12 }}>
-              <h4>Sin póliza: les toca mantenimiento ({r.sugeridos})</h4>
-              <p className="ayuda">No tienen contrato, así que no se les abre cita sola: escríbeles y, si aceptan, agéndalos en la Agenda.</p>
+              <h4>Sin póliza: revisar y agendar ({r.sugeridos})</h4>
+              <p className="ayuda">
+                Cada 6 meses se le pregunta al cliente el horómetro; si ya llegó a las horas (o pasó un año), se agenda.
+                No tienen contrato, así que no se les abre cita sola.
+              </p>
               <Grupos items={datos.sugeridos} render={v => (
-                <TarjetaVisita key={v.equipo_id} v={v} mes={elMes} pie={`Le toca el ${fechaLarga(v.proximo)}.`}>
-                  <button type="button" style={{ marginTop: 6 }} onClick={() => irA('agenda')}>Ir a la Agenda</button>
+                <TarjetaVisita key={v.equipo_id} v={v} mes={elMes}
+                  pie={`${v.proximo ? `Revisión desde el ${fechaLarga(v.proximo)}. ` : ''}${queMotivo(v)}`}>
+                  <div className="fila" style={{ flexWrap: 'wrap', marginTop: 6 }}>
+                    {tocaYa(v) && <button type="button" onClick={() => irA('agenda')}>Agendar en la Agenda</button>}
+                    {v.equipo_tipo === 'generador' && <Horometro v={v} hoy={hoy} onHecho={recargar} />}
+                  </div>
                 </TarjetaVisita>
               )} />
             </div>
@@ -208,6 +215,53 @@ function TarjetaVisita({ v, mes, pie, children }) {
       </div>
       {children}
     </div>
+  )
+}
+
+// Lo que el cliente reporta del horómetro (SQL 106): si ya llegó, toca; si no, se pregunta en 3 meses.
+function Horometro({ v, hoy, onHecho }) {
+  const [abierto, setAbierto] = useState(false)
+  const [horas, setHoras] = useState('')
+  const [fecha, setFecha] = useState(hoy)
+  const [error, setError] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  const enviar = async e => {
+    e.preventDefault()
+    setError('')
+    if (horas === '' || Number(horas) < 0) return setError('Escribe las horas que marca el horómetro')
+    setEnviando(true)
+    const r = await registrarHorometro(v.equipo_id, horas, fecha)
+    setEnviando(false)
+    if (r.error) return setError(r.error)
+    const d = r.data || {}
+    const msg = d.motivo === 'horas'
+      ? `Ya llegó (${d.horas_desde} h desde el último servicio): agéndalo.`
+      : d.motivo === 'revisar_horometro'
+        ? `Aún no llega (${d.horas_desde} de ${d.intervalo_horas} h). Se vuelve a preguntar desde el ${fechaLarga(d.proximo)}.`
+        : 'Lectura guardada. Sin las horas del último servicio no se puede comparar: toca por tiempo.'
+    alert(msg + (d.retrocede ? '\n\nOjo: la lectura es menor que la anterior.' : ''))
+    setAbierto(false)
+    onHecho()
+  }
+
+  if (!abierto) return <button type="button" onClick={() => setAbierto(true)}>Anotar el horómetro</button>
+  return (
+    <form onSubmit={enviar} style={{ marginTop: 8, width: '100%' }}>
+      <div className="rejilla-2">
+        <label className="campo">Horas que marca
+          <input type="number" min="0" step="0.1" inputMode="decimal" value={horas} onChange={e => setHoras(e.target.value)} required />
+        </label>
+        <label className="campo">Fecha de la lectura
+          <input type="date" value={fecha} max={hoy} onChange={e => setFecha(e.target.value)} />
+        </label>
+      </div>
+      {error && <Alerta tipo="error">{error}</Alerta>}
+      <div className="fila" style={{ flexWrap: 'wrap' }}>
+        <button type="submit" className="btn-primario" disabled={enviando}>{enviando ? 'Guardando…' : 'Guardar la lectura'}</button>
+        <button type="button" onClick={() => setAbierto(false)}>Cancelar</button>
+      </div>
+    </form>
   )
 }
 
